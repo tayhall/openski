@@ -1,8 +1,10 @@
 .pio/
 .pio-core/
 .venv/
+.esphome-venv/
 .vscode/
 include/wifi_config.h
 platformio.local.ini
 *.bin
 *.elf
+firmware.zip

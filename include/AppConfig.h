@@ -12,5 +12,10 @@ namespace openski::config {
 inline constexpr char kWifiSsid[] = OPENSKI_WIFI_SSID;
 inline constexpr char kWifiPassword[] = OPENSKI_WIFI_PASSWORD;
 inline constexpr char kOtaPassword[] = OPENSKI_OTA_PASSWORD;
-inline constexpr char kHostname[] = "openski-s3";
+inline constexpr char kHostname[] = "ski";
+inline constexpr char kBleName[] = "OpenSki-ski";
+inline constexpr int kImuSdaPin = 21;
+inline constexpr int kImuSclPin = 22;
+inline constexpr uint8_t kImuI2cAddress = 0x68;
+inline constexpr uint32_t kImuI2cFrequencyHz = 400000;
 }  // namespace openski::config

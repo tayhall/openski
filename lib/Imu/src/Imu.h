@@ -14,6 +14,7 @@ struct Sample {
   uint32_t timestampUs;
   Vec3 accelMps2;
   Vec3 gyroRadps;
+  float temperatureC;
 };
 
 enum class ReadResult {
@@ -22,7 +23,7 @@ enum class ReadResult {
   kError,   // Bus or device error; `out` is unchanged.
 };
 
-// Implemented by each chip driver (e.g. LSM6DSO, ICM-42688, BMI270).
+// Implemented by each chip driver (e.g. MPU-6050, LSM6DSOX).
 class ImuSensor {
  public:
   virtual ~ImuSensor() = default;
