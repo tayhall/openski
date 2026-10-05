@@ -3,6 +3,7 @@
 #include <Arduino.h>
 
 #include "AppConfig.h"
+#include "ImuService.h"
 #include "WifiService.h"
 
 namespace openski::diagnostics {
@@ -32,5 +33,10 @@ void tick() {
   lastReportMs = now;
   Serial.printf("Uptime: %lu s, heap: %u bytes, Wi-Fi: %s\n",
                 now / 1000, ESP.getFreeHeap(), wifi::connected() ? "connected" : "disconnected");
+  const imu::Stats& imuStats = imu::monitor().stats();
+  Serial.printf("IMU: %s, samples: %lu, read failures: %lu\n",
+                imuStats.ready ? "ready" : "offline",
+                static_cast<unsigned long>(imuStats.samples),
+                static_cast<unsigned long>(imuStats.readFailures));
 }
 }  // namespace openski::diagnostics
