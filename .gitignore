@@ -1,0 +1,8 @@
+.pio/
+.pio-core/
+.venv/
+.vscode/
+include/wifi_config.h
+platformio.local.ini
+*.bin
+*.elf
