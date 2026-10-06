@@ -78,7 +78,7 @@ Toolchain: AGP 9.0.1 with built-in Kotlin, compile/target SDK 36, minSdk 26, Jav
 
 ## Docs
 
-`docs/`: `ble-protocol.md`, `bring-up.md` (OTA and expected serial output), `imu-data.md`, `android-design.md` (UI), `android-acceptance.md`, `bench-validation.md`, `ski-analysis.md`, `feature-roadmap.md`. Update the relevant doc when behaviour changes; the READMEs state current scope and verification status.
+`docs/`: `ble-protocol.md`, `bring-up.md` (OTA and expected serial output), `imu-data.md`, `android-design.md` (UI), `android-acceptance.md`, `bench-validation.md`, `ski-analysis.md`, `feature-roadmap.md`, `poc-plan.md` (current hardware, test phases and pass criteria). POC decision: sensors mount at the top of the boot cuff near the calf, so the "toward the toe" axis is the board axis facing forward, not its length; see that doc. Update the relevant doc when behaviour changes; the READMEs state current scope and verification status.
 
 ## Housekeeping
 
