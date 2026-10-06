@@ -13,6 +13,39 @@ class SessionAnalysisTest {
     @Test fun stationaryRecordingHasNoTurnCandidates() {
         val points=(0..500).map { TimelinePoint("L",it*20.0,sample(it*20L),"live") }
         assertTrue(SessionAnalysis.candidates(points,"L").isEmpty())
+        val timing=SessionAnalysis.timing(points,"L")
+        assertTrue(timing.intervals.isEmpty())
+        assertNull(timing.cadencePerMinute)
+        assertNull(timing.variationPercent)
+    }
+    private fun rhythmicPoints(side: String="L", intervalMs: Double=1500.0) = (0..900).map {
+        TimelinePoint(side,it*20.0,sample(it*20L,
+            kotlin.math.sin(it*20.0*kotlin.math.PI/intervalMs).toFloat()),"live")
+    }
+    @Test fun measuresCadenceWithoutCountingBothBootsTwice() {
+        val points=rhythmicPoints()
+        val timing=SessionAnalysis.timing(points+rhythmicPoints("R"),"L")
+        assertTrue(timing.intervals.size>=8)
+        assertEquals(1500.0,timing.medianMs!!,40.0)
+        assertEquals(40.0,timing.cadencePerMinute!!,1.0)
+        assertEquals(3000.0,timing.cycleMeanMs!!,80.0)
+        assertTrue(timing.variationPercent!!<3.0)
+        assertEquals(timing.positiveMeanMs!!,timing.negativeMeanMs!!,50.0)
+        assertEquals(SessionAnalysis.timing(points,"L"),timing)
+    }
+    @Test fun timingNeverSpansMissingSamples() {
+        val points=rhythmicPoints().filter { it.timeMs !in 7000.0..8200.0 }
+        val timing=SessionAnalysis.timing(points,"L")
+        assertTrue(timing.intervals.isNotEmpty())
+        assertTrue(timing.intervals.none { it.startMs<8200 && it.endMs>7000 })
+    }
+    @Test fun separatedSameDirectionMotionsDoNotCreateCadence() {
+        val points=(0..600).map {
+            val value=if(it in 30..100 || it in 300..400) 0.8f else 0f
+            TimelinePoint("L",it*20.0,sample(it*20L,value),"live")
+        }
+        assertEquals(2,SessionAnalysis.candidates(points,"L").size)
+        assertTrue(SessionAnalysis.timing(points,"L").intervals.isEmpty())
     }
     @Test fun detectsAlternatingLobesWithoutBridgingDisconnection() {
         val points=(0..300).map { TimelinePoint("L",it*20.0,sample(it*20L,if(it<150) 0.8f else -0.8f),"live") }

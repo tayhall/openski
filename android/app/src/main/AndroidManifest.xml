@@ -15,7 +15,7 @@
         android:icon="@mipmap/ic_openski"
         android:label="OpenSki"
         android:roundIcon="@mipmap/ic_openski"
-        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        android:theme="@style/Theme.OpenSki">
         <activity
             android:name=".MainActivity"
             android:exported="true">

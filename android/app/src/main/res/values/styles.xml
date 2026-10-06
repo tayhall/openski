@@ -1,0 +1,40 @@
+<resources>
+    <style name="Theme.OpenSki" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans-serif</item>
+        <item name="android:windowBackground">#0B1116</item>
+        <item name="android:colorBackground">#0B1116</item>
+        <item name="android:colorBackgroundFloating">#141D24</item>
+        <item name="android:colorAccent">#C7F36B</item>
+        <item name="android:textColorPrimary">#F1F5F5</item>
+        <item name="android:textColorSecondary">#B8C6CE</item>
+        <item name="android:textColorHint">#94A7B5</item>
+        <item name="android:colorControlNormal">#B8C6CE</item>
+        <item name="android:colorControlActivated">#C7F36B</item>
+        <item name="android:colorControlHighlight">#30C7F36B</item>
+        <item name="android:statusBarColor">#0B1116</item>
+        <item name="android:navigationBarColor">#0B1116</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:buttonStyle">@style/Widget.OpenSki.Button</item>
+        <item name="android:checkboxStyle">@style/Widget.OpenSki.CheckBox</item>
+        <item name="android:spinnerStyle">@style/Widget.OpenSki.Spinner</item>
+        <item name="android:editTextStyle">@style/Widget.OpenSki.EditText</item>
+    </style>
+    <style name="Widget.OpenSki.Button" parent="android:style/Widget.Material.Button">
+        <item name="android:minHeight">48dp</item>
+        <item name="android:textAllCaps">false</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+        <item name="android:textSize">14sp</item>
+    </style>
+    <style name="Widget.OpenSki.CheckBox" parent="android:style/Widget.Material.CompoundButton.CheckBox">
+        <item name="android:minHeight">48dp</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textColor">#B8C6CE</item>
+    </style>
+    <style name="Widget.OpenSki.Spinner" parent="android:style/Widget.Material.Spinner">
+        <item name="android:minHeight">48dp</item>
+    </style>
+    <style name="Widget.OpenSki.EditText" parent="android:style/Widget.Material.EditText">
+        <item name="android:minHeight">48dp</item>
+        <item name="android:textSize">15sp</item>
+    </style>
+</resources>
