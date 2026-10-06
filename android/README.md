@@ -4,7 +4,7 @@ Native Kotlin Android app for the OpenSki ESP32 BLE sensors. This first app mile
 
 ## Open and run
 
-Open this `android` folder in Android Studio. If Android Studio runs on Windows while the repo is in WSL, open `\\wsl.localhost\Ubuntu\home\andrew\projects\openski\android`. The project uses JDK 17, Android SDK 36, Android Gradle Plugin 9.0.1, and built-in Kotlin. Let Android Studio sync Gradle, then select the connected Android phone and run the `app` configuration. Enable Bluetooth and grant nearby-device permission when prompted.
+Open `D:\projects\openski\android` in Android Studio. The project uses JDK 17, Android SDK 36, Android Gradle Plugin 9.0.1, and built-in Kotlin. Sync Gradle, select the connected Android phone, and run the `app` configuration. Enable Bluetooth and grant nearby-device and notification permissions when prompted.
 
 For a USB phone connection, enable Developer options and USB debugging, connect the phone, then accept its debugging prompt. The phone must be nearby with Bluetooth enabled for sensor discovery. The app uses the advertised OpenSki service UUID so unrelated BLE devices are filtered out.
 
