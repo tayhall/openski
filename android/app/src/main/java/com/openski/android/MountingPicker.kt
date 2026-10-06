@@ -10,7 +10,7 @@ object MountingPicker {
         val current = store.mounting(side)
         AlertDialog.Builder(activity)
             .setTitle("Which way does the $boot sensor point?")
-            .setSingleChoiceItems(Mounting.options.map { it.label }.toTypedArray(), current?.let { Mounting.options.indexOf(it) } ?: -1) { dialog, which ->
+            .setSingleChoiceItems(store.landmarks().let { marks -> Mounting.options.map { it.label(marks) } }.toTypedArray(), current?.let { Mounting.options.indexOf(it) } ?: -1) { dialog, which ->
                 val choice = Mounting.options[which]
                 store.setMounting(side, choice)
                 dialog.dismiss()

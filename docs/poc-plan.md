@@ -27,7 +27,7 @@ Supersedes the "rigid location" advice in [bench validation](bench-validation.md
 
 ### Mounting record (copy into session notes)
 
-Boot model and size, left/right sensor code (last four characters of its address), position (distance below the top buckle, side of the cuff), board orientation (which axis faces forward, which way is up), strap type and tension, firmware commit, and a photo.
+Boot model and size, left/right sensor code (last four characters of its address), position (distance below the top buckle, side of the cuff), board orientation (which landmark faces forward, such as the holes edge, and which way the chip side faces), strap type and tension, firmware commit, and a photo.
 
 ## Flex and load as signals
 
@@ -63,12 +63,20 @@ The index is **not standardised between manufacturers**, so one brand's 100 is n
 
 ### Phase 0: bench, no boots
 
+The **Bench tools** screen (Boots tab, then Bench tools) covers steps 3, 4 and 7 on a loose board: it captures readings, checks they are steady, and builds a table you can copy out.
+
 1. Flash both boards with the current firmware over USB, then confirm OTA works. Label each case with its sensor code.
 2. Pair both in Geek mode and confirm both stream at ~50 Hz with no gaps over 5 minutes.
-3. Find the axes: flat on the desk, which axis reads ±9.8 m/s²? Tilt one end up and see which axis changes. Write down which axis faces forward for the mounting you intend.
-4. Roll the bare board on a wedge or ramp at about 10°, 20° and 30° and compare the reported roll with the true angle.
-5. Check battery run time, charging behaviour and the BLE range through a jacket pocket. Li-ion loses capacity in the cold and must not be charged below 0 °C. Check that the charger board is the protected variant so a flat cell is not over-discharged.
-6. Record a 10-minute flash session on each board, download it, and confirm the app erases only after validation.
+3. **Six faces and landmarks.** Lay the board on each face in turn. Each face should put about +9.8 m/s² on exactly one axis (the axis pointing up). Bench tools shows the offset and scale error per axis and which axis is which. Then run Landmarks (stand the board on its holes edge, then chip side up) so the app can describe each axis as "toward the holes edge" instead of "+Y". The holes edge is the one opposite the header, with no pins or wires. Write down which landmark faces forward for the mounting you intend.
+4. **Tilt accuracy.** Capture a flat reference, then tilt to about 10°, 20° and 30° against a reference (an angle gauge, a hinged board, or a phone lying flat beside the sensor) and compare. Roll on the final mounting is checked again in Phase 1.
+5. **Rotation scale.** Turn the board through a known 90° against a square corner and compare the angle the app reports.
+6. Check battery run time, charging behaviour and the BLE range through a jacket pocket. Li-ion loses capacity in the cold and must not be charged below 0 °C. Check that the charger board is the protected variant so a flat cell is not over-discharged.
+7. **Gyro bias and noise.** Leave the board still for a minute (Bench tools, still noise) and note the average and spread per axis. Repeat after it has warmed up, since MPU-6050 bias moves with temperature.
+8. **Streaming health.** Run for an hour. The status characteristic counts read failures; the target is zero, with no sample gap over 250 ms.
+9. **Wi-Fi alongside BLE.** The firmware runs both. Compare dropouts with Wi-Fi joined and with Wi-Fi disabled, to rule out radio contention.
+10. Record a 10-minute flash session on each board, download it, and confirm the app erases only after validation. Then pull the power mid-recording and confirm the next connect recovers it cleanly.
+11. **Cold test.** Seal a board in a bag in the freezer for an hour, stream it, and let it warm up before opening the bag (condensation). Check gyro drift and battery sag. Do not charge a cold battery.
+12. **Drift after calibration.** For each still capture, compare the gyro bias with the bias at the time you would calibrate. A bias difference of 1 °/s grows into 60° of error per minute, so this number decides the IMU question (see below). Do it three ways: warm, a cold start straight from the freezer, and after the board has settled back to room temperature.
 
 ### Phase 1: garden, boots on, skis on, standing still
 
@@ -97,6 +105,9 @@ Placeholders to agree after Phase 0. They are targets for the POC, not claims.
 
 | Check | Target |
 |---|---|
+| Six-face check, per axis | offset and scale error to be recorded after the first run |
+| Gyro bias at rest (still 60 s) | recorded per board, and again warm |
+| Gyro bias shift between calibration and a cold start | at most 0.05 °/s (about 3° per minute); otherwise try another IMU |
 | Calibration repeatability | within ±2° |
 | Roll against known wedge angles | within ±3° at 10° to 30° |
 | Pitch-to-roll leakage with 20° forward flex | under 3° |
@@ -105,6 +116,18 @@ Placeholders to agree after Phase 0. They are targets for the POC, not claims.
 | Dry-set detection against video | at least 90% matched, median timing error under 200 ms |
 | BLE live stream over 5 minutes | no gap over 250 ms |
 | Flash recovery | download validates and erases without duplicate samples |
+
+## Is the MPU-6050 good enough?
+
+Noise is not the concern: at about 5 mdps/√Hz, integrating for 10 seconds adds only a few hundredths of a degree. **Gyro bias and its drift with temperature are.** A bias error of 1 °/s grows into 60° of roll error per minute, and boots start warm and end up cold. Calibration removes the bias at a still stance, and rest events re-anchor it, but only if the bias has not moved in between. The IMU itself draws milliamps, so a better chip would not save battery.
+
+**Decision rule.** Use the Phase 0 measurements (still captures warm, cold and re-warmed, and step 12):
+
+- If the bias shift between calibration and a cold start stays at or under about 0.05 °/s (roughly 3° per minute), keep the MPU-6050 through the first snow sessions.
+- If it is larger, or varies a lot between boards, buy a modern IMU (an LSM6DSOX or an ICM-42688-P on a breakout, roughly £10 to £20) and run it on the same mount for a side-by-side comparison. The IMU interface in `lib/Imu` is chip-independent, so adding a second driver is a small change, and the docs already name the LSM6DSOX as the intended replacement.
+- Avoid fusion chips such as the BNO085 for now. They output orientation directly, but the fusion is a black box we cannot validate against our own raw data.
+
+Datasheet comparisons (for example gyro noise of about 2.8 mdps/√Hz on the ICM-42688-P against about 5 mdps/√Hz on the MPU-6050) do not cover the zero-rate offset stability that matters here, so measure it instead of trusting the numbers. The MPU-6050 is also an old part, and cheap GY-521 boards can carry clones of varying quality, which is a second reason to compare boards.
 
 ## Ski theory we are using
 
@@ -132,3 +155,29 @@ These come from general knowledge, not from measurements in this project. Treat 
 - Rename "boot roll" to "cuff roll" in the app once the mounting is settled.
 - Mounting-picker wording: ask which way the shin faces rather than "toward the toe".
 - Should the ADC divider on the iSpindel board feed a battery-level reading into the BLE battery service?
+
+## Later: on-device processing
+
+Not for the first proof of concept. The goal is to cut Bluetooth traffic and save battery once the algorithms are proven, and to make orientation survive Bluetooth dropouts. Raw data stays the reference until then.
+
+**Why.** Today the board streams six raw channels at 50 Hz and the phone does all the maths. The phone-side orientation tracker invalidates after a gap over 250 ms and waits for the skier to be still. A board integrating locally at 100 Hz would not lose samples when the link hiccups.
+
+**Where the battery probably goes** (unmeasured; Phase 0 step 6 gives the baseline):
+
+- Wi-Fi, the HTTP endpoint and OTA run alongside Bluetooth. A field mode with Wi-Fi off is the cheapest large saving.
+- One 19-byte notification at 50 Hz carries a lot of per-packet overhead. Batching several samples per notification with a larger MTU and connection interval needs no processing.
+- The main loop spins on `delay(10)`. Reading the IMU's FIFO in batches would let the CPU sleep between reads.
+- Light sleep with Bluetooth on the Arduino framework is unverified and needs checking before we plan around it.
+
+**Order of work**
+
+1. Baseline run time and current draw, on the current build.
+2. Field mode (Wi-Fi off), batched notifications, IMU FIFO reads.
+3. On-device orientation, only once Phase 1 shows the phone-side estimator holds up. Prefer sending a sensor-frame quaternion and letting the phone apply calibration, because that avoids pushing calibration to the board.
+4. Movement events and metrics, much later.
+
+**Risks**
+
+- Raw data is still needed to validate algorithms. If the live stream becomes processed-only, raw samples survive only in the ~10 minutes of flash. Keep a raw mode, and move to processed only for algorithms proven on raw data.
+- The estimator would exist in Kotlin and C++. Keep one golden recording that both must reproduce, run in the native test environment, so they cannot drift apart.
+- Changing the live frame needs a new protocol version in [BLE protocol](ble-protocol.md), with the app handling both.

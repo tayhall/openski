@@ -94,6 +94,7 @@ class HomeActivity : Activity() {
     private fun t(text: String, type: Snow.Type = Snow.Type.BODY, tint: Int = Snow.INK) = Snow.text(this, text, type, tint)
     private fun openDrill(drill: Drill) = startActivity(Intent(this, DrillActivity::class.java).putExtra("drill", drill.id))
     private fun openBoots() = startActivity(Intent(this, MainActivity::class.java))
+    private fun openBench() = startActivity(Intent(this, BenchActivity::class.java))
 
     // Onboarding ----------------------------------------------------------------------------------------
 
@@ -355,7 +356,7 @@ class HomeActivity : Activity() {
             status.add(t(name, Snow.Type.TITLE), top = if (index == 0) 0 else 16)
             status.add(t(if (address == null) "Not paired" else "Sensor ${address.replace(":", "").takeLast(4)}", Snow.Type.BODY, Snow.INK_SOFT), top = 2)
             if (address != null) {
-                status.add(t("Mounting: ${store.mounting(side)?.label ?: "not set yet"}", Snow.Type.BODY, Snow.INK_SOFT), top = 2)
+                status.add(t("Mounting: ${store.mounting(side)?.label(store.landmarks()) ?: "not set yet"}", Snow.Type.BODY, Snow.INK_SOFT), top = 2)
                 status.add(Snow.button(this@HomeActivity, "Set mounting", Snow.ButtonKind.QUIET) {
                     MountingPicker.show(this@HomeActivity, store, side) { render() }
                 }.apply { gravity = Gravity.START or Gravity.CENTER_VERTICAL; setPadding(0, paddingTop, paddingRight, paddingBottom) })
@@ -368,7 +369,8 @@ class HomeActivity : Activity() {
         val geek = Snow.card(this@HomeActivity, 18, Snow.INK)
         geek.addView(t("Raw telemetry and the logbook", Snow.Type.TITLE, Snow.SNOW))
         geek.add(t("Live acceleration, gyro and orientation, the dry-ski test lab, flash recovery, and every saved session with replay, analysis and export.", Snow.Type.BODY, Snow.GLACIER), top = 6)
-        geek.add(Snow.button(this@HomeActivity, "Open Geek mode") { openBoots() }, top = 14)
+        geek.add(Snow.button(this@HomeActivity, "Open Geek mode", Snow.ButtonKind.SECONDARY) { openBoots() }, top = 14)
+        geek.add(Snow.button(this@HomeActivity, "Bench tools for a loose board", Snow.ButtonKind.SECONDARY) { openBench() }, top = 10)
         add(geek, bottom = 28)
 
         add(t("Your plan", Snow.Type.DISPLAY), bottom = 8)

@@ -38,6 +38,11 @@ class ProgressStore(context: Context) {
     fun setMounting(side: String, mounting: Mounting) =
         prefs.edit().putInt("mount_$side", Mounting.options.indexOf(mounting)).apply()
 
+    /** Which sensor axes point at the board's holes edge and chip side, learned in Bench tools. */
+    fun landmarks() = Landmarks(Face.all.getOrNull(prefs.getInt("landmark_holes", -1)), Face.all.getOrNull(prefs.getInt("landmark_chip", -1)))
+    fun setHoles(face: Face) = prefs.edit().putInt("landmark_holes", Face.all.indexOf(face)).apply()
+    fun setChip(face: Face) = prefs.edit().putInt("landmark_chip", Face.all.indexOf(face)).apply()
+
     /** Last roll trace per drill, thinned for storage, drawn as the ghost line next time. */
     fun saveTrace(drillId: String, demo: Boolean, trace: RollTrace) {
         val step = (trace.seconds.size / 300).coerceAtLeast(1)
