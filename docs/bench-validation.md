@@ -14,7 +14,7 @@ Test sessions include raw acceleration/gyro, derived boot roll/pitch/relative ya
 
 ## POC 1: coordinate frame and fixture tests
 
-1. Mount each unit rigidly to the boot shell, with its PCB axes documented. A boot cuff can flex relative to the ski; prefer a repeatable rigid location and record it in notes. A ski/boot fixture gives a better reference than an unconstrained leg.
+1. Mount each unit rigidly to the boot shell, with its PCB axes documented. A boot cuff can flex relative to the ski; prefer a repeatable rigid location and record it in notes. A ski/boot fixture gives a better reference than an unconstrained leg. For the current POC the sensors are mounted at the top of the cuff instead; see [POC plan](poc-plan.md) for the reasoning and the extra cross-talk checks.
 2. Connect sensors and press New test. Place the ski flat on a known reference plane, hold neutral for at least two seconds, and calibrate each boot separately. Select the signed sensor axis pointing approximately toward the toe. Stationary calibration determines gravity and gyro bias, not heading.
 3. For an oblique mount, perform five seconds of pure side-to-side rolling and press Learn mounting from pure roll gesture. The principal gyro axis refines the boot-forward direction; the previous axis/sign selection resolves direction. Mixed pitch/yaw, inadequate movement and inconsistent axes are rejected. This does not replace independent mounting checks.
 4. Check known roll angles such as 0°, ±15°, ±30° and ±45° with a fixture/protractor. Repeat at several pitch angles. Verify sensor and boot signs separately. Note expected and observed angles rather than treating this list as skiing targets.

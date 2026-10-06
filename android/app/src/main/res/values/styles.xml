@@ -19,6 +19,15 @@
         <item name="android:spinnerStyle">@style/Widget.OpenSki.Spinner</item>
         <item name="android:editTextStyle">@style/Widget.OpenSki.EditText</item>
     </style>
+    <style name="Theme.OpenSki.Snow" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#F4F7F9</item>
+        <item name="android:colorBackground">#F4F7F9</item>
+        <item name="android:statusBarColor">#F4F7F9</item>
+        <item name="android:navigationBarColor">#F4F7F9</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:colorAccent">#FF5B2E</item>
+        <item name="android:textColorPrimary">#14232E</item>
+    </style>
     <style name="Widget.OpenSki.Button" parent="android:style/Widget.Material.Button">
         <item name="android:minHeight">48dp</item>
         <item name="android:textAllCaps">false</item>

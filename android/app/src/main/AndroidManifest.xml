@@ -17,13 +17,16 @@
         android:roundIcon="@mipmap/ic_openski"
         android:theme="@style/Theme.OpenSki">
         <activity
-            android:name=".MainActivity"
-            android:exported="true">
+            android:name=".HomeActivity"
+            android:exported="true"
+            android:theme="@style/Theme.OpenSki.Snow">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        <activity android:name=".DrillActivity" android:exported="false" android:theme="@style/Theme.OpenSki.Snow" />
+        <activity android:name=".MainActivity" android:exported="false" />
         <service
             android:name=".SensorSessionService"
             android:exported="false"
