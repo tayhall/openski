@@ -12,6 +12,8 @@ OpenSki is modular firmware for a ski boot motion sensor. The default target is 
 See [bring-up](docs/bring-up.md) for OTA upload steps and expected serial output.
 The current sample is available at `http://<device-ip>/api/v1/imu` on the local Wi-Fi network; see [IMU data](docs/imu-data.md).
 The Android BLE protocol is documented in [BLE protocol](docs/ble-protocol.md).
+
+The native Android client project is in [`android/`](android/). Open that folder in Android Studio to build and run the live telemetry and local session recording app. Sessions can include attached videos and recording continues with the screen off. See [Android setup](android/README.md) for SDK and device setup.
 Each boot sensor keeps one 100 Hz session of about 10 minutes in its flash filesystem. The Android app is intended to record both live streams for full runs, download any missing data from each sensor, and erase a sensor session only after validating the copy.
 
 ## Layout

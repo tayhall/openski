@@ -8,3 +8,8 @@ platformio.local.ini
 *.bin
 *.elf
 firmware.zip
+.gradle/
+**/.gradle/
+local.properties
+**/build/
+.idea/
