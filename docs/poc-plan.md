@@ -121,6 +121,8 @@ Placeholders to agree after Phase 0. They are targets for the POC, not claims.
 
 Noise is not the concern: at about 5 mdps/√Hz, integrating for 10 seconds adds only a few hundredths of a degree. **Gyro bias and its drift with temperature are.** A bias error of 1 °/s grows into 60° of roll error per minute, and boots start warm and end up cold. Calibration removes the bias at a still stance, and rest events re-anchor it, but only if the bias has not moved in between. The IMU itself draws milliamps, so a better chip would not save battery.
 
+**Baseline so far** (warm, room temperature, 6 October): gyro bias x −1.93, y +0.06, z +0.38 °/s, noise 0.05 °/s; see [bench results](bench-results.md). The cold-start comparison is still to do.
+
 **Decision rule.** Use the Phase 0 measurements (still captures warm, cold and re-warmed, and step 12):
 
 - If the bias shift between calibration and a cold start stays at or under about 0.05 °/s (roughly 3° per minute), keep the MPU-6050 through the first snow sessions.
@@ -155,6 +157,8 @@ These come from general knowledge, not from measurements in this project. Treat 
 - Rename "boot roll" to "cuff roll" in the app once the mounting is settled.
 - Mounting-picker wording: ask which way the shin faces rather than "toward the toe".
 - Should the ADC divider on the iSpindel board feed a battery-level reading into the BLE battery service?
+- The live stream measures 37.9 Hz, not the documented 50 Hz, because of the 20 ms send limit on a 10 ms loop (see [bench results](bench-results.md)). Fix with a decimated 50 Hz stream or batching.
+- Add an IMU retry at boot; the sensor was missed once after a flash.
 
 ## Later: on-device processing
 

@@ -106,3 +106,71 @@ class LandmarksTest {
         assertEquals("+Y: toward the holes edge", Mounting(1, 1).label(Landmarks(Face(1, 1), null)))
     }
 }
+
+class AccelCorrectionTest {
+    private val g = BenchMath.GRAVITY
+    /** A board whose axes read: value = scale * true + offset. */
+    private val offset = Vector3(0.52, -0.18, -0.02)
+    private val scale = Vector3(0.999, 1.0055, 1.032)
+    private fun reads(truth: Vector3) = Vector3(scale.x * truth.x + offset.x, scale.y * truth.y + offset.y, scale.z * truth.z + offset.z)
+
+    private fun correctionFromFaces(): AccelCorrection {
+        val faces = Face.all.associateWith { face ->
+            val unit = when (face.axis) { 0 -> Vector3(g * face.sign, 0.0, 0.0); 1 -> Vector3(0.0, g * face.sign, 0.0); else -> Vector3(0.0, 0.0, g * face.sign) }
+            reads(unit)
+        }
+        return AccelCorrection.fromAxisChecks(BenchMath.axisChecks(faces))!!
+    }
+
+    @Test fun sixFaceChecksRecoverTheOffsetAndScaleThatWereApplied() {
+        val c = correctionFromFaces()
+        assertEquals(offset.x, c.offset.x, 1e-9); assertEquals(offset.y, c.offset.y, 1e-9); assertEquals(offset.z, c.offset.z, 1e-9)
+        assertEquals(scale.x, c.scale.x, 1e-9); assertEquals(scale.z, c.scale.z, 1e-9)
+    }
+
+    @Test fun correctionRemovesTiltErrorThatTheRawBoardShows() {
+        val flat = Vector3(0.0, 0.0, g)
+        val tilt = Math.toRadians(20.0)
+        val tilted = Vector3(g * Math.sin(tilt), 0.0, g * Math.cos(tilt))
+        val rawAngle = BenchMath.angleBetween(reads(flat), reads(tilted))
+        val c = correctionFromFaces()
+        val fixedAngle = BenchMath.angleBetween(c.apply(reads(flat)), c.apply(reads(tilted)))
+        assertEquals(20.0, fixedAngle, 1e-6)
+        assertTrue("raw error $rawAngle should be visible", Math.abs(rawAngle - 20.0) > 0.3)
+    }
+
+    @Test fun incompleteOrImplausibleChecksGiveNoCorrection() {
+        assertNull(AccelCorrection.fromAxisChecks(listOf(AxisCheck(0, 0.1, 0.0), AxisCheck(1, 0.0, 0.0))))
+        assertNull(AccelCorrection.fromAxisChecks(listOf(AxisCheck(0, 0.1, 0.0), AxisCheck(1, 0.0, 0.0), AxisCheck(2, 0.0, 30.0))))
+    }
+
+    @Test fun storageRoundTripAndSamplesAreCorrectedPerAxis() {
+        val c = AccelCorrection(offset, scale)
+        val back = AccelCorrection.fromStorage(c.toStorage())
+        assertEquals(c, back)
+        val sample = SensorSample(1, 100, 10.0f, -9.9f, 0.5f, 0.1f, 0.2f, 0.3f)
+        val fixed = c.apply(sample)
+        assertEquals((10.0 - offset.x) / scale.x, fixed.accelX.toDouble(), 1e-4)
+        assertEquals(sample.gyroX, fixed.gyroX, 0f)
+    }
+
+    @Test fun onlySidesWithACorrectionAreChanged() {
+        val c = AccelCorrection(Vector3(1.0, 0.0, 0.0), Vector3(1.0, 1.0, 1.0))
+        val sample = SensorSample(1, 100, 5f, 0f, 0f, 0f, 0f, 0f)
+        val points = listOf(TimelinePoint("L", 0.0, sample, "live"), TimelinePoint("R", 0.0, sample, "live"))
+        val out = points.corrected { side -> if (side == "L") c else null }
+        assertEquals(4f, out[0].sample.accelX, 1e-6f)
+        assertEquals(5f, out[1].sample.accelX, 1e-6f)
+        assertSame(points, points.corrected { null })
+    }
+}
+
+class AccelCorrectionStorageTest {
+    @Test fun badStorageIsRejected() {
+        assertNull(AccelCorrection.fromStorage(""))
+        assertNull(AccelCorrection.fromStorage("1,2,3"))
+        assertNull(AccelCorrection.fromStorage("0.1,0.1,0.1,1,1,2"))
+        assertNull(AccelCorrection.fromStorage("a,b,c,d,e,f"))
+        assertNotNull(AccelCorrection.fromStorage("0.1,-0.2,0.0,1.0,1.01,1.03"))
+    }
+}
