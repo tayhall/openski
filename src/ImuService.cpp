@@ -14,6 +14,7 @@ ImuSensor* sensor = &mpu6050;
 ImuMonitor imuMonitor(sensor);
 uint32_t lastLoggedSampleCount = 0;
 unsigned long lastSampleLogMs = 0;
+constexpr uint32_t kRetryIntervalMs = 2000;
 }  // namespace
 
 void begin() {
@@ -25,6 +26,10 @@ void begin() {
 }
 
 void tick() {
+  // The sensor can be missed at power-up. Keep trying quietly so a reconnected or late sensor comes online.
+  if (imuMonitor.retryBegin(millis(), kRetryIntervalMs)) {
+    Serial.printf("IMU ready after retry: %s\n", imuMonitor.sensorName());
+  }
   imuMonitor.poll();
   const Stats& stats = imuMonitor.stats();
   const unsigned long now = millis();

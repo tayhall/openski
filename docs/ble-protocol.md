@@ -26,7 +26,7 @@ Each 19-byte frame uses little-endian fields and fits the default BLE ATT payloa
 | 15 | 2 | gyro Y | signed integer, value × 1000 gives rad/s |
 | 17 | 2 | gyro Z | signed integer, value × 1000 gives rad/s |
 
-Notifications are limited to 50 Hz. The IMU continues sampling at 100 Hz; the Android client can use timestamps and sequence numbers to detect stream gaps. Temperature is available in the status characteristic.
+Notifications carry every second IMU sample, a steady 50 Hz (an earlier time-based limit measured only about 38 Hz). The IMU continues sampling at 100 Hz; the Android client can use timestamps and sequence numbers to detect stream gaps. Temperature is available in the status characteristic.
 
 ## Status characteristic
 

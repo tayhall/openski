@@ -6,6 +6,14 @@ bool ImuMonitor::begin() {
   return stats_.ready;
 }
 
+bool ImuMonitor::retryBegin(uint32_t nowMs, uint32_t intervalMs) {
+  if (stats_.ready) return false;
+  if (attempted_ && nowMs - lastAttemptMs_ < intervalMs) return false;
+  attempted_ = true;
+  lastAttemptMs_ = nowMs;
+  return begin();
+}
+
 void ImuMonitor::poll() {
   if (!stats_.ready) return;
   Sample sample{};

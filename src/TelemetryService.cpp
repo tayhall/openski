@@ -26,12 +26,12 @@ void handleImu() {
 
   if (!monitor.hasSample()) {
     snprintf(body, sizeof(body),
-             "{\"device\":\"%s\",\"sensor\":\"%s\",\"ready\":%s,"
+             "{\"device\":\"%s\",\"build\":\"%s\",\"sensor\":\"%s\",\"ready\":%s,"
              "\"has_sample\":false,\"samples\":%lu,\"read_failures\":%lu,"
              "\"recorder_ready\":%s,\"recording\":%s,\"recorded_samples\":%lu,"
              "\"recording_capacity_samples\":%lu,\"dropped_samples\":%lu,"
              "\"recorder_partition_found\":%s,\"recorder_partition_bytes\":%lu}",
-             config::kHostname, monitor.sensorName(), stats.ready ? "true" : "false",
+             config::kHostname, config::kBuildId, monitor.sensorName(), stats.ready ? "true" : "false",
              static_cast<unsigned long>(stats.samples),
              static_cast<unsigned long>(stats.readFailures),
              recorderStatus.storageReady ? "true" : "false",
@@ -47,7 +47,7 @@ void handleImu() {
 
   const imu::Sample& sample = monitor.latest();
   snprintf(body, sizeof(body),
-           "{\"device\":\"%s\",\"sensor\":\"%s\",\"ready\":%s,"
+           "{\"device\":\"%s\",\"build\":\"%s\",\"sensor\":\"%s\",\"ready\":%s,"
            "\"has_sample\":true,\"timestamp_us\":%lu,"
            "\"accel_mps2\":{\"x\":%.4f,\"y\":%.4f,\"z\":%.4f},"
            "\"gyro_radps\":{\"x\":%.5f,\"y\":%.5f,\"z\":%.5f},"
@@ -55,7 +55,7 @@ void handleImu() {
            "\"recorder_ready\":%s,\"recording\":%s,\"recorded_samples\":%lu,"
            "\"recording_capacity_samples\":%lu,\"dropped_samples\":%lu,"
            "\"recorder_partition_found\":%s,\"recorder_partition_bytes\":%lu}",
-           config::kHostname, monitor.sensorName(), stats.ready ? "true" : "false",
+           config::kHostname, config::kBuildId, monitor.sensorName(), stats.ready ? "true" : "false",
            static_cast<unsigned long>(sample.timestampUs),
            sample.accelMps2.x, sample.accelMps2.y, sample.accelMps2.z,
            sample.gyroRadps.x, sample.gyroRadps.y, sample.gyroRadps.z,

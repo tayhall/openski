@@ -17,6 +17,7 @@ void begin() {
   delay(300);  // Give the USB CDC monitor a moment to attach.
   Serial.println();
   Serial.println("OpenSki boot");
+  Serial.printf("Build: %s\n", config::kBuildId);
   Serial.printf("Chip: %s, revision %u\n", ESP.getChipModel(), ESP.getChipRevision());
   Serial.printf("Flash: %u bytes, heap: %u bytes\n", ESP.getFlashChipSize(), ESP.getFreeHeap());
   if (config::kWifiSsid[0] == '\0') {
