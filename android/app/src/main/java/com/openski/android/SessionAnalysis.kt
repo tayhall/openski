@@ -9,10 +9,45 @@ data class StreamQuality(val side: String, val liveSamples: Int, val flashSample
     val gaps: Int, val longestGapMs: Double, val dropped: Int)
 data class TurnCandidate(val side: String, val startMs: Double, val endMs: Double, val positive: Boolean,
     val peakRadps: Float)
+
+data class CandidateInterval(val startMs: Double, val endMs: Double, val positive: Boolean) {
+    val durationMs: Double get() = endMs - startMs
+}
+
+data class TurnTiming(val intervals: List<CandidateInterval>, val medianMs: Double?,
+    val cadencePerMinute: Double?, val variationPercent: Double?,
+    val positiveMeanMs: Double?, val negativeMeanMs: Double?, val cycleMeanMs: Double?)
 data class AnalysisResult(val raw: List<TimelinePoint>, val timeline: List<TimelinePoint>,
     val quality: List<StreamQuality>, val alignment: String)
 
 object SessionAnalysis {
+    /** Candidate onset timing, not measured edge changes or proof of carving. Never merge boots. */
+    fun timing(points: List<TimelinePoint>, side: String, axis: Int = 2): TurnTiming {
+        val stream = points.filter { it.side == side }.sortedBy { it.timeMs }
+        val found = candidates(stream, side, axis)
+        val gaps = stream.zipWithNext().filter { (a, b) -> b.timeMs - a.timeMs > 250 }
+        val intervals = found.zipWithNext().mapNotNull { (a, b) ->
+            val duration = b.startMs - a.startMs
+            if (a.positive == b.positive || duration !in 500.0..20_000.0 ||
+                b.startMs - a.endMs > 500 ||
+                gaps.any { (before, after) -> before.timeMs < b.startMs && after.timeMs > a.startMs }) null
+            else CandidateInterval(a.startMs, b.startMs, a.positive)
+        }
+        val durations = intervals.map { it.durationMs }.sorted()
+        val mean = durations.takeIf { it.isNotEmpty() }?.average()
+        val median = if (durations.isEmpty()) null else
+            (durations[(durations.size - 1) / 2] + durations[durations.size / 2]) / 2
+        fun directionMean(positive: Boolean) = intervals.filter { it.positive == positive }
+            .map { it.durationMs }.takeIf { it.isNotEmpty() }?.average()
+        val cycles = intervals.zipWithNext().mapNotNull { (a, b) ->
+            if (a.endMs == b.startMs && a.positive != b.positive) a.durationMs + b.durationMs else null
+        }
+        return TurnTiming(intervals, median, mean?.let { 60_000 / it },
+            if (mean != null && durations.size >= 3)
+                sqrt(durations.sumOf { (it - mean).pow(2) } / durations.size) / mean * 100 else null,
+            directionMean(true), directionMean(false), cycles.takeIf { it.isNotEmpty() }?.average())
+    }
+
     private fun same(a: SensorSample, b: SensorSample) = a.timestampMs == b.timestampMs &&
         a.accelX == b.accelX && a.accelY == b.accelY && a.accelZ == b.accelZ &&
         a.gyroX == b.gyroX && a.gyroY == b.gyroY && a.gyroZ == b.gyroZ
@@ -105,7 +140,9 @@ object SessionAnalysis {
                 (covered / duration).coerceIn(0.0, 1.0), gaps, longest,
                 data.captures.filter { it.side == side }.sumOf { it.dropped })
         }
-        return AnalysisResult(raw, effective, quality, if (approximate)
+        return AnalysisResult(raw, effective, quality, if(data.session.origin=="synthetic")
+            "Synthetic sensor clocks and sample timestamps; coverage describes generated input, not a measured Bluetooth connection."
+            else if (approximate)
             "Some flash timing is estimated from the phone's start/recovery time. Adjust offsets against video."
             else "Boot clocks aligned to observed live samples; BLE timing is approximate. Adjust offsets against video.")
     }

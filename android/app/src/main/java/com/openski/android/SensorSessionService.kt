@@ -16,6 +16,8 @@ class SensorSessionService : Service() {
         fun onRecordingChanged(sessionId: String?, message: String)
         fun onSensorInfo(side: String, message: String) {}
         fun onHistoryChanged() {}
+        fun onBootOrientation(side: String, value: BootRoll?) {}
+        fun onTestFeedback(message: String) {}
     }
     inner class LocalBinder : Binder() { val service: SensorSessionService get() = this@SensorSessionService }
     private val binder = LocalBinder()
@@ -32,6 +34,8 @@ class SensorSessionService : Service() {
     private val recorderStates = mutableMapOf<String, RecorderStatus>()
     private val recorderSupported = mutableMapOf<String, Boolean>()
     private val batteryLevels = mutableMapOf<String, Int?>()
+    private val batteryTimes = mutableMapOf<String, Long>()
+    private val rssiLevels = mutableMapOf<String, Pair<Int,Long>>()
     private val lastSampleTime = mutableMapOf<String, Long>()
     private val flashRetries = mutableMapOf<String, Int>()
     private val captures = mutableMapOf<String, SensorCapture>()
@@ -44,6 +48,8 @@ class SensorSessionService : Service() {
     private val transferTimeouts = mutableMapOf<String, Runnable>()
     private var recordingWakeLock: PowerManager.WakeLock? = null
     private var activeSessionId: String? = null
+    private var testRecording=false
+    private var lastHealthPoll=0L
     private var listener: Listener? = null
     private var foreground = false
     private var lastNotificationMessage: String? = null
@@ -53,6 +59,11 @@ class SensorSessionService : Service() {
     private var recoveryPaused = false
     private var lastInfoPoll = 0L
     private var lastStorageCheck = 0L
+    private val orientationTrackers=mutableMapOf<String,BootOrientation.Tracker>()
+    private val liveClocks=mutableMapOf<String,LiveSensorClock>()
+    private val movementTrackers=mutableMapOf<String,DrySkiAnalysis.Tracker>()
+    private val latestOrientation=mutableMapOf<String,BootRoll>()
+    private var guidedTrial: GuidedTrial?=null
 
     override fun onBind(intent: Intent?): IBinder = binder
 
@@ -60,6 +71,11 @@ class SensorSessionService : Service() {
         super.onCreate()
         createNotificationChannel()
         activeSessionId = store.latestOpenSessionId()
+        testRecording=activeSessionId?.let { store.getSession(it)?.testSession } ?: false
+        activeSessionId?.let { id -> store.getSession(id)?.let { session -> store.calibrations(session).forEach { c ->
+            orientationTrackers[c.side]=BootOrientation.Tracker(c)
+            movementTrackers[c.side]=DrySkiAnalysis.Tracker()
+        } } }
         mainHandler.post(tick)
     }
 
@@ -67,7 +83,7 @@ class SensorSessionService : Service() {
         try {
             if (activeSessionId != null) { ensureForeground(); acquireWakeLock() }
             when (intent?.action) {
-                ACTION_START_RECORDING -> startRecording()
+                ACTION_START_RECORDING -> startRecording(intent.getBooleanExtra("test_session",false))
                 ACTION_STOP_RECORDING -> stopRecording()
                 ACTION_RECOVER -> recoverFlash()
                 ACTION_PAUSE_RECOVERY -> if (activeSessionId == null) pauseRecovery()
@@ -90,6 +106,8 @@ class SensorSessionService : Service() {
         if (value != null) {
             sensorStatuses.forEach { (side, message) -> value.onSensorStatus(side, message) }
             sensorInfo.forEach { (side, message) -> value.onSensorInfo(side, message) }
+            latestOrientation.forEach { (side,point)->value.onBootOrientation(side,point) }
+            guidedTrial?.let { value.onTestFeedback(it.description()) }
             value.onRecordingChanged(activeSessionId, if (activeSessionId != null) "Recording continues in background"
                 else if (store.hasPendingRecovery()) "Live recording saved · sensor recovery pending" else "Ready to record")
         }
@@ -166,6 +184,8 @@ class SensorSessionService : Service() {
         recorderStates.remove(side)
         lastSampleTime.remove(side)
         batteryLevels.remove(side)
+        batteryTimes.remove(side)
+        rssiLevels.remove(side)
         val remote = supplied ?: try {
             (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter?.getRemoteDevice(address)
         } catch (_: Exception) { null }
@@ -177,7 +197,9 @@ class SensorSessionService : Service() {
                 lastSampleTime[side] = SystemClock.elapsedRealtime()
                 if (wasStale) reportStatus(side, "Live stream ready")
                 listener?.onSensorSample(side, sample)
-                activeSessionId?.let { id -> pendingSamples.add(Pending(id, RecordedSample(side, System.currentTimeMillis(), sample))) }
+                val receivedAt=System.currentTimeMillis()
+                activeSessionId?.let { id -> pendingSamples.add(Pending(id, RecordedSample(side, receivedAt, sample))) }
+                acceptOrientation(side,receivedAt,sample)
             },
             onReady = { supported ->
                 reconnectAttempts[side] = 0
@@ -188,8 +210,13 @@ class SensorSessionService : Service() {
             },
             onRecorder = { status -> handleRecorder(side, status) },
             onChunk = { chunk -> handleChunk(side, chunk) },
-            onBattery = { level -> batteryLevels[side] = level; updateInfo(side) },
+            onBattery = { level -> batteryLevels[side] = level
+                if(level==null) batteryTimes.remove(side) else batteryTimes[side]=System.currentTimeMillis()
+                updateInfo(side) },
+            onRssi = { value -> rssiLevels[side]=value to System.currentTimeMillis(); updateInfo(side) },
             onDisconnected = {
+                latestOrientation.remove(side)
+                listener?.onBootOrientation(side,null)
                 invalidate(side)
                 clients.remove(side)
                 if (activeSessionId != null) logEvent(activeSessionId!!, "$side boot disconnected; live samples unavailable until reconnect")
@@ -447,7 +474,91 @@ class SensorSessionService : Service() {
         stopSelf()
     }
 
-    private fun startRecording() {
+    fun isTestRecording() = activeSessionId!=null && testRecording
+
+    fun startGuidedTrial(pace: String): String {
+        if(!isTestRecording()) return "Start a test recording first"
+        val side=listOf("L","R").firstOrNull { latestOrientation[it]?.let { p ->
+            System.currentTimeMillis()-p.timeMs<1000 && kotlin.math.abs(p.degrees)<3
+        }==true } ?: return "Calibrate a boot, return to neutral and wait for live orientation"
+        val now=System.currentTimeMillis()
+        guidedTrial=GuidedTrial(side,pace,now.toDouble())
+        movementTrackers.keys.toList().forEach { movementTrackers[it]=DrySkiAnalysis.Tracker() }
+        markTest("START_TEST",now,"Guided $pace set: 20 movements, counted from $side boot")
+        return guidedTrial!!.description()
+    }
+
+    private fun acceptOrientation(side: String, receivedAt: Long, sample: SensorSample) {
+        val time=liveClocks.getOrPut(side) { LiveSensorClock() }.timestamp(sample.timestampMs,receivedAt)
+        val tracker=orientationTrackers[side] ?: return
+        val roll=tracker.accept(TimelinePoint(side,time,sample,"live"))
+        if(roll==null) { latestOrientation.remove(side); listener?.onBootOrientation(side,null); return }
+        latestOrientation[side]=roll
+        listener?.onBootOrientation(side,roll)
+        val movement=movementTrackers.getOrPut(side) { DrySkiAnalysis.Tracker() }.accept(roll) ?: return
+        val trial=guidedTrial
+        if(trial!=null && trial.side==side && trial.accept(movement)) {
+            listener?.onTestFeedback(trial.description())
+            if(trial.complete) markTest("PAUSE",receivedAt,"Guided ${trial.pace} set complete")
+        } else if(trial==null) listener?.onTestFeedback("$side completed movement · ${String.format(java.util.Locale.US,"%.1f",movement.peakRoll)}° peak boot roll")
+    }
+
+    fun markTest(label: String, timeMs: Long=System.currentTimeMillis(), note: String=""): Boolean {
+        val id=activeSessionId ?: return false
+        if(!testRecording) return false
+        if(label=="PAUSE") guidedTrial=null
+        io.execute { try { store.addMarker(id,timeMs,label,note=note) }
+            catch(error: Exception) { mainHandler.post { if(!destroyed) storageError(error) } } }
+        return true
+    }
+
+    fun calibrateTest(side: String, axis: Int, sign: Int, completed: (String)->Unit) {
+        val id=activeSessionId
+        if(id==null || !testRecording) { completed("Start a test session first"); return }
+        flush()
+        io.execute {
+            try {
+                val data=store.loadData(id) ?: error("Session unavailable")
+                val timeline=SessionAnalysis.build(data).timeline
+                val end=timeline.filter { it.side==side }.maxOfOrNull { it.timeMs } ?: error("No samples for this boot")
+                if(System.currentTimeMillis()-end>2000) error("Boot stream is stale")
+                val calibration=BootOrientation.calibrate(timeline,side,end-2000,axis,sign)
+                    ?: error("Hold the boot neutral and still for two seconds; check the forward axis")
+                store.saveCalibration(id,calibration)
+                mainHandler.post { if(!destroyed && activeSessionId==id) {
+                    orientationTrackers[side]=BootOrientation.Tracker(calibration.copy(timeMs=System.currentTimeMillis().toDouble()))
+                    movementTrackers[side]=DrySkiAnalysis.Tracker()
+                    completed("$side boot calibrated · ready for movements")
+                } }
+            } catch(error: Exception) { mainHandler.post { if(!destroyed) completed(error.message ?: "Calibration failed") } }
+        }
+    }
+
+    fun learnTestMounting(side: String, completed: (String)->Unit) {
+        val id=activeSessionId
+        if(id==null || !testRecording) { completed("Start a test session first"); return }
+        flush()
+        io.execute {
+            try {
+                val data=store.loadData(id) ?: error("Session unavailable")
+                val calibration=store.calibrations(data.session).firstOrNull { it.side==side } ?: error("Calibrate neutral first")
+                val timeline=SessionAnalysis.build(data).timeline
+                val end=timeline.filter { it.side==side }.maxOfOrNull { it.timeMs } ?: error("No boot samples")
+                if(System.currentTimeMillis()-end>2000) error("Boot stream is stale")
+                val refined=BootOrientation.learnForward(timeline,calibration,end-5000)
+                    ?: error("Need five seconds of pure side-to-side roll with little pitch/yaw; check the toe direction hint")
+                store.saveCalibration(id,refined)
+                mainHandler.post { if(!destroyed && activeSessionId==id) {
+                    // The gesture ends in neutral before live tracking is restarted.
+                    orientationTrackers[side]=BootOrientation.Tracker(refined.copy(timeMs=System.currentTimeMillis().toDouble()),awaitRest=true)
+                    movementTrackers[side]=DrySkiAnalysis.Tracker()
+                    completed("$side forward axis learned · return neutral and hold for two seconds")
+                } }
+            } catch(error: Exception) { mainHandler.post { if(!destroyed) completed(error.message ?: "Mounting calibration failed") } }
+        }
+    }
+
+    private fun startRecording(testSession: Boolean=false) {
         if (activeSessionId != null) { ensureForeground(); return }
         recoveryPaused = false
         ensureForeground() // Meet the foreground-service deadline before opening the database.
@@ -461,10 +572,12 @@ class SensorSessionService : Service() {
         try {
             storageFailed = false
             val id = UUID.randomUUID().toString()
-            store.createSession(id, System.currentTimeMillis())
+            store.createSession(id, System.currentTimeMillis(),testSession)
+            testRecording=testSession
+            orientationTrackers.clear(); movementTrackers.clear(); latestOrientation.clear(); guidedTrial=null
             activeSessionId = id
             acquireWakeLock()
-            listener?.onRecordingChanged(id, "Recording · continues with screen off")
+            listener?.onRecordingChanged(id, if(testSession) "Test recording · hold neutral for two seconds, then calibrate" else "Recording · continues with screen off")
             clients.keys.toList().forEach { side -> if (recorderSupported[side] == true) requestInfo(side) }
         } catch (error: Exception) { storageError(error) }
     }
@@ -472,6 +585,7 @@ class SensorSessionService : Service() {
     private fun stopRecording() {
         val id = activeSessionId ?: return
         activeSessionId = null
+        guidedTrial=null
         flush()
         io.execute {
             try {
@@ -525,6 +639,18 @@ class SensorSessionService : Service() {
         override fun run() {
             flush()
             val now = SystemClock.elapsedRealtime()
+            if(now-lastHealthPoll>=5000) {
+                lastHealthPoll=now
+                clients.values.forEach { it.pollRssi() }
+                if(testRecording) activeSessionId?.let { id ->
+                    val snapshots=clients.filter { it.value.isReady }.keys.map { side ->
+                        SensorHealth(side,System.currentTimeMillis(),batteryLevels[side],batteryTimes[side],
+                            rssiLevels[side]?.first,rssiLevels[side]?.second)
+                    }
+                    io.execute { try { snapshots.forEach { store.saveHealth(id,it) } }
+                        catch(error: Exception) { mainHandler.post { if(!destroyed) storageError(error) } } }
+                }
+            }
             clients.keys.toList().forEach { side ->
                 if (clients[side]?.isReady == true && now - (lastSampleTime[side] ?: now) > 3_000 &&
                     transfers[side] == null) {
@@ -561,7 +687,7 @@ class SensorSessionService : Service() {
                     (if (state.recording) " · recording" else "") +
                     (if (state.full) " · full" else "") +
                     (if (state.storageError) " · storage error" else "")
-        sensorInfo[side] = "$battery\n$flash"
+        sensorInfo[side] = "$battery · ${rssiLevels[side]?.first?.let { "$it dBm" } ?: "RSSI not reported"}\n$flash"
         listener?.onSensorInfo(side, sensorInfo[side]!!)
     }
 

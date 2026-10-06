@@ -16,11 +16,12 @@ class BleSensorClient(
     private val onChunk: (FlashChunk?) -> Unit = {},
     private val onBattery: (Int?) -> Unit = {},
     private val onDisconnected: () -> Unit = {},
+    private val onRssi: (Int) -> Unit = {},
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private var gatt: BluetoothGatt? = null
     private data class Operation(val start: (BluetoothGatt) -> Boolean, val optional: Boolean = false,
-        val done: () -> Unit = {})
+        val done: () -> Unit = {}, val rssi: Boolean=false)
     private val queue = ArrayDeque<Operation>()
     private var current: Operation? = null
     private var ready = false
@@ -94,6 +95,11 @@ class BleSensorClient(
         return true
     }
 
+    fun pollRssi() {
+        if(!ready || current!=null || queue.isNotEmpty()) return
+        enqueue(Operation({ try { it.readRemoteRssi() } catch(_: SecurityException) { false } },optional=true,rssi=true))
+    }
+
     private fun subscribe(connection: BluetoothGatt, characteristic: BluetoothGattCharacteristic, done: () -> Unit = {}) {
         val descriptor = characteristic.getDescriptor(CCCD_UUID)
         val enabled = try { connection.setCharacteristicNotification(characteristic, true) } catch (_: SecurityException) { false }
@@ -121,6 +127,10 @@ class BleSensorClient(
     }
 
     private val callback = object : BluetoothGattCallback() {
+        override fun onReadRemoteRssi(g: BluetoothGatt, rssi: Int, status: Int) = dispatch(g) {
+            if(status==BluetoothGatt.GATT_SUCCESS) onRssi(rssi)
+            if(current?.rssi==true) finish(status==BluetoothGatt.GATT_SUCCESS)
+        }
         override fun onConnectionStateChange(g: BluetoothGatt, status: Int, state: Int) = dispatch(g) {
             if (status != BluetoothGatt.GATT_SUCCESS) { fail("Connection failed ($status)"); return@dispatch }
             if (state == BluetoothProfile.STATE_CONNECTED) {

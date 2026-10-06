@@ -43,6 +43,7 @@ class MainActivity : Activity() {
     private lateinit var rightPanel: SensorPanel
     private lateinit var recordButton: Button
     private lateinit var recordingStatus: TextView
+    private lateinit var recordingHeadline: TextView
     private lateinit var historyLayout: LinearLayout
     private lateinit var sessionStore: LocalSessionStore
     private val discovered = ConcurrentHashMap<String, ScanResult>()
@@ -56,6 +57,11 @@ class MainActivity : Activity() {
     private val io = Executors.newSingleThreadExecutor()
     @Volatile private var activeSessionId: String? = null
     private var pendingVideoSessionId: String? = null
+    private var pendingTestSession=false
+    private val testButtons=mutableListOf<Button>()
+    private lateinit var liveOrientationLabel: TextView
+    private lateinit var testFeedback: TextView
+    private val liveOrientation=mutableMapOf<String,BootRoll>()
 
     private val serviceConnection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -101,6 +107,10 @@ class MainActivity : Activity() {
         override fun onSensorSample(side: String, sample: SensorSample) {
             if (side == "L") latestLeft = sample else latestRight = sample
         }
+        override fun onBootOrientation(side: String, value: BootRoll?) {
+            if(value==null) liveOrientation.remove(side) else liveOrientation[side]=value
+        }
+        override fun onTestFeedback(message: String) = runOnUiThread { testFeedback.text=message }
         override fun onRecordingChanged(sessionId: String?, message: String) = runOnUiThread {
             activeSessionId = sessionId
             renderRecordingState(sessionId, message)
@@ -112,15 +122,20 @@ class MainActivity : Activity() {
         override fun run() {
             latestLeft?.let(leftPanel::render)
             latestRight?.let(rightPanel::render)
+            liveOrientationLabel.text=listOf("L","R").joinToString("\n") { side ->
+                val point=liveOrientation[side]
+                if(point==null || System.currentTimeMillis()-point.timeMs>1000) "$side: calibrate to show live boot orientation"
+                else "$side roll ${String.format(Locale.US,"%.1f",point.degrees)}° · pitch ${String.format(Locale.US,"%.1f",point.pitchDegrees)}° · relative yaw ${String.format(Locale.US,"%.1f",point.yawDegrees)}°"
+            }
             mainHandler.postDelayed(this, 200L)
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.statusBarColor = color(CANVAS)
-        window.navigationBarColor = color(CANVAS)
-        window.decorView.systemUiVisibility = 0
+        pendingTestSession=savedInstanceState?.getBoolean("pending_test_session") ?: false
+        selectedTab=savedInstanceState?.getInt("selected_tab") ?: 0
+        SkiUi.configureWindow(this)
         sessionStore = LocalSessionStore(this)
         buildScreen()
         mainHandler.post(refreshReadings)
@@ -128,124 +143,193 @@ class MainActivity : Activity() {
         if (!hasBluetoothPermissions()) requestBluetoothPermissions()
     }
 
-    private fun buildScreen() {
-        val page = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(20), dp(24), dp(20), dp(28))
-            setBackgroundColor(color(CANVAS))
-        }
-
-        val brandRow = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
-        val mark = TextView(this).apply {
-            text = "O"
-            textSize = 20f
-            setTextColor(color(CANVAS))
-            gravity = Gravity.CENTER
-            typeface = Typeface.DEFAULT_BOLD
-            background = rounded(ACCENT, 14)
-            layoutParams = LinearLayout.LayoutParams(dp(42), dp(42))
-        }
-        brandRow.addView(mark)
-        val brandText = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(12), 0, 0, 0)
-        }
-        brandText.addView(label("OPENSKI  /  FIELD TEST", 11f, MUTED, true))
-        brandText.addView(label("Motion dashboard", 25f, WHITE, true).apply {
-            setPadding(0, dp(2), 0, 0)
-        })
-        brandRow.addView(brandText)
-        page.addView(brandRow)
-
-        page.addView(label(
-            "Live boot motion, flash recovery and session review.",
-            14f, SUBTLE,
-        ).apply { setPadding(0, dp(12), 0, dp(20)) })
-
-        scanButton = Button(this).apply {
-            text = "Search for sensors"
-            textSize = 15f
-            typeface = Typeface.DEFAULT_BOLD
-            isAllCaps = false
-            setTextColor(color(CANVAS))
-            background = rounded(ACCENT, 16)
-            minHeight = dp(54)
-            setOnClickListener { ensurePermissionAndScan() }
-        }
-        page.addView(scanButton, LinearLayout.LayoutParams(-1, dp(54)))
-        scanHint = label("Scans for nearby OpenSki boot sensors", 12f, MUTED).apply {
-            gravity = Gravity.CENTER
-            setPadding(0, dp(7), 0, dp(18))
-        }
-        page.addView(scanHint)
-
-        page.addView(sectionHeading("NEARBY SENSORS", "Saved sensors reconnect to their boot automatically"))
-        page.addView(Button(this).apply {
-            text = "Manage saved sensors"; isAllCaps = false
-            setOnClickListener { manageSensors() }
-        }, bottomMargin(dp(8)))
-        val devicesCard = cardContainer().apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(13), dp(16), dp(13))
-        }
-        emptyDevices = label("No sensors found. Start a scan with the boot sensors powered on.", 13f, MUTED)
-        devicesCard.addView(emptyDevices)
-        devicesLayout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        devicesCard.addView(devicesLayout)
-        page.addView(devicesCard, bottomMargin(dp(18)))
-
-        page.addView(sectionHeading("BOOT STREAMS", "Live samples arrive at up to 50 Hz"))
-        leftPanel = SensorPanel("LEFT BOOT", "L", ACCENT)
-        rightPanel = SensorPanel("RIGHT BOOT", "R", SKY)
-        page.addView(leftPanel.view, bottomMargin(dp(12)))
-        page.addView(rightPanel.view, bottomMargin(dp(18)))
-
-        page.addView(sectionHeading("SKI SESSION", "Record both boot streams, even with the screen off"))
-        val sessionCard = cardContainer().apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(14), dp(16), dp(14))
-        }
-        recordingStatus = label("Ready to record when sensors are connected", 13f, SUBTLE)
-        sessionCard.addView(recordingStatus)
-        recordButton = Button(this).apply {
-            text = "Start recording"
-            textSize = 14f
-            typeface = Typeface.DEFAULT_BOLD
-            isAllCaps = false
-            setTextColor(color(CANVAS))
-            background = rounded(ACCENT, 14)
-            minHeight = dp(50)
-            setOnClickListener { if (activeSessionId == null) startSession() else stopSession() }
-        }
-        sessionCard.addView(recordButton, LinearLayout.LayoutParams(-1, dp(50)).apply { topMargin = dp(12) })
-        sessionCard.addView(Button(this).apply {
-            text = "Recover sensor flash"; isAllCaps = false
-            setOnClickListener { sensorService?.recoverFlash() ?: run { recordingStatus.text = "Wait for the sensor service to connect" } }
-        })
-        sessionCard.addView(label("Phone free space: ${android.os.StatFs(filesDir.absolutePath).availableBytes / (1024 * 1024)} MB", 12f, MUTED))
-        page.addView(sessionCard, bottomMargin(dp(18)))
-
-        page.addView(sectionHeading("SESSION HISTORY", "Stored locally on this phone"))
-        historyLayout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        page.addView(historyLayout)
-
-        val footer = cardContainer().apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(15), dp(13), dp(15), dp(13))
-        }
-        footer.addView(label("LIVE TELEMETRY  ·  RAW IMU DATA", 11f, ACCENT, true))
-        footer.addView(label(
-            "Keep sensors powered after stopping while flash is recovered. Session details include quality, graphs, video alignment, export and experimental turn candidates.",
-            12f, SUBTLE,
-        ).apply { setPadding(0, dp(6), 0, 0) })
-        page.addView(footer)
-
-        setContentView(ScrollView(this).apply {
-            isFillViewport = true
-            setBackgroundColor(color(CANVAS))
-            addView(page)
-        })
+    override fun onSaveInstanceState(state: Bundle) {
+        state.putBoolean("pending_test_session",pendingTestSession)
+        state.putInt("selected_tab", selectedTab)
+        super.onSaveInstanceState(state)
     }
+
+    private var selectedTab = 0
+    private val tabButtons = mutableListOf<Button>()
+    private val tabPages = mutableListOf<ScrollView>()
+
+    private fun buildScreen() {
+        val compact=resources.configuration.orientation==android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        val root = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(color(CANVAS))
+        }
+        val identity = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(18), dp(20), dp(14))
+        }
+        identity.addView(label("OPENSKI", if(compact) 20f else 12f, ACCENT, true))
+        if(!compact) {
+            identity.addView(label("Find your rhythm.", 28f, WHITE, true).apply { setPadding(0, dp(4), 0, dp(4)) })
+            identity.addView(label("Record motion. Understand your turns.", 14f, SUBTLE))
+        }
+        root.addView(identity)
+        val navigation = LinearLayout(this).apply { setPadding(dp(16), 0, dp(16), dp(12)) }
+        listOf("Record", "Sessions", "Test lab").forEachIndexed { index, title ->
+            val button = SkiUi.button(this, title, SkiUi.ButtonStyle.QUIET) { selectTab(index) }
+            tabButtons.add(button)
+            navigation.addView(button, LinearLayout.LayoutParams(0, -2, 1f).apply {
+                marginStart = dp(4); marginEnd = dp(4)
+            })
+        }
+        root.addView(navigation)
+        fun page(): LinearLayout {
+            val content = LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(dp(20), dp(6), dp(20), dp(24))
+            }
+            val scroll = ScrollView(this).apply { isFillViewport = true; addView(content) }
+            tabPages.add(scroll)
+            root.addView(scroll, LinearLayout.LayoutParams(-1, 0, 1f))
+            return content
+        }
+        val record = page()
+        val sessions = page()
+        val lab = page()
+
+        record.addView(sectionHeading("YOUR NEXT SESSION", "Boot sensors reconnect automatically"))
+        val sessionCard = SkiUi.card(this)
+        recordingHeadline=label("Ready when you are", 23f, WHITE, true)
+        sessionCard.addView(recordingHeadline)
+        recordingStatus = label("Connect a boot sensor to start recording.", 14f, SUBTLE).apply {
+            setPadding(0, dp(8), 0, dp(16))
+        }
+        sessionCard.addView(recordingStatus)
+        recordButton = SkiUi.button(this, "Start recording", SkiUi.ButtonStyle.PRIMARY) {
+            if (activeSessionId == null) startSession() else stopSession()
+        }
+        sessionCard.addView(recordButton, LinearLayout.LayoutParams(-1, -2))
+        sessionCard.addView(label("Records both boots, including when the screen is off.", 12f, MUTED).apply {
+            setPadding(0, dp(10), 0, 0)
+        })
+        record.addView(sessionCard, bottomMargin(dp(20)))
+        record.addView(SkiUi.button(this, "No sensors yet? Try a demo", SkiUi.ButtonStyle.QUIET) { selectTab(2) }, bottomMargin(dp(16)))
+        record.addView(sectionHeading("YOUR BOOTS", "Connection and live motion"))
+        leftPanel = SensorPanel("Left boot", "L", ACCENT)
+        rightPanel = SensorPanel("Right boot", "R", SKY)
+        record.addView(leftPanel.view, bottomMargin(dp(12)))
+        record.addView(rightPanel.view, bottomMargin(dp(16)))
+        liveOrientationLabel = label("", 13f, SUBTLE)
+        val orientationCard = SkiUi.card(this)
+        orientationCard.addView(label("CALIBRATED ORIENTATION", 11f, ACCENT, true))
+        orientationCard.addView(liveOrientationLabel.apply { setPadding(0, dp(8), 0, 0) })
+        record.addView(orientationCard, bottomMargin(dp(16)))
+
+        val setup = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        scanButton = SkiUi.button(this, "Search for sensors", SkiUi.ButtonStyle.PRIMARY) { ensurePermissionAndScan() }
+        setup.addView(scanButton, LinearLayout.LayoutParams(-1, -2))
+        scanHint = label("Power on your boot sensors, then search nearby.", 13f, SUBTLE).apply {
+            setPadding(0, dp(8), 0, dp(12))
+        }
+        setup.addView(scanHint)
+        setup.addView(SkiUi.button(this, "Manage saved sensors") { manageSensors() })
+        emptyDevices = label("Nearby sensors will appear here. Assign each to its boot.", 13f, MUTED)
+        setup.addView(emptyDevices, bottomMargin(dp(12)))
+        devicesLayout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        setup.addView(devicesLayout)
+        setup.addView(SkiUi.button(this, "Recover sensor flash") {
+            sensorService?.recoverFlash() ?: run { recordingStatus.text = "Wait for the sensor service to connect" }
+        })
+        setup.addView(label("Keep sensors powered on until recovery finishes.", 12f, MUTED).apply { setPadding(0, dp(8), 0, 0) })
+        record.addView(disclosure("Sensor setup & recovery", setup, true), bottomMargin(dp(16)))
+        record.addView(SkiUi.button(this, "No hardware yet? Explore Test lab", SkiUi.ButtonStyle.QUIET) { selectTab(2) })
+
+        sessions.addView(sectionHeading("YOUR SESSIONS", "Saved on this phone · tap a session to review"))
+        historyLayout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        sessions.addView(historyLayout)
+
+        lab.addView(sectionHeading("TEST LAB", "Build confidence before the first snow test"))
+        val demoCard = SkiUi.card(this)
+        demoCard.addView(label("Try OpenSki today", 23f, WHITE, true))
+        demoCard.addView(label("Explore two simulated boots, movement profiles and session review. No sensors required.", 14f, SUBTLE).apply {
+            setPadding(0, dp(8), 0, dp(14))
+        })
+        lateinit var demoButton: Button
+        demoButton = SkiUi.button(this, "Explore a demo · no sensors needed", SkiUi.ButtonStyle.PRIMARY) {
+            val button = demoButton
+            button.isEnabled = false
+            io.execute {
+                try {
+                    val demoId = sessionStore.createDemo()
+                    runOnUiThread { button.isEnabled = true; refreshHistory(); showSession(demoId) }
+                } catch (error: Exception) {
+                    runOnUiThread { button.isEnabled = true; testFeedback.text = "Demo failed: ${error.message}" }
+                }
+            }
+        }
+        demoCard.addView(demoButton, LinearLayout.LayoutParams(-1, -2))
+        lab.addView(demoCard, bottomMargin(dp(20)))
+
+        val testCard = SkiUi.card(this)
+        testCard.addView(label("Dry ski test", 22f, WHITE, true))
+        testCard.addView(label("1  Start a test\n2  Hold still and calibrate each boot\n3  Record 20 controlled movements", 14f, SUBTLE).apply {
+            setPadding(0, dp(10), 0, dp(16))
+        })
+        testFeedback = label("Calibrate, then choose a guided set.", 14f, ACCENT)
+        testCard.addView(testFeedback, bottomMargin(dp(12)))
+        testCard.addView(SkiUi.button(this, "New test", SkiUi.ButtonStyle.PRIMARY) {
+            if (activeSessionId == null) startSession(true)
+            else testFeedback.text = "Stop the current recording before starting a test."
+        })
+        testCard.addView(SkiUi.button(this, "Finish current test") {
+            if (activeSessionId != null) stopSession() else testFeedback.text = "Start a test to record movements."
+        })
+        fun testButton(text: String, action: () -> Unit): Button = SkiUi.button(this, text) { action() }.apply {
+            isEnabled = false; testButtons.add(this)
+        }
+        testCard.addView(testButton("Calibrate boot") { calibrateTestBoot() })
+        testCard.addView(testButton("Learn mounting from a roll gesture") { calibrateTestBoot(true) })
+        testCard.addView(label("GUIDED SET · 20 MOVEMENTS", 11f, MUTED, true).apply { setPadding(0, dp(16), 0, dp(6)) })
+        listOf("Slow", "Medium", "Brisk").forEach { pace ->
+            testCard.addView(testButton("20 ${pace.lowercase()} movements") {
+                testFeedback.text = sensorService?.startGuidedTrial(pace) ?: "Wait for the sensor service."
+            })
+        }
+        lab.addView(testCard, bottomMargin(dp(16)))
+        val markers = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        markers.addView(label("Observer labels use your tap time. Film the test and mark SYNC for video alignment.", 13f, SUBTLE), bottomMargin(dp(12)))
+        listOf("LEFT", "RIGHT", "TRANSITION", "SYNC", "START_TEST", "PAUSE", "EVENT").forEach { marker ->
+            markers.addView(testButton(marker.replace('_', ' ')) {
+                if (sensorService?.markTest(marker, System.currentTimeMillis()) == true)
+                    testFeedback.text = "Marked ${marker.replace('_', ' ')}"
+            })
+        }
+        lab.addView(disclosure("Observer labels & sync markers", markers), bottomMargin(dp(16)))
+        lab.addView(label("Dry ski movements help validate the software. Real edge angles and carving still need snow validation.", 12f, MUTED))
+        SkiUi.applyInsets(root)
+        setContentView(root)
+        selectTab(selectedTab)
+    }
+
+    private fun selectTab(index: Int) {
+        selectedTab = index.coerceIn(0, 2)
+        tabPages.forEachIndexed { i, page -> page.visibility = if (i == selectedTab) View.VISIBLE else View.GONE }
+        tabButtons.forEachIndexed { i, button ->
+            SkiUi.styleButton(button, if (i == selectedTab) SkiUi.ButtonStyle.PRIMARY else SkiUi.ButtonStyle.QUIET)
+            button.isSelected = i == selectedTab
+            button.contentDescription = "${button.text}${if (i == selectedTab) ", selected" else ""}"
+        }
+    }
+
+    private fun disclosure(title: String, content: View, expanded: Boolean = false, inset: Boolean=false): LinearLayout =
+        SkiUi.card(this,if(inset) 0 else 18).apply {
+            if(inset) background=null
+            val toggle = SkiUi.button(this@MainActivity, "", SkiUi.ButtonStyle.QUIET) {}
+            fun update() { toggle.text = "${if (content.visibility == View.VISIBLE) "−" else "+"}  $title" }
+            content.visibility = if (expanded) View.VISIBLE else View.GONE
+            toggle.setOnClickListener {
+                content.visibility = if (content.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+                update()
+            }
+            update()
+            addView(toggle, LinearLayout.LayoutParams(-1, -2))
+            addView(content)
+        }
 
     private fun sectionHeading(title: String, subtitle: String): View {
         val group = LinearLayout(this).apply {
@@ -306,15 +390,17 @@ class MainActivity : Activity() {
 
     private fun sideButton(textValue: String, tint: Int, action: () -> Unit): TextView = TextView(this).apply {
         text = textValue
-        textSize = 10f
+        textSize = 12f
         typeface = Typeface.DEFAULT_BOLD
         gravity = Gravity.CENTER
         setTextColor(color(tint))
         background = rounded(BUTTON_SURFACE, 10, tint)
         setPadding(dp(10), dp(9), dp(10), dp(9))
+        minHeight = dp(48)
+        minWidth = dp(48)
         isClickable = true
         isFocusable = true
-        contentDescription = "Assign sensor to $textValue boot"
+        contentDescription = if (textValue == "RECONNECT") "Reconnect saved sensor" else "Assign sensor to $textValue boot"
         setOnClickListener { action() }
     }
 
@@ -358,9 +444,11 @@ class MainActivity : Activity() {
         if (!hasBluetoothPermissions()) requestBluetoothPermissions() else startScan()
     }
 
-    private fun startSession() {
+    private fun startSession(testSession: Boolean=false) {
+        pendingTestSession=testSession
         if (leftAddress == null && rightAddress == null) {
             recordingStatus.text = "Connect at least one boot sensor before recording"
+            if (testSession) testFeedback.text = "Connect a boot sensor in Record → Sensor setup & recovery, or explore the demo above."
             return
         }
         if (Build.VERSION.SDK_INT >= 33 && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
@@ -382,6 +470,7 @@ class MainActivity : Activity() {
 
     private fun requestRecordingService(action: String) {
         val intent = Intent(this, SensorSessionService::class.java).setAction(action)
+        if(action==SensorSessionService.ACTION_START_RECORDING) intent.putExtra("test_session",pendingTestSession)
         try {
             if (action == SensorSessionService.ACTION_START_RECORDING || action == SensorSessionService.ACTION_RESUME_RECORDING)
                 startForegroundService(intent) else startService(intent)
@@ -391,9 +480,13 @@ class MainActivity : Activity() {
     }
 
     private fun renderRecordingState(sessionId: String?, message: String) {
+        recordingHeadline.text=if(sessionId==null) "Ready when you are" else "Recording your session"
         recordButton.text = if (sessionId == null) "Start recording" else "Stop recording"
-        recordButton.background = rounded(if (sessionId == null) ACCENT else 0xFFFF806E.toInt(), 14)
-        recordingStatus.text = message
+        SkiUi.styleButton(recordButton, if (sessionId == null) SkiUi.ButtonStyle.PRIMARY else SkiUi.ButtonStyle.DANGER)
+        recordingStatus.text = if(sessionId==null && message=="Ready to record" && latestLeft==null && latestRight==null)
+            "Connect a boot sensor to start recording." else message
+        if (selectedTab == 2 && pendingTestSession) testFeedback.text = message
+        testButtons.forEach { it.isEnabled=sessionId!=null && sensorService?.isTestRecording()==true }
     }
 
     private fun refreshHistory() {
@@ -406,7 +499,10 @@ class MainActivity : Activity() {
                 if (sessions.isEmpty()) {
                     historyLayout.addView(cardContainer().apply {
                         setPadding(dp(15), dp(14), dp(15), dp(14))
-                        addView(label("No sessions yet. Start recording with a sensor connected.", 13f, MUTED))
+                        orientation = LinearLayout.VERTICAL
+                        addView(label("Your first session starts here", 20f, WHITE, true))
+                        addView(label("Record with a boot sensor, or explore a demo in Test lab.", 14f, SUBTLE).apply { setPadding(0, dp(8), 0, dp(14)) })
+                        addView(SkiUi.button(this@MainActivity, "Explore Test lab") { selectTab(2) })
                     })
                 } else {
                     var day = ""
@@ -425,7 +521,7 @@ class MainActivity : Activity() {
         setPadding(dp(15), dp(13), dp(15), dp(13))
         isClickable = true
         isFocusable = true
-        addView(label(session.title.ifBlank { formatDate(session.startedAtMs) }, 14f, WHITE, true))
+        addView(label((if(session.origin=="synthetic") "DEMO · " else if(session.testSession) "TEST · " else "")+session.title.ifBlank { formatDate(session.startedAtMs) }, 14f, WHITE, true))
         val duration = ((session.endedAtMs ?: System.currentTimeMillis()) - session.startedAtMs).coerceAtLeast(0) / 1000
         addView(label("${duration / 60}m ${duration % 60}s  ·  L ${session.leftSamples}  ·  R ${session.rightSamples}", 12f, SUBTLE).apply {
             setPadding(0, dp(5), 0, 0)
@@ -434,6 +530,29 @@ class MainActivity : Activity() {
             setPadding(0, dp(7), 0, 0)
         })
         setOnClickListener { showSession(session.id) }
+    }
+
+    private fun calibrateTestBoot(learnMounting: Boolean=false) {
+        val service=sensorService ?: return
+        var side="L"; var axis=0; var sign=1
+        val form=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; setPadding(dp(16),dp(8),dp(16),dp(8)) }
+        fun selector(items: List<String>,selected: (Int)->Unit)=android.widget.Spinner(this).apply {
+            adapter=android.widget.ArrayAdapter(this@MainActivity,android.R.layout.simple_spinner_dropdown_item,items)
+            onItemSelectedListener=object: android.widget.AdapterView.OnItemSelectedListener {
+                override fun onItemSelected(parent: android.widget.AdapterView<*>?,view: View?,position: Int,row: Long) { selected(position) }
+                override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+            }
+        }
+        form.addView(selector(listOf("Left boot","Right boot")) { side=if(it==0) "L" else "R" })
+        if(!learnMounting) form.addView(selector(listOf("+X toward toe","−X toward toe","+Y toward toe","−Y toward toe","+Z toward toe","−Z toward toe")) {
+            axis=it/2; sign=if(it%2==0) 1 else -1
+        })
+        form.addView(label(if(learnMounting) "After neutral calibration, roll only left/right for five seconds. Avoid pitching or twisting. The saved toe-axis hint sets the sign." else "Hold the boot neutral and still for two seconds.",14f,SUBTLE))
+        android.app.AlertDialog.Builder(this).setTitle(if(learnMounting) "Learn forward axis" else "Hold boot neutral and still").setView(form)
+            .setNegativeButton("Cancel",null).setPositiveButton(if(learnMounting) "Learn last five seconds" else "Calibrate last two seconds") { _,_ ->
+                if(learnMounting) service.learnTestMounting(side) { recordingStatus.text=it; testFeedback.text=it }
+                else service.calibrateTest(side,axis,sign) { recordingStatus.text=it; testFeedback.text=it }
+            }.show()
     }
 
     private fun showSession(id: String) {
@@ -637,8 +756,8 @@ class MainActivity : Activity() {
             layoutParams = LinearLayout.LayoutParams(dp(8), dp(8))
         }
         private val status = label("Not connected", 12f, MUTED)
-        private val device = label("Assign a sensor from the list above", 11f, MUTED)
-        private val info = label("Battery not reported · checking flash", 11f, MUTED)
+        private val device = label("Set up in Sensor setup & recovery", 12f, MUTED)
+        private val info = label("Battery and flash status appear when connected", 12f, MUTED)
         private val sequence = label("WAITING FOR SAMPLE", 10f, MUTED, true)
         private val acceleration = axisValues("AX", "AY", "AZ", accent)
         private val gyroscope = axisValues("GX", "GY", "GZ", accent)
@@ -670,13 +789,15 @@ class MainActivity : Activity() {
             addView(header)
             addView(status.apply { setPadding(0, dp(8), 0, 0) })
             addView(info.apply { setPadding(0, dp(5), 0, 0) })
-            addView(sequence.apply { setPadding(0, dp(15), 0, dp(8)) })
-            addView(label("ACCELERATION  ·  m/s²", 10f, MUTED, true))
-            addView(acceleration.view, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
-            addView(label("ANGULAR VELOCITY  ·  rad/s", 10f, MUTED, true).apply {
+            val raw = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL }
+            raw.addView(sequence.apply { setPadding(0, dp(15), 0, dp(8)) })
+            raw.addView(label("ACCELERATION  ·  m/s²", 10f, MUTED, true))
+            raw.addView(acceleration.view, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
+            raw.addView(label("ANGULAR VELOCITY  ·  rad/s", 10f, MUTED, true).apply {
                 setPadding(0, dp(13), 0, 0)
             })
-            addView(gyroscope.view, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
+            raw.addView(gyroscope.view, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
+            addView(disclosure("Raw sensor readings", raw,inset=true),LinearLayout.LayoutParams(-1,-2).apply { topMargin=dp(10) })
         }
 
         fun setStatus(message: String) {
@@ -734,19 +855,10 @@ class MainActivity : Activity() {
     }
 
     private fun label(textValue: String, size: Float, tint: Int, bold: Boolean = false) =
-        TextView(this).apply {
-            text = textValue
-            textSize = size
-            setTextColor(color(tint))
-            if (bold) typeface = Typeface.DEFAULT_BOLD
-        }
+        SkiUi.label(this, textValue, size, tint, bold)
 
     private fun rounded(fill: Int, radiusDp: Int, stroke: Int? = null): GradientDrawable =
-        GradientDrawable().apply {
-            setColor(color(fill))
-            cornerRadius = dp(radiusDp).toFloat()
-            stroke?.let { setStroke(dp(1), color(it)) }
-        }
+        SkiUi.rounded(this, fill, radiusDp, stroke)
 
     private fun color(rgb: Int): Int = Color.rgb(Color.red(rgb), Color.green(rgb), Color.blue(rgb))
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
@@ -758,14 +870,14 @@ class MainActivity : Activity() {
         private const val REQUEST_VIDEO = 42
         private const val REQUEST_NOTIFICATIONS = 43
         private const val SCAN_DURATION_MS = 10_000L
-        private val CANVAS = 0xFF0B1116.toInt()
-        private val SURFACE = 0xFF141D24.toInt()
-        private val BUTTON_SURFACE = 0xFF1C2931.toInt()
-        private val BORDER = 0xFF26343D.toInt()
-        private val WHITE = 0xFFF1F5F5.toInt()
-        private val SUBTLE = 0xFFB3C0C6.toInt()
-        private val MUTED = 0xFF71818A.toInt()
-        private val ACCENT = 0xFFC7F36B.toInt()
-        private val SKY = 0xFF74D5E8.toInt()
+        private val CANVAS = SkiUi.CANVAS
+        private val SURFACE = SkiUi.SURFACE
+        private val BUTTON_SURFACE = SkiUi.SURFACE_RAISED
+        private val BORDER = SkiUi.BORDER
+        private val WHITE = SkiUi.TEXT
+        private val SUBTLE = SkiUi.SECONDARY
+        private val MUTED = SkiUi.MUTED
+        private val ACCENT = SkiUi.ACCENT
+        private val SKY = SkiUi.SKY
     }
 }
