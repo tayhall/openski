@@ -1,28 +1,22 @@
 package com.openski.android
 
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.Service
+import android.app.*
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
 import android.content.Intent
-import android.os.Binder
-import android.os.Build
-import android.os.Handler
-import android.os.IBinder
-import android.os.Looper
-import android.os.PowerManager
+import android.os.*
+import java.util.UUID
 import java.util.concurrent.Executors
 
-/** Owns BLE links and recording so Android can keep them alive with the screen off. */
+/** Owns live capture and validated flash recovery independently of the activity. */
 class SensorSessionService : Service() {
     interface Listener {
         fun onSensorStatus(side: String, message: String)
         fun onSensorSample(side: String, sample: SensorSample)
         fun onRecordingChanged(sessionId: String?, message: String)
+        fun onSensorInfo(side: String, message: String) {}
+        fun onHistoryChanged() {}
     }
-
     inner class LocalBinder : Binder() { val service: SensorSessionService get() = this@SensorSessionService }
     private val binder = LocalBinder()
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -30,105 +24,184 @@ class SensorSessionService : Service() {
     private val store by lazy { LocalSessionStore(this) }
     private val clients = mutableMapOf<String, BleSensorClient>()
     private val addresses = mutableMapOf<String, String>()
+    private val generations = mutableMapOf<String, Int>()
     private val reconnectAttempts = mutableMapOf<String, Int>()
     private val reconnectTasks = mutableMapOf<String, Runnable>()
     private val sensorStatuses = mutableMapOf<String, String>()
-    private val pendingSamples = mutableListOf<RecordedSample>()
+    private val sensorInfo = mutableMapOf<String, String>()
+    private val recorderStates = mutableMapOf<String, RecorderStatus>()
+    private val recorderSupported = mutableMapOf<String, Boolean>()
+    private val batteryLevels = mutableMapOf<String, Int?>()
+    private val lastSampleTime = mutableMapOf<String, Long>()
+    private val flashRetries = mutableMapOf<String, Int>()
+    private val captures = mutableMapOf<String, SensorCapture>()
+    private data class Pending(val sessionId: String, val record: RecordedSample)
+    private val pendingSamples = mutableListOf<Pending>()
+    private data class Wait(val opcode: Int, val timeout: Runnable, val action: (RecorderStatus) -> Unit)
+    private val waits = mutableMapOf<String, Wait>()
+    private data class Transfer(val capture: SensorCapture, val validator: TransferValidator, val generation: Int)
+    private val transfers = mutableMapOf<String, Transfer>()
+    private val transferTimeouts = mutableMapOf<String, Runnable>()
     private var recordingWakeLock: PowerManager.WakeLock? = null
-    @Volatile private var activeSessionId: String? = null
-    @Volatile private var listener: Listener? = null
+    private var activeSessionId: String? = null
+    private var listener: Listener? = null
+    private var foreground = false
+    private var lastNotificationMessage: String? = null
+    private var uiVisible = false
+    private var destroyed = false
+    private var storageFailed = false
+    private var recoveryPaused = false
+    private var lastInfoPoll = 0L
+    private var lastStorageCheck = 0L
 
     override fun onBind(intent: Intent?): IBinder = binder
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (activeSessionId == null) activeSessionId = store.latestOpenSessionId()
-        if (activeSessionId != null) {
-            startForeground(NOTIFICATION_ID, notification("Recording boot motion · sensors reconnect automatically"))
-            acquireRecordingWakeLock()
-            restoreConnections()
-        }
-        when (intent?.action) {
-            ACTION_START_RECORDING -> startRecording()
-            ACTION_STOP_RECORDING -> stopRecording()
-        }
-        return START_STICKY
+    override fun onCreate() {
+        super.onCreate()
+        createNotificationChannel()
+        activeSessionId = store.latestOpenSessionId()
+        mainHandler.post(tick)
     }
 
-    fun setListener(value: Listener?) {
-        listener = value
-        if (value != null) {
-            addresses.keys.forEach { side -> value.onSensorStatus(side, sensorStatuses[side] ?: "Connecting") }
-            activeSessionId?.let { value.onRecordingChanged(it, "Recording continues in background" ) }
-        }
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        try {
+            if (activeSessionId != null) { ensureForeground(); acquireWakeLock() }
+            when (intent?.action) {
+                ACTION_START_RECORDING -> startRecording()
+                ACTION_STOP_RECORDING -> stopRecording()
+                ACTION_RECOVER -> recoverFlash()
+                ACTION_PAUSE_RECOVERY -> if (activeSessionId == null) pauseRecovery()
+                ACTION_RESUME_RECORDING -> if (activeSessionId != null) { ensureForeground(); acquireWakeLock() } else settleForeground()
+            }
+            if (!recoveryPaused) restoreConnections()
+        } catch (error: Exception) { storageError(error) }
+        return if (activeSessionId != null || store.hasPendingRecovery()) START_STICKY else START_NOT_STICKY
     }
 
     fun sessionId(): String? = activeSessionId
+    fun setUiVisible(visible: Boolean) {
+        uiVisible = visible
+        if (visible && !recoveryPaused) clients.keys.toList().forEach {
+            if (recorderSupported[it] == true) requestInfo(it)
+        }
+    }
+    fun setListener(value: Listener?) {
+        listener = value
+        if (value != null) {
+            sensorStatuses.forEach { (side, message) -> value.onSensorStatus(side, message) }
+            sensorInfo.forEach { (side, message) -> value.onSensorInfo(side, message) }
+            value.onRecordingChanged(activeSessionId, if (activeSessionId != null) "Recording continues in background"
+                else if (store.hasPendingRecovery()) "Live recording saved · sensor recovery pending" else "Ready to record")
+        }
+    }
 
     fun connect(side: String, device: BluetoothDevice) {
+        if (!canAssign(side, device.address)) return
         addresses[side] = device.address
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString("sensor_$side", device.address).apply()
         reconnectAttempts[side] = 0
         reconnectTasks.remove(side)?.let(mainHandler::removeCallbacks)
-        connectAddress(side, device.address)
+        connectAddress(side, device.address, device)
     }
+
+    fun canAssign(side: String, address: String): Boolean = addresses[side] == address ||
+        (activeSessionId == null && !store.hasPendingRecovery())
 
     fun restoreConnections() {
         listOf("L", "R").forEach { side ->
             val address = getSharedPreferences(PREFS, MODE_PRIVATE).getString("sensor_$side", null) ?: return@forEach
             addresses[side] = address
-            if (clients.containsKey(side)) return@forEach
-            try {
-                val manager = getSystemService(BLUETOOTH_SERVICE) as BluetoothManager
-                connectAddress(side, address, manager.adapter.getRemoteDevice(address))
-            } catch (_: Exception) {
-                reportStatus(side, "Saved sensor unavailable; scan to reconnect")
-            }
+            if (!clients.containsKey(side) && !reconnectTasks.containsKey(side)) connectAddress(side, address)
         }
     }
 
     fun reconnectSavedSensor(side: String, device: BluetoothDevice) {
-        val savedAddress = getSharedPreferences(PREFS, MODE_PRIVATE).getString("sensor_$side", null)
-        if (savedAddress != device.address) return
-        val status = sensorStatuses[side]
-        if (clients.containsKey(side) && (status == "Live stream ready" ||
-            status == "Connecting" || status?.startsWith("Connecting to ") == true ||
-            status == "Connected; discovering service")) return
+        if (getSharedPreferences(PREFS, MODE_PRIVATE).getString("sensor_$side", null) != device.address) return
+        if (clients[side]?.isReady == true || sensorStatuses[side]?.startsWith("Connecting") == true ||
+            sensorStatuses[side] == "Connected; discovering service") return
         connect(side, device)
     }
 
-    private fun connectAddress(side: String, address: String, device: BluetoothDevice? = null) {
+    fun forgetSensor(side: String): Boolean {
+        if (activeSessionId != null || transfers.isNotEmpty() || store.hasPendingRecovery()) return false
+        invalidate(side)
         clients.remove(side)?.disconnect()
-        val remote = device ?: try {
-            val manager = getSystemService(BLUETOOTH_SERVICE) as BluetoothManager
-            manager.adapter.getRemoteDevice(address)
+        addresses.remove(side)
+        reconnectTasks.remove(side)?.let(mainHandler::removeCallbacks)
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove("sensor_$side").apply()
+        reportStatus(side, "Not assigned")
+        sensorInfo.remove(side)
+        listener?.onSensorInfo(side, "Battery not reported")
+        return true
+    }
+
+    fun swapSensors(): Boolean {
+        if (activeSessionId != null || transfers.isNotEmpty() || store.hasPendingRecovery()) return false
+        val left = addresses["L"]
+        val right = addresses["R"]
+        listOf("L", "R").forEach { invalidate(it); clients.remove(it)?.disconnect()
+            reconnectTasks.remove(it)?.let(mainHandler::removeCallbacks) }
+        val edit = getSharedPreferences(PREFS, MODE_PRIVATE).edit()
+        if (right == null) edit.remove("sensor_L") else edit.putString("sensor_L", right)
+        if (left == null) edit.remove("sensor_R") else edit.putString("sensor_R", left)
+        edit.apply()
+        addresses.clear()
+        sensorStatuses.clear()
+        sensorInfo.clear()
+        restoreConnections()
+        return true
+    }
+
+    private fun invalidate(side: String) {
+        generations[side] = (generations[side] ?: 0) + 1
+        waits.remove(side)?.let { mainHandler.removeCallbacks(it.timeout) }
+        transfers.remove(side)
+        transferTimeouts.remove(side)?.let(mainHandler::removeCallbacks)
+    }
+
+    private fun connectAddress(side: String, address: String, supplied: BluetoothDevice? = null) {
+        invalidate(side)
+        clients.remove(side)?.disconnect()
+        recorderSupported.remove(side)
+        recorderStates.remove(side)
+        lastSampleTime.remove(side)
+        batteryLevels.remove(side)
+        val remote = supplied ?: try {
+            (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter?.getRemoteDevice(address)
         } catch (_: Exception) { null }
-        if (remote == null) {
-            reportStatus(side, "Sensor unavailable")
-            scheduleReconnect(side)
-            return
-        }
-        reportStatus(side, "Connecting")
-        val client = BleSensorClient(this, { message ->
-            mainHandler.post {
-                reportStatus(side, message)
-                if (message == "Disconnected" || message.startsWith("Connection failed") ||
-                    message.startsWith("OpenSki service not found") || message.startsWith("Subscription failed") ||
-                    message.startsWith("Could not enable") || message.startsWith("Live notification descriptor missing")) {
-                    scheduleReconnect(side)
-                }
-                if (message == "Live stream ready") reconnectAttempts[side] = 0
-            }
-        }, { sample ->
-            mainHandler.post { listener?.onSensorSample(side, sample) }
-            activeSessionId?.let { id -> synchronized(pendingSamples) {
-                if (activeSessionId == id) pendingSamples.add(RecordedSample(side, System.currentTimeMillis(), sample))
-            } }
-        })
+        if (remote == null) { reportStatus(side, "Bluetooth unavailable"); scheduleReconnect(side); return }
+        val client = BleSensorClient(this,
+            onStatus = { message -> reportStatus(side, message) },
+            onSample = { sample ->
+                val wasStale = (lastSampleTime[side]?.let { SystemClock.elapsedRealtime() - it > 3_000 } ?: false)
+                lastSampleTime[side] = SystemClock.elapsedRealtime()
+                if (wasStale) reportStatus(side, "Live stream ready")
+                listener?.onSensorSample(side, sample)
+                activeSessionId?.let { id -> pendingSamples.add(Pending(id, RecordedSample(side, System.currentTimeMillis(), sample))) }
+            },
+            onReady = { supported ->
+                reconnectAttempts[side] = 0
+                lastSampleTime[side] = SystemClock.elapsedRealtime()
+                recorderSupported[side] = supported
+                updateInfo(side)
+                if (supported && !recoveryPaused) requestInfo(side)
+            },
+            onRecorder = { status -> handleRecorder(side, status) },
+            onChunk = { chunk -> handleChunk(side, chunk) },
+            onBattery = { level -> batteryLevels[side] = level; updateInfo(side) },
+            onDisconnected = {
+                invalidate(side)
+                clients.remove(side)
+                if (activeSessionId != null) logEvent(activeSessionId!!, "$side boot disconnected; live samples unavailable until reconnect")
+                if (!recoveryPaused) scheduleReconnect(side)
+            })
         clients[side] = client
         try { client.connect(remote) } catch (_: SecurityException) {
+            clients.remove(side)?.disconnect()
             reportStatus(side, "Bluetooth permission required")
         } catch (_: Exception) {
-            reportStatus(side, "Could not connect; retrying")
+            clients.remove(side)?.disconnect()
+            reportStatus(side, "Could not connect")
             scheduleReconnect(side)
         }
     }
@@ -140,112 +213,438 @@ class SensorSessionService : Service() {
         reconnectAttempts[side] = attempt
         val delay = (2_000L shl (attempt - 1).coerceAtMost(4)).coerceAtMost(30_000L)
         reportStatus(side, "Disconnected · reconnecting in ${delay / 1000}s")
-        if (activeSessionId != null) updateNotification("$side boot disconnected · reconnecting in ${delay / 1000}s")
-        val task = Runnable { connectAddress(side, address) }
+        val task = Runnable { reconnectTasks.remove(side); connectAddress(side, address) }
         reconnectTasks[side] = task
         mainHandler.postDelayed(task, delay)
     }
 
+    private fun send(side: String, opcode: Int, action: (RecorderStatus) -> Unit) {
+        if (waits.containsKey(side) || clients[side]?.isReady != true) return
+        val timeout = Runnable { retryFlash(side, "Sensor command timed out; flash retained") }
+        waits[side] = Wait(opcode, timeout, action)
+        if (clients[side]?.command(opcode) == true) mainHandler.postDelayed(timeout, 10_000)
+        else { waits.remove(side); retryFlash(side, "Recorder unavailable; flash retained") }
+    }
+
+    private fun requestInfo(side: String) {
+        if (transfers.containsKey(side) || waits.containsKey(side) || recoveryPaused) return
+        send(side, RecorderCommand.INFO) { state -> reconcile(side, state) }
+    }
+
+    private fun handleRecorder(side: String, status: RecorderStatus) {
+        recorderStates[side] = status
+        updateInfo(side)
+        if (status.opcode == 0x85) {
+            val transfer = transfers[side] ?: return
+            transferTimeouts.remove(side)?.let(mainHandler::removeCallbacks)
+            if (!transfer.validator.complete(status)) { retryFlash(side, "Incomplete download; flash retained"); return }
+            // All chunk writes have already been queued on this same executor.
+            io.execute {
+                try {
+                    val verified = store.validateDownload(transfer.capture.id, status.samples, status.dropped)
+                    mainHandler.post {
+                        if (destroyed || generations[side] != transfer.generation || transfers[side] !== transfer) return@post
+                        transfers.remove(side)
+                        if (!verified || storageFailed) { retryFlash(side, "Saved copy failed validation; flash retained"); return@post }
+                        listener?.onHistoryChanged()
+                        // Recheck the frozen snapshot before erasing, on this same connection.
+                        send(side, RecorderCommand.INFO) { current ->
+                            if (current.result != 0 || current.recording || current.samples != status.samples || current.storageError) {
+                                retryFlash(side, "Sensor state changed; flash retained")
+                            } else send(side, RecorderCommand.ERASE) { erased ->
+                                if (erased.result == 0 && !erased.hasSession && !erased.recording) {
+                                    store.updateCapture(transfer.capture.id, "erased", status.samples, status.dropped)
+                                    captures.remove(side)
+                                    flashRetries[side] = 0
+                                    reportStatus(side, "Live stream ready")
+                                    listener?.onHistoryChanged()
+                                    reconcile(side, erased)
+                                    settleForeground()
+                                } else retryFlash(side, "Erase not acknowledged; saved copy retained")
+                            }
+                        }
+                    }
+                } catch (error: Exception) { mainHandler.post { if (!destroyed) storageError(error) } }
+            }
+            return
+        }
+        val waiting = waits[side] ?: return
+        if (waiting.opcode != status.opcode) return
+        waits.remove(side)
+        mainHandler.removeCallbacks(waiting.timeout)
+        try { waiting.action(status) } catch (error: Exception) { storageError(error) }
+    }
+
+    private fun reconcile(side: String, state: RecorderStatus) {
+        if (state.result != 0 || !state.storageReady) {
+            reportStatus(side, "Live only · sensor flash unavailable")
+            return
+        }
+        val address = addresses[side] ?: return
+        if (!foreground && !uiVisible && (state.hasSession || state.recording || activeSessionId != null)) {
+            reportStatus(side, "Sensor flash pending · open the app to recover")
+            return
+        }
+        var capture = store.pendingCapture(address)
+        if (state.hasSession || state.recording) {
+            if (capture == null) {
+                // An unknown retained recording gets its own history entry, never mixed into a new run.
+                val id = UUID.randomUUID().toString()
+                val now = System.currentTimeMillis()
+                store.createSession(id, now - state.samples * 10L)
+                store.finishSession(id, now)
+                store.editSession(id, "Recovered $side sensor", "Original recording time unknown; timeline is approximate.", 0, 0, 0)
+                capture = store.createCapture(id, side, address, now - state.samples * 10L, "pending")
+                logEvent(id, "Imported retained sensor recording; original session identity unavailable")
+            }
+            captures[side] = capture
+            if (state.recording && capture.sessionId == activeSessionId) {
+                store.updateCapture(capture.id, "recording", state.samples, state.dropped)
+                if (state.storageError) reportStatus(side, "Sensor flash error · live recording continues")
+                return
+            }
+            if (capture.sessionId == activeSessionId && state.full) {
+                reportStatus(side, "Sensor flash full · live recording continues")
+                return
+            }
+            ensureForeground()
+            if (state.recording) {
+                send(side, RecorderCommand.STOP) { stopped ->
+                    if (stopped.result == 0 && !stopped.recording) beginDownload(side, capture, stopped)
+                    else retryFlash(side, "Sensor stop failed; flash retained")
+                }
+            } else beginDownload(side, capture, state)
+            return
+        }
+        if (capture != null) {
+            if (capture.state == "requested" && capture.sessionId == activeSessionId) {
+                startSensor(side, capture)
+                return
+            }
+            // An erase may have succeeded just before a disconnect. A verified copy stays on the phone.
+            store.updateCapture(capture.id, if (capture.state == "verified") "erased" else "lost",
+                capture.expected, capture.dropped, if (capture.state == "verified") "" else "Sensor no longer has this recording")
+            if (capture.state != "verified") logEvent(capture.sessionId, "$side sensor flash missing after reconnect; live samples retained")
+            captures.remove(side)
+            listener?.onHistoryChanged()
+        }
+        val id = activeSessionId
+        if (id != null && !storageFailed) {
+            // Each reboot/flash-capacity segment receives a separate capture row.
+            val next = store.createCapture(id, side, address, System.currentTimeMillis())
+            captures[side] = next
+            startSensor(side, next)
+        } else settleForeground()
+    }
+
+    private fun startSensor(side: String, capture: SensorCapture) {
+        send(side, RecorderCommand.START) { state ->
+            if (state.result == 0 && state.recording) {
+                store.updateCapture(capture.id, "recording", state.samples, state.dropped)
+                logEvent(capture.sessionId, "$side sensor flash recording started")
+                // The phone may have stopped recording while START was in flight.
+                if (activeSessionId != capture.sessionId) requestInfo(side)
+            } else {
+                store.updateCapture(capture.id, "unavailable", state.samples, state.dropped, "Start rejected (${state.result})")
+                captures.remove(side)
+                reportStatus(side, "Live only · sensor recorder could not start")
+                if (state.hasSession) requestInfo(side)
+            }
+        }
+    }
+
+    private fun beginDownload(side: String, capture: SensorCapture, state: RecorderStatus) {
+        if (recoveryPaused || storageFailed || (flashRetries[side] ?: 0) >= 3) return
+        if (state.storageError) { reportStatus(side, "Sensor storage error · flash retained"); return }
+        if (state.samples == 0 && !state.hasSession && !state.recording) {
+            store.updateCapture(capture.id, "erased")
+            captures.remove(side)
+            listener?.onHistoryChanged()
+            requestInfo(side)
+            settleForeground()
+            return
+        }
+        val generation = generations[side] ?: return
+        val transfer = Transfer(capture, TransferValidator(state.samples), generation)
+        transfers[side] = transfer
+        store.updateCapture(capture.id, "pending", state.samples, state.dropped)
+        ensureForeground()
+        acquireWakeLock()
+        reportStatus(side, "Recovering sensor flash · 0 / ${state.samples}")
+        io.execute {
+            try {
+                store.beginDownload(capture.id)
+                mainHandler.post {
+                    if (destroyed || generations[side] != generation || transfers[side] !== transfer) return@post
+                    send(side, RecorderCommand.DOWNLOAD) { response ->
+                        if (response.result != 0 || response.samples != state.samples || response.recording) {
+                            retryFlash(side, "Download rejected; flash retained")
+                        } else armTransferTimeout(side)
+                    }
+                }
+            } catch (error: Exception) { mainHandler.post { if (!destroyed) storageError(error) } }
+        }
+    }
+
+    private fun handleChunk(side: String, chunk: FlashChunk?) {
+        val transfer = transfers[side] ?: return
+        if (chunk == null || !transfer.validator.accept(chunk)) {
+            retryFlash(side, "Download gap or invalid record; restarting safely")
+            return
+        }
+        armTransferTimeout(side)
+        io.execute {
+            try { store.saveDownload(transfer.capture.id, chunk) }
+            catch (error: Exception) { mainHandler.post { if (!destroyed) storageError(error) } }
+        }
+        if (transfer.validator.next % 500 < chunk.records.size || transfer.validator.next == transfer.validator.expected) {
+            reportStatus(side, "Recovering sensor flash · ${transfer.validator.next} / ${transfer.validator.expected}")
+        }
+    }
+
+    private fun armTransferTimeout(side: String) {
+        transferTimeouts.remove(side)?.let(mainHandler::removeCallbacks)
+        val task = Runnable { retryFlash(side, "Download stalled; flash retained") }
+        transferTimeouts[side] = task
+        mainHandler.postDelayed(task, 15_000)
+    }
+
+    private fun retryFlash(side: String, message: String) {
+        val attempts = (flashRetries[side] ?: 0) + 1
+        flashRetries[side] = attempts
+        val capture = captures[side]
+        if (capture != null) store.updateCapture(capture.id, "pending", recorderStates[side]?.samples ?: capture.expected,
+            recorderStates[side]?.dropped ?: capture.dropped, message)
+        invalidate(side)
+        clients.remove(side)?.disconnect()
+        reportStatus(side, if (attempts >= 3) "$message · tap Recover sensor flash to retry" else message)
+        // Restore the live link even if automatic recovery has reached its retry limit.
+        scheduleReconnect(side)
+        settleForeground()
+    }
+
+    fun recoverFlash() {
+        recoveryPaused = false
+        storageFailed = false
+        flush()
+        flashRetries.clear()
+        restoreConnections()
+        clients.keys.toList().forEach { side -> if (recorderSupported[side] == true) requestInfo(side) }
+        if (store.hasPendingRecovery()) ensureForeground()
+    }
+
+    private fun pauseRecovery() {
+        recoveryPaused = true
+        listOf("L", "R").forEach { side ->
+            invalidate(side)
+            clients.remove(side)?.disconnect()
+            reconnectTasks.remove(side)?.let(mainHandler::removeCallbacks)
+            reportStatus(side, "Recovery paused · flash retained")
+        }
+        releaseWakeLock()
+        if (foreground) stopForeground(STOP_FOREGROUND_REMOVE)
+        foreground = false
+        stopSelf()
+    }
+
     private fun startRecording() {
-        if (activeSessionId != null) return
+        if (activeSessionId != null) { ensureForeground(); return }
+        recoveryPaused = false
+        ensureForeground() // Meet the foreground-service deadline before opening the database.
+        val available = StatFs(filesDir.absolutePath).availableBytes
+        if (available < 20L * 1024 * 1024 || clients.values.none { it.isReady }) {
+            listener?.onRecordingChanged(null, if (available < 20L * 1024 * 1024) "Phone storage too low to record"
+                else "Wait for a sensor's live stream before recording")
+            settleForeground()
+            return
+        }
         try {
-            startForeground(NOTIFICATION_ID, notification("Recording boot motion · keep sensors nearby"))
-            val id = java.util.UUID.randomUUID().toString()
+            storageFailed = false
+            val id = UUID.randomUUID().toString()
             store.createSession(id, System.currentTimeMillis())
             activeSessionId = id
-            acquireRecordingWakeLock()
+            acquireWakeLock()
             listener?.onRecordingChanged(id, "Recording · continues with screen off")
-        } catch (error: Exception) {
-            releaseRecordingWakeLock()
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            listener?.onRecordingChanged(null, "Could not start recording: ${error.message ?: "storage error"}")
-        }
+            clients.keys.toList().forEach { side -> if (recorderSupported[side] == true) requestInfo(side) }
+        } catch (error: Exception) { storageError(error) }
     }
 
     private fun stopRecording() {
         val id = activeSessionId ?: return
         activeSessionId = null
-        flush(id)
+        flush()
         io.execute {
-            store.finishSession(id, System.currentTimeMillis())
-            mainHandler.post { listener?.onRecordingChanged(null, "Session saved on this phone") }
-        }
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        releaseRecordingWakeLock()
-        stopSelf()
-    }
-
-    private val flushTask = object : Runnable {
-        override fun run() { flush(activeSessionId); mainHandler.postDelayed(this, 500L) }
-    }
-
-    private fun flush(id: String?) {
-        if (id == null) return
-        val batch = synchronized(pendingSamples) { pendingSamples.toList().also { pendingSamples.clear() } }
-        if (batch.isNotEmpty()) io.execute { store.saveSamples(id, batch) }
-    }
-
-    override fun onCreate() {
-        super.onCreate()
-        createNotificationChannel()
-        mainHandler.post(flushTask)
-    }
-
-    override fun onDestroy() {
-        mainHandler.removeCallbacks(flushTask)
-        reconnectTasks.values.forEach(mainHandler::removeCallbacks)
-        activeSessionId?.let { id ->
-            activeSessionId = null
-            flush(id)
-            io.execute { store.finishSession(id, System.currentTimeMillis()) }
-        }
-        clients.values.forEach(BleSensorClient::disconnect)
-        clients.clear()
-        releaseRecordingWakeLock()
-        io.shutdown()
-        super.onDestroy()
-    }
-
-    private fun createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= 26) {
-            val channel = NotificationChannel(CHANNEL_ID, "OpenSki recording", NotificationManager.IMPORTANCE_LOW)
-            getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+            try {
+                store.finishSession(id, System.currentTimeMillis())
+                mainHandler.post {
+                    if (destroyed) return@post
+                    listener?.onRecordingChanged(null, "Live session saved · recovering sensor flash")
+                    listener?.onHistoryChanged()
+                    clients.keys.toList().forEach { side -> if (recorderSupported[side] == true) requestInfo(side) }
+                    settleForeground()
+                }
+            } catch (error: Exception) { mainHandler.post { if (!destroyed) storageError(error) } }
         }
     }
 
-    private fun notification(message: String): Notification {
-        val builder = if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, CHANNEL_ID) else Notification.Builder(this)
-        return builder.setSmallIcon(android.R.drawable.ic_menu_compass)
-            .setContentTitle("OpenSki recording").setContentText(message).setOngoing(true).build()
-    }
-
-    private fun updateNotification(message: String) {
-        if (activeSessionId == null) return
-        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(message))
-    }
-
-    private fun acquireRecordingWakeLock() {
-        if (recordingWakeLock?.isHeld == true) return
-        val power = getSystemService(POWER_SERVICE) as PowerManager
-        recordingWakeLock = power.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:OpenSkiRecording").apply {
-            setReferenceCounted(false)
-            acquire()
+    private fun flush() {
+        if (pendingSamples.isEmpty() || storageFailed) return
+        val batch = pendingSamples.toList()
+        pendingSamples.clear()
+        io.execute {
+            try { batch.groupBy { it.sessionId }.forEach { (id, records) -> store.saveSamples(id, records.map { it.record }) } }
+            catch (error: Exception) { mainHandler.post {
+                if (!destroyed) { pendingSamples.addAll(0, batch); storageError(error) }
+            } }
         }
     }
 
-    private fun releaseRecordingWakeLock() {
-        recordingWakeLock?.let { if (it.isHeld) it.release() }
-        recordingWakeLock = null
+    private fun storageError(error: Exception) {
+        if (storageFailed) return
+        storageFailed = true
+        val id = activeSessionId
+        activeSessionId = null
+        // Stop accepting new samples, retain sensor backups and any pending RAM batch.
+        transfers.keys.toList().forEach { side -> invalidate(side); clients.remove(side)?.disconnect() }
+        listener?.onRecordingChanged(null, "Recording paused · sensor flash retained: ${error.message ?: "storage error"}")
+        id?.let { io.execute { try { store.finishSession(it, System.currentTimeMillis()) } catch (_: Exception) {} } }
+        if (foreground || uiVisible) {
+            try {
+                ensureForeground()
+                updateNotification("Recording paused · sensor flash retained · open app to retry recovery")
+            } catch (_: Exception) { /* A locked/background launch cannot start a foreground service. */ }
+        }
+        releaseWakeLock()
+    }
+
+    private fun logEvent(id: String, message: String) {
+        io.execute { try { store.event(id, message) } catch (error: Exception) { mainHandler.post { if (!destroyed) storageError(error) } } }
+    }
+
+    private val tick = object : Runnable {
+        override fun run() {
+            flush()
+            val now = SystemClock.elapsedRealtime()
+            clients.keys.toList().forEach { side ->
+                if (clients[side]?.isReady == true && now - (lastSampleTime[side] ?: now) > 3_000 &&
+                    transfers[side] == null) {
+                    if (sensorStatuses[side] != "No live samples for 3 seconds") {
+                        reportStatus(side, "No live samples for 3 seconds")
+                        activeSessionId?.let { logEvent(it, "$side live stream stalled") }
+                    }
+                }
+            }
+            if (now - lastInfoPoll > 15_000) {
+                lastInfoPoll = now
+                clients.keys.toList().forEach { if (recorderSupported[it] == true && (flashRetries[it] ?: 0) < 3) requestInfo(it) }
+            }
+            if (now - lastStorageCheck > 30_000) {
+                lastStorageCheck = now
+                if (activeSessionId != null && StatFs(filesDir.absolutePath).availableBytes < 10L * 1024 * 1024) {
+                    stopRecording()
+                    listener?.onRecordingChanged(null, "Recording stopped · phone storage is low")
+                }
+            }
+            if (foreground && !storageFailed) updateNotification(notificationText())
+            if (foreground && (activeSessionId != null || transfers.isNotEmpty())) acquireWakeLock()
+            mainHandler.postDelayed(this, 500)
+        }
+    }
+
+    private fun updateInfo(side: String) {
+        val state = recorderStates[side]
+        val battery = batteryLevels[side]?.let { "Battery $it%" } ?: "Battery not reported"
+        val flash = if (recorderSupported[side] != true) "Flash not reported" else if (state == null) "Checking flash…" else
+            if (!state.storageReady) "Flash unavailable" else
+                "Flash ${state.samples} / ${state.capacity} samples · ${((state.capacity - state.samples).coerceAtLeast(0) / 100)}s free" +
+                    (if (state.dropped > 0) " · ${state.dropped} dropped" else "") +
+                    (if (state.recording) " · recording" else "") +
+                    (if (state.full) " · full" else "") +
+                    (if (state.storageError) " · storage error" else "")
+        sensorInfo[side] = "$battery\n$flash"
+        listener?.onSensorInfo(side, sensorInfo[side]!!)
     }
 
     private fun reportStatus(side: String, message: String) {
         sensorStatuses[side] = message
         listener?.onSensorStatus(side, message)
+        if (foreground && !storageFailed) updateNotification(notificationText())
+    }
+
+    private fun notificationText(): String {
+        val warnings = addresses.keys.filter { side -> clients[side]?.isReady != true ||
+            SystemClock.elapsedRealtime() - (lastSampleTime[side] ?: 0) > 3_000 }
+        return when {
+            activeSessionId != null -> if (warnings.isEmpty()) "Recording both available boot streams" else "Recording · ${warnings.joinToString("/")} boot samples unavailable"
+            transfers.isNotEmpty() -> "Recovering sensor flash · keep sensors powered and nearby"
+            store.hasPendingRecovery() -> "Live recording saved · sensor flash recovery pending"
+            else -> "Session saved on this phone"
+        }
+    }
+
+    private fun ensureForeground() {
+        val message = notificationText()
+        startForeground(NOTIFICATION_ID, notification(message))
+        lastNotificationMessage = message
+        foreground = true
+    }
+    private fun settleForeground() {
+        if (activeSessionId == null && transfers.isEmpty()) releaseWakeLock()
+        if (activeSessionId == null && !store.hasPendingRecovery() && transfers.isEmpty() && !storageFailed) {
+            if (foreground) stopForeground(STOP_FOREGROUND_REMOVE)
+            foreground = false
+            stopSelf()
+        } else if (!recoveryPaused) ensureForeground()
+    }
+    private fun createNotificationChannel() {
+        getSystemService(NotificationManager::class.java).createNotificationChannel(
+            NotificationChannel(CHANNEL_ID, "OpenSki recording", NotificationManager.IMPORTANCE_LOW))
+    }
+    private fun notification(message: String): Notification {
+        val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        val action = if (activeSessionId != null) ACTION_STOP_RECORDING else ACTION_PAUSE_RECOVERY
+        val stop = PendingIntent.getService(this, 1, Intent(this, SensorSessionService::class.java).setAction(action),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        return Notification.Builder(this, CHANNEL_ID).setSmallIcon(android.R.drawable.ic_menu_compass)
+            .setContentTitle("OpenSki").setContentText(message).setContentIntent(open).setOngoing(true)
+            .addAction(Notification.Action.Builder(null, if (activeSessionId != null) "Stop recording" else "Pause recovery", stop).build()).build()
+    }
+    private fun updateNotification(message: String) {
+        if (lastNotificationMessage == message) return
+        getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification(message))
+        lastNotificationMessage = message
+    }
+    private fun acquireWakeLock() {
+        if (recordingWakeLock?.isHeld == true) return
+        recordingWakeLock = (getSystemService(POWER_SERVICE) as PowerManager)
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "$packageName:OpenSkiRecording").apply {
+                setReferenceCounted(false); acquire(12 * 60 * 60 * 1000L)
+            }
+    }
+    private fun releaseWakeLock() { recordingWakeLock?.let { if (it.isHeld) it.release() }; recordingWakeLock = null }
+
+    override fun onDestroy() {
+        destroyed = true
+        mainHandler.removeCallbacks(tick)
+        listOf("L", "R").forEach { invalidate(it) }
+        reconnectTasks.values.forEach(mainHandler::removeCallbacks)
+        // Flush accepted samples. Leave the open session recoverable on process/service restart.
+        flush()
+        clients.values.forEach(BleSensorClient::disconnect)
+        clients.clear()
+        releaseWakeLock()
+        io.execute { store.close() }
+        io.shutdown()
+        super.onDestroy()
     }
 
     companion object {
         const val ACTION_START_RECORDING = "com.openski.android.START_RECORDING"
         const val ACTION_STOP_RECORDING = "com.openski.android.STOP_RECORDING"
+        const val ACTION_RECOVER = "com.openski.android.RECOVER"
+        const val ACTION_PAUSE_RECOVERY = "com.openski.android.PAUSE_RECOVERY"
+        const val ACTION_RESUME_RECORDING = "com.openski.android.RESUME_RECORDING"
         const val CHANNEL_ID = "openski_recording"
         const val NOTIFICATION_ID = 107
         const val PREFS = "openski_sensor_assignments"

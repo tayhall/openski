@@ -14,7 +14,7 @@ The current sample is available at `http://<device-ip>/api/v1/imu` on the local 
 The Android BLE protocol is documented in [BLE protocol](docs/ble-protocol.md).
 
 The native Android client project is in [`android/`](android/). Open that folder in Android Studio to build and run the live telemetry and local session recording app. Sessions can include attached videos and recording continues with the screen off. See [Android setup](android/README.md) for SDK and device setup.
-Each boot sensor keeps one 100 Hz session of about 10 minutes in its flash filesystem. The Android app is intended to record both live streams for full runs, download any missing data from each sensor, and erase a sensor session only after validating the copy.
+Each boot sensor keeps one 100 Hz session of about 10 minutes in its flash filesystem. The Android app records both live streams for full runs, downloads retained flash recordings after stopping or reconnecting, and erases sensor data only after validating the phone's saved copy. Sessions include quality summaries, graphs, video alignment, raw CSV export and experimental turn candidates. See the Android README for recovery and timing limitations.
 
 ## Layout
 

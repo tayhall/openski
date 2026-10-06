@@ -28,5 +28,6 @@
             android:name=".SensorSessionService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
+        <activity android:name=".SessionDetailActivity" android:exported="false" />
     </application>
 </manifest>

@@ -63,6 +63,8 @@ class MainActivity : Activity() {
             sensorService = service
             serviceBound = true
             service.setListener(sensorListener)
+            service.setUiVisible(hasWindowFocus())
+            if (hasWindowFocus() && service.sessionId() != null) requestRecordingService(SensorSessionService.ACTION_RESUME_RECORDING)
             service.restoreConnections()
             val prefs = getSharedPreferences(SensorSessionService.PREFS, MODE_PRIVATE)
             leftAddress = prefs.getString("sensor_L", null)
@@ -70,6 +72,7 @@ class MainActivity : Activity() {
             leftAddress?.let { leftPanel.setDevice(it) }
             rightAddress?.let { rightPanel.setDevice(it) }
             refreshDiscoveredDevices()
+            refreshHistory()
         }
         override fun onServiceDisconnected(name: ComponentName?) {
             sensorService?.setListener(null)
@@ -83,10 +86,18 @@ class MainActivity : Activity() {
     private val sensorListener = object : SensorSessionService.Listener {
         override fun onSensorStatus(side: String, message: String) = runOnUiThread {
             (if (side == "L") leftPanel else rightPanel).setStatus(message)
-            if (message.contains("Disconnected") || message.contains("reconnect", true)) {
+            if (message.contains("Disconnected", true) || message.contains("No live samples", true)) {
+                if (side == "L") latestLeft = null else latestRight = null
+                (if (side == "L") leftPanel else rightPanel).clearReadings()
+            }
+            if (activeSessionId != null && (message.contains("Disconnected") || message.contains("reconnect", true))) {
                 recordingStatus.text = "$side boot $message"
             }
         }
+        override fun onSensorInfo(side: String, message: String) = runOnUiThread {
+            (if (side == "L") leftPanel else rightPanel).setInfo(message)
+        }
+        override fun onHistoryChanged() = refreshHistory()
         override fun onSensorSample(side: String, sample: SensorSample) {
             if (side == "L") latestLeft = sample else latestRight = sample
         }
@@ -147,7 +158,7 @@ class MainActivity : Activity() {
         page.addView(brandRow)
 
         page.addView(label(
-            "Raw motion from each boot. Turn analysis is not enabled yet.",
+            "Live boot motion, flash recovery and session review.",
             14f, SUBTLE,
         ).apply { setPadding(0, dp(12), 0, dp(20)) })
 
@@ -168,7 +179,11 @@ class MainActivity : Activity() {
         }
         page.addView(scanHint)
 
-        page.addView(sectionHeading("NEARBY SENSORS", "Select which boot each sensor belongs to"))
+        page.addView(sectionHeading("NEARBY SENSORS", "Saved sensors reconnect to their boot automatically"))
+        page.addView(Button(this).apply {
+            text = "Manage saved sensors"; isAllCaps = false
+            setOnClickListener { manageSensors() }
+        }, bottomMargin(dp(8)))
         val devicesCard = cardContainer().apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(16), dp(13), dp(16), dp(13))
@@ -203,6 +218,11 @@ class MainActivity : Activity() {
             setOnClickListener { if (activeSessionId == null) startSession() else stopSession() }
         }
         sessionCard.addView(recordButton, LinearLayout.LayoutParams(-1, dp(50)).apply { topMargin = dp(12) })
+        sessionCard.addView(Button(this).apply {
+            text = "Recover sensor flash"; isAllCaps = false
+            setOnClickListener { sensorService?.recoverFlash() ?: run { recordingStatus.text = "Wait for the sensor service to connect" } }
+        })
+        sessionCard.addView(label("Phone free space: ${android.os.StatFs(filesDir.absolutePath).availableBytes / (1024 * 1024)} MB", 12f, MUTED))
         page.addView(sessionCard, bottomMargin(dp(18)))
 
         page.addView(sectionHeading("SESSION HISTORY", "Stored locally on this phone"))
@@ -215,7 +235,7 @@ class MainActivity : Activity() {
         }
         footer.addView(label("LIVE TELEMETRY  ·  RAW IMU DATA", 11f, ACCENT, true))
         footer.addView(label(
-            "Recording runs as a background service. Reconnecting sensors show a warning here and in the notification. Ski-turn analysis is not enabled.",
+            "Keep sensors powered after stopping while flash is recovered. Session details include quality, graphs, video alignment, export and experimental turn candidates.",
             12f, SUBTLE,
         ).apply { setPadding(0, dp(6), 0, 0) })
         page.addView(footer)
@@ -305,6 +325,10 @@ class MainActivity : Activity() {
             return
         }
         val address = result.device.address
+        if (!service.canAssign(if (left) "L" else "R", address)) {
+            recordingStatus.text = "Stop recording and finish sensor recovery before replacing a sensor"
+            return
+        }
         if (left && rightAddress == address) {
             leftPanel.setStatus("Already assigned to right boot")
             return
@@ -322,7 +346,7 @@ class MainActivity : Activity() {
             latestRight = null
         }
         panel.clearReadings()
-        panel.setDevice(result.scanRecord?.deviceName ?: "OpenSki sensor")
+        panel.setDevice("${result.scanRecord?.deviceName ?: "OpenSki sensor"} · label ${address.replace(":", "").takeLast(4)}")
         panel.setStatus("Connecting")
         val side = if (left) "L" else "R"
         service.connect(side, result.device)
@@ -359,7 +383,8 @@ class MainActivity : Activity() {
     private fun requestRecordingService(action: String) {
         val intent = Intent(this, SensorSessionService::class.java).setAction(action)
         try {
-            if (Build.VERSION.SDK_INT >= 26) startForegroundService(intent) else startService(intent)
+            if (action == SensorSessionService.ACTION_START_RECORDING || action == SensorSessionService.ACTION_RESUME_RECORDING)
+                startForegroundService(intent) else startService(intent)
         } catch (error: Exception) {
             recordingStatus.text = "Could not start sensor recording: ${error.message ?: "service error"}"
         }
@@ -383,7 +408,14 @@ class MainActivity : Activity() {
                         setPadding(dp(15), dp(14), dp(15), dp(14))
                         addView(label("No sessions yet. Start recording with a sensor connected.", 13f, MUTED))
                     })
-                } else sessions.forEach { session -> historyLayout.addView(sessionRow(session), bottomMargin(dp(10))) }
+                } else {
+                    var day = ""
+                    sessions.forEach { session ->
+                        val date = SimpleDateFormat("EEE, d MMM yyyy", Locale.getDefault()).format(Date(session.startedAtMs))
+                        if (day != date) { day = date; historyLayout.addView(label(date, 14f, SUBTLE, true), bottomMargin(dp(8))) }
+                        historyLayout.addView(sessionRow(session), bottomMargin(dp(10)))
+                    }
+                }
             }
         }
     }
@@ -393,7 +425,7 @@ class MainActivity : Activity() {
         setPadding(dp(15), dp(13), dp(15), dp(13))
         isClickable = true
         isFocusable = true
-        addView(label(formatDate(session.startedAtMs), 14f, WHITE, true))
+        addView(label(session.title.ifBlank { formatDate(session.startedAtMs) }, 14f, WHITE, true))
         val duration = ((session.endedAtMs ?: System.currentTimeMillis()) - session.startedAtMs).coerceAtLeast(0) / 1000
         addView(label("${duration / 60}m ${duration % 60}s  ·  L ${session.leftSamples}  ·  R ${session.rightSamples}", 12f, SUBTLE).apply {
             setPadding(0, dp(5), 0, 0)
@@ -405,21 +437,40 @@ class MainActivity : Activity() {
     }
 
     private fun showSession(id: String) {
-        io.execute {
-            val session = sessionStore.getSession(id) ?: return@execute
-            runOnUiThread {
-                val duration = ((session.endedAtMs ?: System.currentTimeMillis()) - session.startedAtMs).coerceAtLeast(0) / 1000
-                val detail = "${formatDate(session.startedAtMs)}\nDuration: ${duration / 60}m ${duration % 60}s\nLeft samples: ${session.leftSamples}\nRight samples: ${session.rightSamples}\nVideo: ${session.videoName ?: "None"}"
-                android.app.AlertDialog.Builder(this)
-                    .setTitle("Ski session")
-                    .setMessage(detail)
-                    .setNeutralButton(if (session.videoUri == null) "Attach video" else "Replace video") { _, _ -> pickVideo(id) }
-                    .apply {
-                        if (session.videoUri != null) setPositiveButton("Play video") { _, _ -> playVideo(session.videoUri) }
-                        setNegativeButton("Close", null)
-                    }.show()
-            }
-        }
+        startActivity(Intent(this, SessionDetailActivity::class.java).putExtra("session_id", id))
+    }
+
+    private fun manageSensors() {
+        val prefs = getSharedPreferences(SensorSessionService.PREFS, MODE_PRIVATE)
+        fun identity(side: String): String = prefs.getString("sensor_$side", null)?.let {
+            "${it.replace(":", "").takeLast(4)} ($it)"
+        } ?: "Not assigned"
+        val choices = arrayOf("Left: ${identity("L")}", "Right: ${identity("R")}", "Swap left and right")
+        android.app.AlertDialog.Builder(this).setTitle("Saved sensors · label the cases with these codes")
+            .setItems(choices) { _, position ->
+                val service = sensorService ?: return@setItems
+                if (position == 2) {
+                    if (service.swapSensors()) reloadAssignments() else recordingStatus.text = "Stop recording and finish recovery before swapping sensors"
+                } else {
+                    val side = if (position == 0) "L" else "R"
+                    android.app.AlertDialog.Builder(this).setTitle("Forget ${if (side == "L") "left" else "right"} sensor?")
+                        .setMessage("You can assign its replacement during the next scan. Saved sessions remain on this phone.")
+                        .setNegativeButton("Cancel", null).setPositiveButton("Forget") { _, _ ->
+                            if (service.forgetSensor(side)) reloadAssignments() else recordingStatus.text = "Stop recording and finish recovery before replacing a sensor"
+                        }.show()
+                }
+            }.setNegativeButton("Close", null).show()
+    }
+
+    private fun reloadAssignments() {
+        val prefs = getSharedPreferences(SensorSessionService.PREFS, MODE_PRIVATE)
+        leftAddress = prefs.getString("sensor_L", null)
+        rightAddress = prefs.getString("sensor_R", null)
+        latestLeft = null; latestRight = null
+        leftPanel.clearReadings(); rightPanel.clearReadings()
+        leftPanel.setDevice(leftAddress ?: "Not assigned")
+        rightPanel.setDevice(rightAddress ?: "Not assigned")
+        refreshDiscoveredDevices()
     }
 
     private fun pickVideo(sessionId: String) {
@@ -465,16 +516,22 @@ class MainActivity : Activity() {
         super.onStart()
         if (!hasBluetoothPermissions()) return
         val intent = Intent(this, SensorSessionService::class.java)
-        if (Build.VERSION.SDK_INT >= 26) startService(intent) else startService(intent)
         serviceBound = bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
     }
 
     override fun onStop() {
+        sensorService?.setUiVisible(false)
         sensorService?.setListener(null)
         if (serviceBound) unbindService(serviceConnection)
         serviceBound = false
         sensorService = null
         super.onStop()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        sensorService?.setUiVisible(hasFocus)
+        if (hasFocus && sensorService?.sessionId() != null) requestRecordingService(SensorSessionService.ACTION_RESUME_RECORDING)
     }
 
     private fun hasBluetoothPermissions(): Boolean {
@@ -505,7 +562,6 @@ class MainActivity : Activity() {
         if (requestCode == REQUEST_BLUETOOTH_PERMISSIONS && hasBluetoothPermissions()) {
             startScan()
             val intent = Intent(this, SensorSessionService::class.java)
-            startService(intent)
             serviceBound = bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE)
         }
     }
@@ -582,6 +638,7 @@ class MainActivity : Activity() {
         }
         private val status = label("Not connected", 12f, MUTED)
         private val device = label("Assign a sensor from the list above", 11f, MUTED)
+        private val info = label("Battery not reported · checking flash", 11f, MUTED)
         private val sequence = label("WAITING FOR SAMPLE", 10f, MUTED, true)
         private val acceleration = axisValues("AX", "AY", "AZ", accent)
         private val gyroscope = axisValues("GX", "GY", "GZ", accent)
@@ -610,8 +667,9 @@ class MainActivity : Activity() {
             heading.addView(device.apply { setPadding(0, dp(3), 0, 0) })
             header.addView(heading)
             header.addView(dot)
-            header.addView(status.apply { setPadding(dp(7), 0, 0, 0) })
             addView(header)
+            addView(status.apply { setPadding(0, dp(8), 0, 0) })
+            addView(info.apply { setPadding(0, dp(5), 0, 0) })
             addView(sequence.apply { setPadding(0, dp(15), 0, dp(8)) })
             addView(label("ACCELERATION  ·  m/s²", 10f, MUTED, true))
             addView(acceleration.view, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(4) })
@@ -622,18 +680,13 @@ class MainActivity : Activity() {
         }
 
         fun setStatus(message: String) {
-            status.text = when {
-                message.contains("ready", ignoreCase = true) -> "LIVE"
-                message.contains("connected", ignoreCase = true) -> "LINKED"
-                message.contains("connect", ignoreCase = true) -> "LINKING"
-                else -> message.uppercase(Locale.US)
-            }
-            status.setTextColor(color(if (status.text == "LIVE") accent else MUTED))
-            dot.background = rounded(
-                if (status.text == "LIVE") accent else if (status.text == "LINKED") SKY else MUTED,
-                50,
-            )
+            status.text = message
+            val live = message == "Live stream ready"
+            status.setTextColor(color(if (live) accent else MUTED))
+            dot.background = rounded(if (live) accent else MUTED, 50)
         }
+
+        fun setInfo(message: String) { info.text = message }
 
         fun setDevice(name: String) { device.text = name }
 
