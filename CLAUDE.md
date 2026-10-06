@@ -25,7 +25,7 @@ pio test -e native                        # host Unity tests (test/test_imu_moni
 pio test -e native -f test_imu_monitor    # single suite
 ```
 
-On the Windows dev machine PlatformIO is installed in the git-ignored `.venv` (`.venvScriptspio.exe`, Python 3.13 from `C:Python313`), so `pio` is not on PATH. The DevKit is on COM11; if upload reports "Wrong boot mode detected", hold the BOOT button while it says "Connecting" (tap EN if needed). The first USB flash of the recorder partition layout has been done on the current board.
+On the Windows dev machine PlatformIO is installed in the git-ignored `.venv` (`.venvScriptspio.exe`, Python 3.13 from `C:Python313`), so `pio` is not on PATH. The DevKit is on COM11; if upload reports "Wrong boot mode detected", hold the BOOT button while it says "Connecting" (tap EN if needed). The first USB flash of the recorder partition layout has been done on the current board, so later updates can go over the air without BOOT: `PLATFORMIO_UPLOAD_FLAGS=--auth=<OTA password from wifi_config.h> .venvScriptspio.exe run -e esp32-devkit-v1-ota -t upload --upload-port ski.local` (redact the password in any output). The board is reachable at `http://ski.local/api/v1/imu`. There is no host C++ compiler on this machine, so `pio test -e native` cannot run here.
 
 Setup: copy `include/wifi_config.example.h` to `include/wifi_config.h` (git-ignored; Wi-Fi SSID/password, OTA password). `AppConfig.h` falls back to empty strings if absent. Pins, hostname (`ski`) and BLE name (`OpenSki-ski`) live in `include/AppConfig.h`.
 
@@ -50,7 +50,7 @@ Toolchain: AGP 9.0.1 with built-in Kotlin, compile/target SDK 36, minSdk 26, Jav
 
 ### Firmware (`src/`, `include/`, `lib/`)
 
-`main.cpp` is a cooperative loop: each service exposes `begin()` and `tick()` in namespace `openski::<service>` and `loop()` calls them in order (imu, recorder, wifi, ota, telemetry, bluetooth, diagnostics) with a 10 ms delay. Don't block inside a `tick()`.
+`main.cpp` is a cooperative loop: each service exposes `begin()` and `tick()` in namespace `openski::<service>` and `loop()` calls them in order (imu, recorder, wifi, ota, telemetry, bluetooth, diagnostics) with a 2 ms delay, which must stay short enough to catch every 100 Hz IMU sample (a 10 ms delay caught only about 83 per second). Don't block inside a `tick()`. `tools/build_id.py` stamps `OPENSKI_BUILD_ID` (git commit, date) into the build; it is printed at boot and served as `build` in the Wi-Fi JSON. The IMU start-up is retried every 2 s with I2C bus recovery.
 
 - IMU is chip-independent: `lib/Imu` defines the interface and `ImuMonitor` (host-testable, normalised samples); `lib/ImuMpu6050` is the only driver. A new chip (e.g. LSM6DSOX) should plug in behind the interface without touching consumers.
 - IMU samples at 100 Hz. BLE live notifications are throttled to 50 Hz; the **flash recorder** (`RecorderService`) stores the full 100 Hz stream (about 10 minutes, one retained session) in SPIFFS until the app downloads it and issues erase.
