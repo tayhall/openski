@@ -41,7 +41,8 @@ class BenchActivity : Activity(), SensorSessionService.Listener {
     private lateinit var store: ProgressStore
     private val faces = LinkedHashMap<Face, BenchCapture>()
     private var flat: BenchCapture? = null
-    private val tiltRows = mutableListOf<String>()
+    private class TiltRow(val reference: Double, val flat: Vector3, val accel: Vector3)
+    private val tiltRows = mutableListOf<TiltRow>()
     private val noiseRows = mutableListOf<String>()
     private var message = ""
     private var referenceText = ""
@@ -190,8 +191,7 @@ class BenchActivity : Activity(), SensorSessionService.Listener {
         if (reference == null) { message = "Type the reference angle in degrees first."; render(); return }
         capture(3) { c ->
             if (!steady(c)) return@capture
-            val measured = BenchMath.angleBetween(zero.accel, c.accel)
-            tiltRows.add(String.format(Locale.US, "reference %.1f°  measured %.1f°  error %+.1f°", reference, measured, measured - reference))
+            tiltRows.add(TiltRow(reference, zero.accel, c.accel))
             message = "Captured."; render()
         }
     }
@@ -205,6 +205,35 @@ class BenchActivity : Activity(), SensorSessionService.Listener {
         message = "Captured."; render()
     }
 
+    /** The saved correction for whichever boot is streaming, or for any assigned boot if none is. */
+    private fun currentCorrection(): AccelCorrection? =
+        activeSide()?.let { store.correctionForSide(it) } ?: listOf("L", "R").firstNotNullOfOrNull { store.correctionForSide(it) }
+
+    private fun tiltText(row: TiltRow): String {
+        val raw = BenchMath.angleBetween(row.flat, row.accel)
+        val base = String.format(Locale.US, "reference %.1f°  raw %.1f° (%+.1f°)", row.reference, raw, raw - row.reference)
+        val fix = currentCorrection() ?: return base
+        val fixed = BenchMath.angleBetween(fix.apply(row.flat), fix.apply(row.accel))
+        return base + String.format(Locale.US, "  corrected %.1f° (%+.1f°)", fixed, fixed - row.reference)
+    }
+
+    private fun saveCorrection() {
+        val correction = AccelCorrection.fromAxisChecks(BenchMath.axisChecks(faces.mapValues { it.value.accel }))
+        val address = activeSide()?.let { store.sensorAddress(it) }
+        message = when {
+            correction == null -> "Capture both faces of every axis first, with plausible readings."
+            address == null -> "Connect the boot so the correction can be saved against its sensor."
+            else -> { store.setCorrection(address, correction); service?.reloadCorrections(); "Captured. Correction saved for sensor ${address.replace(":", "").takeLast(4)}." }
+        }
+        render()
+    }
+
+    private fun clearCorrection() {
+        val address = activeSide()?.let { store.sensorAddress(it) }
+        if (address == null) { message = "Connect the boot first."; render(); return }
+        store.setCorrection(address, null); service?.reloadCorrections(); message = "Captured. Correction cleared."; render()
+    }
+
     private fun report(): String = buildString {
         appendLine("OpenSki bench results ${SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date())}")
         appendLine("Six faces")
@@ -215,7 +244,8 @@ class BenchActivity : Activity(), SensorSessionService.Listener {
         BenchMath.axisChecks(faces.mapValues { it.value.accel }).forEach {
             appendLine(String.format(Locale.US, "  axis %s offset %+.3f m/s²  scale %+.2f%%", "XYZ"[it.axis], it.offset, it.scalePercent))
         }
-        appendLine("Tilt accuracy"); tiltRows.forEach { appendLine("  $it") }
+        currentCorrection()?.let { appendLine("  saved correction (offset x,y,z then scale x,y,z): ${it.toStorage()}") }
+        appendLine("Tilt accuracy"); tiltRows.forEach { appendLine("  ${tiltText(it)}") }
         appendLine("Still noise"); noiseRows.forEach { appendLine("  $it") }
     }
 
@@ -263,6 +293,12 @@ class BenchActivity : Activity(), SensorSessionService.Listener {
             BenchMath.axisChecks(faces.mapValues { it.value.accel }).forEach {
                 row(text(String.format(Locale.US, "Axis %s: offset %+.3f m/s², scale %+.2f%%", "XYZ"[it.axis], it.offset, it.scalePercent), 13f, SkiUi.TEXT, true), 6)
             }
+            val ready = AccelCorrection.fromAxisChecks(BenchMath.axisChecks(faces.mapValues { it.value.accel })) != null
+            val saved = currentCorrection()
+            row(SkiUi.button(this@BenchActivity, "Save correction for this sensor", if (ready) SkiUi.ButtonStyle.PRIMARY else SkiUi.ButtonStyle.SECONDARY) { if (!busy) saveCorrection() }, 14)
+            row(text(if (saved != null) "A correction is saved and is used for orientation and tilt below. Raw data and exports stay raw."
+                else if (ready) "All six faces captured. Save the correction to use it." else "Capture all six faces to enable a correction.", 12f, SkiUi.MUTED), 6)
+            if (saved != null) row(SkiUi.button(this@BenchActivity, "Clear saved correction", SkiUi.ButtonStyle.QUIET) { if (!busy) clearCorrection() }, 4)
         }, 18)
 
         add(card("Landmarks", "Teach the app which sensor axis points at the board's holes edge and chip side. The mounting question can then be asked in plain words.") {
@@ -290,7 +326,7 @@ class BenchActivity : Activity(), SensorSessionService.Listener {
             }
             row(input)
             row(SkiUi.button(this@BenchActivity, "Capture at this angle", SkiUi.ButtonStyle.PRIMARY) { if (!busy) captureTilt() })
-            tiltRows.forEach { row(text(it, 13f, SkiUi.TEXT), 6) }
+            tiltRows.forEach { row(text(tiltText(it), 13f, SkiUi.TEXT), 6) }
         }, 18)
 
         add(card("Still noise", "Leave the board untouched. Gyro bias is the average rate while still; repeat after the board has warmed up, since the sensor's bias moves with temperature.") {

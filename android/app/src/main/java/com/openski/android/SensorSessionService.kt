@@ -64,6 +64,8 @@ class SensorSessionService : Service() {
     private val movementTrackers=mutableMapOf<String,DrySkiAnalysis.Tracker>()
     private val latestOrientation=mutableMapOf<String,BootRoll>()
     private var guidedTrial: GuidedTrial?=null
+    private val progressStore by lazy { ProgressStore(this) }
+    @Volatile private var corrections: Map<String, AccelCorrection?>? = null
 
     override fun onBind(intent: Intent?): IBinder = binder
 
@@ -116,6 +118,7 @@ class SensorSessionService : Service() {
     fun connect(side: String, device: BluetoothDevice) {
         if (!canAssign(side, device.address)) return
         addresses[side] = device.address
+        corrections = null
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString("sensor_$side", device.address).apply()
         reconnectAttempts[side] = 0
         reconnectTasks.remove(side)?.let(mainHandler::removeCallbacks)
@@ -147,6 +150,7 @@ class SensorSessionService : Service() {
         addresses.remove(side)
         reconnectTasks.remove(side)?.let(mainHandler::removeCallbacks)
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove("sensor_$side").apply()
+        corrections = null
         reportStatus(side, "Not assigned")
         sensorInfo.remove(side)
         listener?.onSensorInfo(side, "Battery not reported")
@@ -163,6 +167,7 @@ class SensorSessionService : Service() {
         if (right == null) edit.remove("sensor_L") else edit.putString("sensor_L", right)
         if (left == null) edit.remove("sensor_R") else edit.putString("sensor_R", left)
         edit.apply()
+        corrections = null
         addresses.clear()
         sensorStatuses.clear()
         sensorInfo.clear()
@@ -474,6 +479,14 @@ class SensorSessionService : Service() {
         stopSelf()
     }
 
+
+    /** Accelerometer correction for the sensor currently assigned to [side]; loaded once and refreshed on reassignment. */
+    private fun correctionFor(side: String): AccelCorrection? =
+        (corrections ?: listOf("L", "R").associateWith { progressStore.correctionForSide(it) }.also { corrections = it })[side]
+
+    /** Called by Bench tools after it saves or clears a correction. */
+    fun reloadCorrections() { corrections = null }
+
     fun isTestRecording() = activeSessionId!=null && testRecording
 
     fun startGuidedTrial(pace: String): String {
@@ -491,7 +504,7 @@ class SensorSessionService : Service() {
     private fun acceptOrientation(side: String, receivedAt: Long, sample: SensorSample) {
         val time=liveClocks.getOrPut(side) { LiveSensorClock() }.timestamp(sample.timestampMs,receivedAt)
         val tracker=orientationTrackers[side] ?: return
-        val roll=tracker.accept(TimelinePoint(side,time,sample,"live"))
+        val roll=tracker.accept(TimelinePoint(side,time,correctionFor(side)?.apply(sample) ?: sample,"live"))
         if(roll==null) { latestOrientation.remove(side); listener?.onBootOrientation(side,null); return }
         latestOrientation[side]=roll
         listener?.onBootOrientation(side,roll)
@@ -519,7 +532,7 @@ class SensorSessionService : Service() {
         io.execute {
             try {
                 val data=store.loadData(id) ?: error("Session unavailable")
-                val timeline=SessionAnalysis.build(data).timeline
+                val timeline=SessionAnalysis.build(data).timeline.corrected(::correctionFor)
                 val end=timeline.filter { it.side==side }.maxOfOrNull { it.timeMs } ?: error("No samples for this boot")
                 if(System.currentTimeMillis()-end>2000) error("Boot stream is stale")
                 val calibration=BootOrientation.calibrate(timeline,side,end-2000,axis,sign)
@@ -542,7 +555,7 @@ class SensorSessionService : Service() {
             try {
                 val data=store.loadData(id) ?: error("Session unavailable")
                 val calibration=store.calibrations(data.session).firstOrNull { it.side==side } ?: error("Calibrate neutral first")
-                val timeline=SessionAnalysis.build(data).timeline
+                val timeline=SessionAnalysis.build(data).timeline.corrected(::correctionFor)
                 val end=timeline.filter { it.side==side }.maxOfOrNull { it.timeMs } ?: error("No boot samples")
                 if(System.currentTimeMillis()-end>2000) error("Boot stream is stale")
                 val refined=BootOrientation.learnForward(timeline,calibration,end-5000)

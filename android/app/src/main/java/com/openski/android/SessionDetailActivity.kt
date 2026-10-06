@@ -48,7 +48,8 @@ class SessionDetailActivity : Activity() {
                 val loaded = LocalSessionStore(this).use { it.loadData(id) }
                 val result = loaded?.let(SessionAnalysis::build)
                 val calibrations=loaded?.let { item -> LocalSessionStore(this).use { it.calibrations(item.session) } }.orEmpty()
-                val bootRoll=if(result==null) emptyList() else calibrations.flatMap { BootOrientation.estimate(result.timeline,it) }
+                val corrector=ProgressStore(this)
+                val bootRoll=if(result==null) emptyList() else calibrations.flatMap { BootOrientation.estimate(result.timeline.corrected(corrector::correctionForSide),it) }
                 runOnUiThread { if (!isDestroyed && !isFinishing) {
                     if (loaded == null) { finish(); return@runOnUiThread }
                     data = loaded; analysis = result; render(loaded, result!!,calibrations,bootRoll)
@@ -494,7 +495,7 @@ class SessionDetailActivity : Activity() {
         dialog.setOnShowListener { dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
             val selectedSide=side; val selectedAxis=axis; val selectedSign=sign
             io.execute {
-                val calibration=BootOrientation.calibrate(result.timeline,selectedSide,start,selectedAxis,selectedSign)
+                val calibration=BootOrientation.calibrate(result.timeline.corrected(ProgressStore(this)::correctionForSide),selectedSide,start,selectedAxis,selectedSign)
                 if(calibration!=null) LocalSessionStore(this).use { it.saveCalibration(id,calibration) }
                 runOnUiThread { if(!isDestroyed && !isFinishing) {
                     if(calibration==null) message("Need two continuous stationary seconds and a forward axis roughly perpendicular to gravity")
@@ -551,7 +552,7 @@ class SessionDetailActivity : Activity() {
             val snapshot=pendingExport; pendingExport=null
             io.execute { try {
                 val current=snapshot ?: LocalSessionStore(this).use { it.loadData(id) } ?: error("Session unavailable")
-                contentResolver.openOutputStream(uri,"w")?.use { SessionExport.write(current,it) } ?: error("Export destination unavailable")
+                contentResolver.openOutputStream(uri,"w")?.use { SessionExport.write(current,it,ProgressStore(this)::correctionForSide) } ?: error("Export destination unavailable")
                 runOnUiThread { message("Session exported") }
             } catch(error: Exception) { runOnUiThread { message("Export failed: ${error.message}") } } }
         }

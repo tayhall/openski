@@ -7,7 +7,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 object SessionExport {
-    fun write(data: SessionData, output: OutputStream) {
+    fun write(data: SessionData, output: OutputStream, correction: (String) -> AccelCorrection? = { null }) {
         val analysis = SessionAnalysis.build(data)
         val session = data.session
         val settings=JSONObject(session.analysisJson)
@@ -24,6 +24,8 @@ object SessionExport {
             .put("title", session.title).put("notes", session.notes).put("started_at_ms", session.startedAtMs)
             .put("equipment", session.equipment)
             .put("boot_calibration", JSONObject(session.calibrationJson))
+            .put("accel_correction_applied_to_orientation", JSONObject().apply { listOf("L","R").forEach { side -> correction(side)?.let { put(side, it.toStorage()) } } })
+            .put("accel_correction_format", "offset x,y,z then scale x,y,z; corrected = (raw - offset) / scale. Raw samples in this export are uncorrected.")
             .put("boot_roll_reference", "Experimental neutral-relative boot roll; not snow-relative ski edge angle. Drift age is time since calibration or detected rest.")
             .put("relative_yaw_reference", "Gyro-integrated heading relative to calibration; no absolute heading reference. Rest corrects tilt, not yaw. A new orientation segment resets yaw origin after a gap.")
             .put("ended_at_ms", session.endedAtMs ?: JSONObject.NULL)
@@ -37,7 +39,7 @@ object SessionExport {
             .put("quality", JSONArray().apply { analysis.quality.forEach { q -> put(JSONObject().put("side", q.side)
                 .put("live_samples", q.liveSamples).put("flash_samples", q.flashSamples)
                 .put("estimated_coverage", q.coverage).put("gaps_over_100ms", q.gaps).put("longest_gap_ms", q.longestGapMs)) } })
-        val orientation=calibrations.flatMap { BootOrientation.estimate(analysis.timeline,it) }
+        val orientation=calibrations.flatMap { BootOrientation.estimate(analysis.timeline.corrected(correction),it) }
         ZipOutputStream(output).use { zip ->
             fun entry(name: String, body: (java.io.Writer) -> Unit) {
                 zip.putNextEntry(ZipEntry(name))

@@ -6,6 +6,7 @@ import org.json.JSONObject
 
 /** Training profile and drill history. Kept in preferences; raw sessions stay in [LocalSessionStore]. */
 class ProgressStore(context: Context) {
+    private val sensorPrefs = context.getSharedPreferences(SensorSessionService.PREFS, Context.MODE_PRIVATE)
     private val prefs = context.getSharedPreferences("openski-training", Context.MODE_PRIVATE)
 
     var goal: Goal?
@@ -42,6 +43,16 @@ class ProgressStore(context: Context) {
     fun landmarks() = Landmarks(Face.all.getOrNull(prefs.getInt("landmark_holes", -1)), Face.all.getOrNull(prefs.getInt("landmark_chip", -1)))
     fun setHoles(face: Face) = prefs.edit().putInt("landmark_holes", Face.all.indexOf(face)).apply()
     fun setChip(face: Face) = prefs.edit().putInt("landmark_chip", Face.all.indexOf(face)).apply()
+
+    /** The saved sensor address for a boot ("L" or "R"), if one is assigned. */
+    fun sensorAddress(side: String): String? = sensorPrefs.getString("sensor_$side", null)
+
+    /** Accelerometer correction learned in Bench tools, kept per sensor so it follows the board, not the boot slot. */
+    fun correction(address: String): AccelCorrection? = prefs.getString("accel_$address", null)?.let(AccelCorrection::fromStorage)
+    fun setCorrection(address: String, correction: AccelCorrection?) {
+        prefs.edit().apply { if (correction == null) remove("accel_$address") else putString("accel_$address", correction.toStorage()) }.apply()
+    }
+    fun correctionForSide(side: String): AccelCorrection? = sensorAddress(side)?.let(::correction)
 
     /** Last roll trace per drill, thinned for storage, drawn as the ghost line next time. */
     fun saveTrace(drillId: String, demo: Boolean, trace: RollTrace) {
