@@ -86,6 +86,16 @@ class SensorSessionService : Service() {
         }
     }
 
+    fun reconnectSavedSensor(side: String, device: BluetoothDevice) {
+        val savedAddress = getSharedPreferences(PREFS, MODE_PRIVATE).getString("sensor_$side", null)
+        if (savedAddress != device.address) return
+        val status = sensorStatuses[side]
+        if (clients.containsKey(side) && (status == "Live stream ready" ||
+            status == "Connecting" || status?.startsWith("Connecting to ") == true ||
+            status == "Connected; discovering service")) return
+        connect(side, device)
+    }
+
     private fun connectAddress(side: String, address: String, device: BluetoothDevice? = null) {
         clients.remove(side)?.disconnect()
         val remote = device ?: try {

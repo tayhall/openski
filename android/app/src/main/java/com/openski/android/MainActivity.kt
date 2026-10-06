@@ -69,6 +69,7 @@ class MainActivity : Activity() {
             rightAddress = prefs.getString("sensor_R", null)
             leftAddress?.let { leftPanel.setDevice(it) }
             rightAddress?.let { rightPanel.setDevice(it) }
+            refreshDiscoveredDevices()
         }
         override fun onServiceDisconnected(name: ComponentName?) {
             sensorService?.setListener(null)
@@ -257,12 +258,30 @@ class MainActivity : Activity() {
             setPadding(0, dp(3), 0, 0)
         })
         info.addView(identity)
-        info.addView(sideButton("LEFT", ACCENT) { connect(result, true) })
-        info.addView(sideButton("RIGHT", SKY) { connect(result, false) }.apply {
-            setPadding(dp(7), 0, 0, 0)
-        })
+        val savedSide = when (address) {
+            leftAddress -> "L"
+            rightAddress -> "R"
+            else -> null
+        }
+        if (savedSide != null) {
+            val left = savedSide == "L"
+            identity.addView(label(if (left) "Saved left boot sensor" else "Saved right boot sensor",
+                11f, if (left) ACCENT else SKY))
+            info.addView(sideButton("RECONNECT", if (left) ACCENT else SKY) { connect(result, left) })
+            sensorService?.reconnectSavedSensor(savedSide, result.device)
+        } else {
+            info.addView(sideButton("LEFT", ACCENT) { connect(result, true) })
+            info.addView(sideButton("RIGHT", SKY) { connect(result, false) }.apply {
+                setPadding(dp(7), 0, 0, 0)
+            })
+        }
         row.addView(info)
         devicesLayout.addView(row)
+    }
+
+    private fun refreshDiscoveredDevices() {
+        devicesLayout.removeAllViews()
+        discovered.values.toList().forEach(::addDevice)
     }
 
     private fun sideButton(textValue: String, tint: Int, action: () -> Unit): TextView = TextView(this).apply {
@@ -280,6 +299,11 @@ class MainActivity : Activity() {
     }
 
     private fun connect(result: ScanResult, left: Boolean) {
+        val service = sensorService
+        if (service == null) {
+            (if (left) leftPanel else rightPanel).setStatus("Sensor service is starting; try again")
+            return
+        }
         val address = result.device.address
         if (left && rightAddress == address) {
             leftPanel.setStatus("Already assigned to right boot")
@@ -289,7 +313,6 @@ class MainActivity : Activity() {
             rightPanel.setStatus("Already assigned to left boot")
             return
         }
-        stopScan()
         val panel = if (left) leftPanel else rightPanel
         if (left) {
             leftAddress = address
@@ -302,8 +325,9 @@ class MainActivity : Activity() {
         panel.setDevice(result.scanRecord?.deviceName ?: "OpenSki sensor")
         panel.setStatus("Connecting")
         val side = if (left) "L" else "R"
-        if (serviceBound) sensorService?.connect(side, result.device)
-        else panel.setStatus("Sensor service is starting; try again")
+        service.connect(side, result.device)
+        refreshDiscoveredDevices()
+        stopScan()
     }
 
     private fun ensurePermissionAndScan() {
@@ -526,7 +550,9 @@ class MainActivity : Activity() {
             scanHint.text = "No OpenSki sensors found"
         } else {
             emptyDevices.visibility = View.GONE
-            scanHint.text = "${discovered.size} sensor${if (discovered.size == 1) "" else "s"} found · choose a boot"
+            val hasUnassigned = discovered.keys.any { it != leftAddress && it != rightAddress }
+            scanHint.text = "${discovered.size} sensor${if (discovered.size == 1) "" else "s"} found · " +
+                if (hasUnassigned) "choose a boot for new sensors" else "saved boot assignments restored"
         }
     }
 
