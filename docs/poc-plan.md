@@ -75,7 +75,7 @@ The **Bench tools** screen (Boots tab, then Bench tools) covers steps 3, 4 and 7
 8. **Streaming health.** Run for an hour. The status characteristic counts read failures; the target is zero, with no sample gap over 250 ms.
 9. **Wi-Fi alongside BLE.** The firmware runs both. Compare dropouts with Wi-Fi joined and with Wi-Fi disabled, to rule out radio contention.
 10. Record a 10-minute flash session on each board, download it, and confirm the app erases only after validation. Then pull the power mid-recording and confirm the next connect recovers it cleanly.
-11. **Cold test.** Seal a board in a bag in the freezer for an hour, stream it, and let it warm up before opening the bag (condensation). Check gyro drift and battery sag. Do not charge a cold battery.
+11. **Cold test (deferred, see [bench results](bench-results.md)).** Seal a board in a bag in the freezer for 30 to 45 minutes, power it through the bag without opening it (condensation), lay it flat and leave it untouched for about 25 minutes while `tools/wifi_imu_log.py` records gyro, accelerometer and temperature over Wi-Fi. Do not charge a cold battery.
 12. **Drift after calibration.** For each still capture, compare the gyro bias with the bias at the time you would calibrate. A bias difference of 1 °/s grows into 60° of error per minute, so this number decides the IMU question (see below). Do it three ways: warm, a cold start straight from the freezer, and after the board has settled back to room temperature.
 
 ### Phase 1: garden, boots on, skis on, standing still
@@ -121,7 +121,7 @@ Placeholders to agree after Phase 0. They are targets for the POC, not claims.
 
 Noise is not the concern: at about 5 mdps/√Hz, integrating for 10 seconds adds only a few hundredths of a degree. **Gyro bias and its drift with temperature are.** A bias error of 1 °/s grows into 60° of roll error per minute, and boots start warm and end up cold. Calibration removes the bias at a still stance, and rest events re-anchor it, but only if the bias has not moved in between. The IMU itself draws milliamps, so a better chip would not save battery.
 
-**Baseline so far** (warm, room temperature, 6 October): gyro bias x −1.93, y +0.06, z +0.38 °/s, noise 0.05 °/s; see [bench results](bench-results.md). The cold-start comparison is still to do.
+**Baseline so far** (warm, room temperature, 6 October): gyro bias x −1.93 then −1.94, y +0.06, z +0.38 then +0.37 °/s across 55 minutes, noise 0.05 °/s; see [bench results](bench-results.md). The cold-start comparison is still to do.
 
 **Decision rule.** Use the Phase 0 measurements (still captures warm, cold and re-warmed, and step 12):
 

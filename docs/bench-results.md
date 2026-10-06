@@ -67,3 +67,56 @@ These are about the limits I recall for the MPU-6050 (offset around ±50 mg on X
 - Z face repeat, and the second half of the Z pair.
 - Gyro bias after a cold start and after re-warming, and the freezer test.
 - Streaming health over an hour, Wi-Fi against BLE comparison, flash recording and recovery, battery run time.
+
+## 2026-10-06 (later): complete six-face set and a clean still capture
+
+Same board and setup, 19:37 to 19:41.
+
+### Six faces, all six (19:41 report)
+
+| Face | Total m/s² | Off axis (raw) | x | y | z |
+|---|---|---|---|---|---|
+| +X up | 10.316 | 2.4° | 10.307 | −0.228 | −0.370 |
+| −X up | 9.285 | 1.4° | −9.282 | −0.227 | 0.021 |
+| −Y up | 10.054 | 2.7° | 0.467 | −10.043 | 0.092 |
+| +Y up | 9.695 | 2.5° | 0.209 | 9.686 | −0.360 |
+| +Z up | 10.152 | 4.1° | 0.583 | −0.433 | 10.126 |
+| −Z up | 10.212 | 7.3° | 1.285 | 0.192 | −10.129 |
+
+| Axis | Offset | Scale |
+|---|---|---|
+| X | +0.512 m/s² | −0.12% |
+| Y | −0.178 m/s² | +0.59% |
+| Z | −0.002 m/s² | +3.28% |
+
+Three sessions now agree: offsets within about 0.01 m/s² and scales within about 0.1%. These are properties of the board, not placement noise. The raw off-axis angles are inflated by the offsets: after removing them the −Z face is about 5.0° (not 7.3°) and +Z about 1.5° (not 4.1°).
+
+### Still noise, 60 s
+
+| Time | Gyro bias x, y, z (°/s) | Gyro noise | Accel noise | Rate | Note |
+|---|---|---|---|---|---|
+| 18:46 | −1.93, +0.06, +0.38 | 0.05 °/s | 0.030 m/s² | 37.9 Hz | warm baseline |
+| 19:37 | −1.88, +0.09, +0.36 | 0.10 °/s | 0.215 m/s² | 37.5 Hz | **moved, disregard** |
+| 19:41 | −1.94, +0.06, +0.37 | 0.05 °/s | 0.034 m/s² | 37.6 Hz | clean |
+
+**Warm bias is stable over about an hour.** Between the two clean captures (55 minutes apart, both with the board warm at room temperature) the bias moved by 0.01 °/s on X and Z and 0.00 on Y, about 0.6° per minute, well inside the 0.05 °/s target. This says nothing yet about a cold start; that comparison is still to do. The live rate is a steady 37.5 to 37.9 Hz.
+
+### Predicted tilt readings (before the tilt test)
+From the six-face estimate, relative tilt from a flat reference should read about 0.4 to 0.8° low at 10° to 20° and about 1.8° low at 45° when tilting toward +X; tilting toward +Y stays within about 0.6°. The correction should bring these to about zero. Compare against the real tilt test.
+
+## 2026-10-06 (20:10): first cold attempt, compromised
+
+The board was taken out of a −25 °C freezer in a sealed bag, plugged in through the bag, and measured by hand while it warmed. The measurements were difficult through the bag and the board was handled, so **treat this attempt as unusable for conclusions**.
+
+- The +X face reading is identical to the 19:41 capture, so it was not retaken. The X offset and scale from that report mix warm and cold.
+- The other five faces were retaken with larger raw off-axis angles (4° to 8°).
+- The 60 s still capture at 20:10 gave gyro bias x −2.09, y +0.27, z +0.51 °/s, gyro noise 0.14 °/s and accelerometer noise 0.125 m/s². The accelerometer noise is too large to be temperature drift, which points to handling or vibration. No board temperature was recorded, because the app does not read it and only the serial log carries `temp_c`.
+- Accelerometer offsets and scales changed by no more than about 0.04 m/s² and 0.2% on the retaken faces, but given the handling this is only a weak hint.
+
+**Repeat with the board untouched and the serial log capturing temperature**, so bias against temperature can be fitted without any hand contact. Do not attempt the six faces cold.
+
+## Cold test: deferred
+
+The freezer test was not completed on 6 October. The first attempt (20:10) was handled through a bag and is unusable, and a second attempt planned around a USB serial log fell through because the board was powered from a network-side supply, not the PC; by the time that was clear the board had warmed to room temperature (25.2 °C). The cold-start bias comparison, and any bias-against-temperature fit, are therefore still open.
+
+For next time, no USB link is needed. `tools/wifi_imu_log.py` polls the board's Wi-Fi endpoint (`http://ski.local/api/v1/imu`, which includes `temperature_c`) twice a second and records gyro, accelerometer and temperature, so it works with the board powered from any charger. Start it before the board is powered; a drop in the uptime column marks the power-up. Freeze for 30 to 45 minutes in a sealed bag, power the board through the taped neck, lay it flat chip side up, and leave it untouched for about 25 minutes.
