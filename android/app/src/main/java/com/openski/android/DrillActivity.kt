@@ -238,7 +238,7 @@ class DrillActivity : Activity(), SensorSessionService.Listener {
             message?.let { add(t(it, Snow.Type.STRONG, Snow.RED), bottom = 14) }
             add(Snow.button(this@DrillActivity, if (message == null) "Calibrate" else "Try again") { beginCalibration() })
             mounting?.let {
-                add(t("Sensor mounting: ${it.label}", Snow.Type.CAPTION, Snow.INK_SOFT), top = 16)
+                add(t("Sensor mounting: ${it.label(store.landmarks())}", Snow.Type.CAPTION, Snow.INK_SOFT), top = 16)
                 add(Snow.button(this@DrillActivity, "Change mounting", Snow.ButtonKind.QUIET) {
                     MountingPicker.show(this@DrillActivity, store, side) { calibrateScreen() }
                 })

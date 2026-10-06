@@ -42,9 +42,42 @@ class LiveDrillRecorder(val drill: Drill, val side: String) {
     @Synchronized fun run() = DrillRun(DryDetection(movements.toList(), movements.map { it.endMs }), trace(), demo = false)
 }
 
+/** Which signed sensor axes point at the board's visible landmarks, learned on the bench. */
+data class Landmarks(val holes: Face?, val chip: Face?) {
+    private fun vec(face: Face): Vector3 = when (face.axis) {
+        0 -> Vector3(face.sign.toDouble(), 0.0, 0.0)
+        1 -> Vector3(0.0, face.sign.toDouble(), 0.0)
+        else -> Vector3(0.0, 0.0, face.sign.toDouble())
+    }
+    private fun opposite(face: Face) = Face(face.axis, -face.sign)
+
+    /** Plain-language name for the direction of [direction], or null when the landmarks do not say. */
+    fun name(direction: Face): String? {
+        holes?.let {
+            if (direction == it) return "toward the holes edge"
+            if (direction == opposite(it)) return "toward the header edge, away from the holes"
+        }
+        chip?.let {
+            if (direction == it) return "out of the chip side"
+            if (direction == opposite(it)) return "out of the back"
+        }
+        if (holes != null && chip != null) {
+            // Right-handed axes: holes × chip is the right-hand edge with the chip facing you and the holes edge up.
+            val a = vec(holes); val b = vec(chip)
+            val right = Vector3(a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z, a.x * b.y - a.y * b.x)
+            val d = vec(direction)
+            if (d.dot(right) > 0.5) return "toward the right-hand edge (chip facing you, holes edge up)"
+            if (d.dot(right) < -0.5) return "toward the left-hand edge (chip facing you, holes edge up)"
+        }
+        return null
+    }
+}
+
 /** A sensor-to-boot mounting choice: which signed sensor axis points toward the toe. */
 data class Mounting(val axis: Int, val sign: Int) {
     val label get() = "${if (sign > 0) "+" else "−"}${"XYZ"[axis]} toward the toe"
+    fun label(landmarks: Landmarks): String = landmarks.name(Face(axis, sign))
+        ?.let { "${if (sign > 0) "+" else "−"}${"XYZ"[axis]}: $it" } ?: label
     companion object {
         val options = (0..2).flatMap { axis -> listOf(1, -1).map { Mounting(axis, it) } }
     }
