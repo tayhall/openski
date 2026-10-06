@@ -163,10 +163,10 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(20), dp(18), dp(20), dp(14))
         }
-        identity.addView(label("OPENSKI", if(compact) 20f else 12f, ACCENT, true))
+        identity.addView(label(if(compact) "OPENSKI · GEEK MODE" else "GEEK MODE", if(compact) 16f else 12f, ACCENT, true))
         if(!compact) {
-            identity.addView(label("Find your rhythm.", 28f, WHITE, true).apply { setPadding(0, dp(4), 0, dp(4)) })
-            identity.addView(label("Record motion. Understand your turns.", 14f, SUBTLE))
+            identity.addView(label("Sensors and raw data.", 28f, WHITE, true).apply { setPadding(0, dp(4), 0, dp(4)) })
+            identity.addView(label("Live telemetry, test lab, flash recovery and every saved session.", 14f, SUBTLE))
         }
         root.addView(identity)
         val navigation = LinearLayout(this).apply { setPadding(dp(16), 0, dp(16), dp(12)) }

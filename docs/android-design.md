@@ -2,7 +2,15 @@
 
 The app uses a shared native design system in `SkiUi.kt` and `Theme.OpenSki`, with a charcoal background, lime primary actions and sky accents for the right boot. Screens use the same cards, typography, button states, dialogs and inputs. No external UI dependencies or generated image assets are required.
 
-## Navigation and hierarchy
+## Training experience
+
+The app opens on a training programme rather than telemetry. `HomeActivity` has Today (next drill, week streak, progress toward the chosen goal), Path (piste map of drills that unlock in order), Progress (vert, streak, best scores) and Boots (opens the original recording screens below). First run asks for a goal and starting level, then offers demo boots or pairing.
+
+It uses a separate light "snow" look (`Snow.kt`): Barlow Condensed headlines and Barlow body text, one orange primary action per screen, and piste markers (blue circle, red square, black diamond) so level never depends on colour alone. A drill ends with the boot-roll trace drawn as a carved line over a ghost of the previous try, a 0 to 3 star score, one coaching cue, and vert points. Scores combine tempo, steadiness, left and right balance and depth from the existing dry-movement detector; they do not measure carving on snow. Drills run on a paired boot or on simulated demo boots, which are always labelled. A live drill connects to a streaming boot, asks once which sensor axis points toward the toe, calibrates from three still seconds, then counts rolls as you make them while the carved line grows. The set is saved to the logbook as a test session named "Drill · <name>", so it can be replayed and exported like any other recording. Tempo and steadiness are scored on the beat (the time between roll starts) because that is what "one roll every 3 seconds" means to a skier.
+
+The Boots tab shows pairing and mounting and opens **Geek mode**: the original dark Record, Sessions and Test lab screens with raw telemetry, orientation, flash recovery and session analysis. Nothing from that workflow was removed. The recording and review screens below keep the earlier dark theme for now.
+
+## Navigation and hierarchy (recording and review)
 
 - **Record:** primary recording action and status, boot connections, live orientation, expandable raw telemetry and sensor setup/recovery. A demo shortcut leads to Test lab.
 - **Sessions:** dated session history and a useful empty state. Synthetic demos and indoor tests retain clear labels.
