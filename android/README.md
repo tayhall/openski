@@ -10,7 +10,8 @@ For a USB phone connection, enable Developer options and USB debugging, connect 
 
 ## Current scope
 
-- Dashboard navigation separates Record, Sessions and Test lab. Session review separates Replay, Analysis and Details. A shared dark theme, lime/sky traces, consistent controls and collapsible technical notes keep the main workflows readable. See [Android design](../docs/android-design.md).
+- The launcher opens a training-first home with Today, Path, Progress and Boots, onboarding and drills using demo or live boots. Geek mode retains Record, Sessions and Test lab; session review separates Replay, Analysis and Details. Bench tools support sensor checks and calibration. See [POC plan](../docs/poc-plan.md) and [Android design](../docs/android-design.md).
+- The Android launcher and round icon use the supplied [logo](../docs/logo.png). The unchanged PNG is packaged in drawable-nodpi with proportional margins equivalent to 66dp within a 108dp adaptive foreground, keeping the artwork inside launcher masks at different icon sizes.
 - Live telemetry for left and right sensors.
 - Record and retain raw sensor samples in a local SQLite database on the phone.
 - Browse sessions grouped by ski day; open quality summaries, graphs and recording events.
@@ -24,7 +25,7 @@ For a USB phone connection, enable Developer options and USB debugging, connect 
 - Live orientation uses the same incremental estimator as replay, with sensor-clock intervals preserved across BLE notification bursts. Guided Slow / Medium / Brisk sets count 20 completed neutral-to-lean-to-neutral movements from one calibrated reference boot and automatically mark the set's end.
 - Compare both boots using interpolated roll samples, roll correlation and paired onset/neutral-return timing. Save per-boot review axis/direction settings for repeatable review and exports. Browse individual detected movements and tap to seek their onset.
 - ZIP exports include detected-movements.csv and analysis-summary.json alongside raw data, orientation, labels and health snapshots.
-- Recording and BLE links run in a connected-device foreground service, so recording can continue with the screen off and the app backgrounded. The notification shows recording state and sensor reconnect warnings.
+- Sensor monitoring and recording run in a connected-device foreground service, so boot connections remain active with the screen off even when no recording is running. The notification shows connection/reconnect state and offers Disconnect sensors while idle; saved boot assignments are retained for the next connection.
 - Sensor assignments are remembered on the phone and the app reconnects automatically with a capped retry delay.
 - Start and stop sensor flash recording alongside phone recording. Download retained flash recordings after stopping or reconnecting, validate their record order/count and the committed SQLite copy, then erase flash only on the same uninterrupted connection.
 - Remember boot assignments, show label codes from Bluetooth addresses, and forget/replace or swap sensors when recording and recovery have finished.
@@ -56,7 +57,7 @@ Java source compatibility is 17; the Gradle daemon configuration requests Java 2
 
 ## Verification
 
-Thirty unit tests exercise packet decoding, interrupted/invalid transfer rejection, overlapping sources, coverage, clock rollover, turn candidates, calibration/orientation, streaming/replay equivalence, dry-movement labels, guided sets, synthetic sessions and boot comparisons. `:app:assembleDebugAndroidTest` builds a custom instrumentation runner that checks migrations from schema versions 1–6, demo creation, saved review settings, staged transfers, retained validated copies, ZIP export and protected deletion in isolated test databases:
+The current 64 unit tests cover the merged training/bench work as well as packet decoding, interrupted/invalid transfer rejection, overlapping sources, coverage, clock rollover, turn candidates, calibration/orientation, streaming/replay equivalence, dry-movement labels, guided sets, synthetic sessions and boot comparisons. `:app:assembleDebugAndroidTest` builds a custom instrumentation runner for SQLite migration, calibration/session metadata, staged transfers, retained validated copies, ZIP export and protected deletion in isolated test databases:
 
 ```powershell
 adb install -r app/build/outputs/apk/debug/app-debug.apk

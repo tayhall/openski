@@ -52,6 +52,7 @@ class SensorSessionService : Service() {
     private var lastHealthPoll=0L
     private var listener: Listener? = null
     private var foreground = false
+    private var monitoring = false
     private var lastNotificationMessage: String? = null
     private var uiVisible = false
     private var destroyed = false
@@ -85,6 +86,19 @@ class SensorSessionService : Service() {
         try {
             if (activeSessionId != null) { ensureForeground(); acquireWakeLock() }
             when (intent?.action) {
+                ACTION_MONITOR -> { monitoring = true; ensureForeground() }
+                ACTION_STOP_MONITORING -> {
+                    monitoring = false
+                    recoveryPaused = true
+                    reconnectTasks.values.forEach(mainHandler::removeCallbacks)
+                    reconnectTasks.clear()
+                    clients.keys.toList().forEach { side ->
+                        invalidate(side)
+                        clients.remove(side)?.disconnect()
+                        reportStatus(side, "Monitoring stopped")
+                    }
+                    settleForeground()
+                }
                 ACTION_START_RECORDING -> startRecording(intent.getBooleanExtra("test_session",false))
                 ACTION_STOP_RECORDING -> stopRecording()
                 ACTION_RECOVER -> recoverFlash()
@@ -93,7 +107,7 @@ class SensorSessionService : Service() {
             }
             if (!recoveryPaused) restoreConnections()
         } catch (error: Exception) { storageError(error) }
-        return if (activeSessionId != null || store.hasPendingRecovery()) START_STICKY else START_NOT_STICKY
+        return if (monitoring || activeSessionId != null || store.hasPendingRecovery()) START_STICKY else START_NOT_STICKY
     }
 
     fun sessionId(): String? = activeSessionId
@@ -117,6 +131,7 @@ class SensorSessionService : Service() {
 
     fun connect(side: String, device: BluetoothDevice) {
         if (!canAssign(side, device.address)) return
+        startMonitoring()
         addresses[side] = device.address
         corrections = null
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString("sensor_$side", device.address).apply()
@@ -125,14 +140,29 @@ class SensorSessionService : Service() {
         connectAddress(side, device.address, device)
     }
 
-    fun canAssign(side: String, address: String): Boolean = addresses[side] == address ||
-        (activeSessionId == null && !store.hasPendingRecovery())
+    fun canAssign(side: String, address: String): Boolean = side in listOf("L","R") &&
+        addresses[if(side=="L") "R" else "L"]!=address &&
+        (addresses[side] == address || (activeSessionId == null && !store.hasPendingRecovery()))
 
     fun restoreConnections() {
         listOf("L", "R").forEach { side ->
             val address = getSharedPreferences(PREFS, MODE_PRIVATE).getString("sensor_$side", null) ?: return@forEach
+            startMonitoring()
             addresses[side] = address
             if (!clients.containsKey(side) && !reconnectTasks.containsKey(side)) connectAddress(side, address)
+        }
+    }
+
+    private fun startMonitoring() {
+        if (monitoring) return
+        monitoring = true
+        recoveryPaused = false
+        try {
+            startForegroundService(Intent(this, SensorSessionService::class.java).setAction(ACTION_MONITOR))
+            ensureForeground()
+        } catch (error: Exception) {
+            monitoring = false
+            throw error
         }
     }
 
@@ -154,6 +184,7 @@ class SensorSessionService : Service() {
         reportStatus(side, "Not assigned")
         sensorInfo.remove(side)
         listener?.onSensorInfo(side, "Battery not reported")
+        if (addresses.isEmpty()) { monitoring = false; settleForeground() }
         return true
     }
 
@@ -225,7 +256,7 @@ class SensorSessionService : Service() {
                 invalidate(side)
                 clients.remove(side)
                 if (activeSessionId != null) logEvent(activeSessionId!!, "$side boot disconnected; live samples unavailable until reconnect")
-                if (!recoveryPaused) scheduleReconnect(side)
+                if (!recoveryPaused) scheduleReconnect(side,sensorStatuses[side])
             })
         clients[side] = client
         try { client.connect(remote) } catch (_: SecurityException) {
@@ -238,13 +269,13 @@ class SensorSessionService : Service() {
         }
     }
 
-    private fun scheduleReconnect(side: String) {
+    private fun scheduleReconnect(side: String, reason: String?=null) {
         val address = addresses[side] ?: return
         reconnectTasks.remove(side)?.let(mainHandler::removeCallbacks)
         val attempt = (reconnectAttempts[side] ?: 0) + 1
         reconnectAttempts[side] = attempt
         val delay = (2_000L shl (attempt - 1).coerceAtMost(4)).coerceAtMost(30_000L)
-        reportStatus(side, "Disconnected · reconnecting in ${delay / 1000}s")
+        reportStatus(side, "${reason ?: "Disconnected"} · reconnecting in ${delay / 1000}s")
         val task = Runnable { reconnectTasks.remove(side); connectAddress(side, address) }
         reconnectTasks[side] = task
         mainHandler.postDelayed(task, delay)
@@ -717,6 +748,8 @@ class SensorSessionService : Service() {
             activeSessionId != null -> if (warnings.isEmpty()) "Recording both available boot streams" else "Recording · ${warnings.joinToString("/")} boot samples unavailable"
             transfers.isNotEmpty() -> "Recovering sensor flash · keep sensors powered and nearby"
             store.hasPendingRecovery() -> "Live recording saved · sensor flash recovery pending"
+            monitoring -> if (warnings.isEmpty()) "Boot sensors connected · monitoring continues with screen off"
+                else "Monitoring · ${warnings.joinToString("/")} boot reconnecting"
             else -> "Session saved on this phone"
         }
     }
@@ -729,7 +762,7 @@ class SensorSessionService : Service() {
     }
     private fun settleForeground() {
         if (activeSessionId == null && transfers.isEmpty()) releaseWakeLock()
-        if (activeSessionId == null && !store.hasPendingRecovery() && transfers.isEmpty() && !storageFailed) {
+        if (!monitoring && activeSessionId == null && !store.hasPendingRecovery() && transfers.isEmpty() && !storageFailed) {
             if (foreground) stopForeground(STOP_FOREGROUND_REMOVE)
             foreground = false
             stopSelf()
@@ -737,17 +770,17 @@ class SensorSessionService : Service() {
     }
     private fun createNotificationChannel() {
         getSystemService(NotificationManager::class.java).createNotificationChannel(
-            NotificationChannel(CHANNEL_ID, "OpenSki recording", NotificationManager.IMPORTANCE_LOW))
+            NotificationChannel(CHANNEL_ID, "OpenSki sensors and recording", NotificationManager.IMPORTANCE_LOW))
     }
     private fun notification(message: String): Notification {
         val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val action = if (activeSessionId != null) ACTION_STOP_RECORDING else ACTION_PAUSE_RECOVERY
+        val action = if (activeSessionId != null) ACTION_STOP_RECORDING else if (store.hasPendingRecovery()) ACTION_PAUSE_RECOVERY else ACTION_STOP_MONITORING
         val stop = PendingIntent.getService(this, 1, Intent(this, SensorSessionService::class.java).setAction(action),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         return Notification.Builder(this, CHANNEL_ID).setSmallIcon(android.R.drawable.ic_menu_compass)
             .setContentTitle("OpenSki").setContentText(message).setContentIntent(open).setOngoing(true)
-            .addAction(Notification.Action.Builder(null, if (activeSessionId != null) "Stop recording" else "Pause recovery", stop).build()).build()
+            .addAction(Notification.Action.Builder(null, if (activeSessionId != null) "Stop recording" else if (store.hasPendingRecovery()) "Pause recovery" else "Disconnect sensors", stop).build()).build()
     }
     private fun updateNotification(message: String) {
         if (lastNotificationMessage == message) return
@@ -779,6 +812,8 @@ class SensorSessionService : Service() {
     }
 
     companion object {
+        const val ACTION_MONITOR = "com.openski.android.MONITOR"
+        const val ACTION_STOP_MONITORING = "com.openski.android.STOP_MONITORING"
         const val ACTION_START_RECORDING = "com.openski.android.START_RECORDING"
         const val ACTION_STOP_RECORDING = "com.openski.android.STOP_RECORDING"
         const val ACTION_RECOVER = "com.openski.android.RECOVER"
