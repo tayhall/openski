@@ -18,6 +18,7 @@ class SensorSessionService : Service() {
         fun onHistoryChanged() {}
         fun onBootOrientation(side: String, value: BootRoll?) {}
         fun onTestFeedback(message: String) {}
+        fun onMovementEvent(side: String, event: MovementEvent) {}
     }
     inner class LocalBinder : Binder() { val service: SensorSessionService get() = this@SensorSessionService }
     private val binder = LocalBinder()
@@ -250,6 +251,7 @@ class SensorSessionService : Service() {
                 if(level==null) batteryTimes.remove(side) else batteryTimes[side]=System.currentTimeMillis()
                 updateInfo(side) },
             onRssi = { value -> rssiLevels[side]=value to System.currentTimeMillis(); updateInfo(side) },
+            onMovement = { event -> listener?.onMovementEvent(side, event) },
             onDisconnected = {
                 latestOrientation.remove(side)
                 listener?.onBootOrientation(side,null)

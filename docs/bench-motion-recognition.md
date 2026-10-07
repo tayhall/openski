@@ -115,7 +115,6 @@ movements at 100 Hz with the measured bias, reported 44.9° to 46.1° for 45°
 rotations about each axis, at 0.3 s and 4 s durations and with 2 m/s² of
 vibration, and nothing for yaw about the vertical axis, a 10° wobble or a 20 s
 hold. `tools/test_tilt_tracker.cpp` repeats those cases against the firmware
-header; it has not been run because this machine has no host C++ compiler. The
-firmware builds for `esp32-s3-supermini`. It has not been run on the board or
+header and passes with GCC on the host. The firmware builds for `esp32-s3-supermini`. It has not been run on the board or
 compared with recordings of real movements, and the Y axis calibration rests on
 two bench tilt readings.

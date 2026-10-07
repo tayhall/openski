@@ -18,6 +18,7 @@ class BleSensorClient(
     private val onBattery: (Int?) -> Unit = {},
     private val onDisconnected: () -> Unit = {},
     private val onRssi: (Int) -> Unit = {},
+    private val onMovement: (MovementEvent) -> Unit = {},
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private var gatt: BluetoothGatt? = null
@@ -104,7 +105,8 @@ class BleSensorClient(
         enqueue(Operation({ try { it.readRemoteRssi() } catch(_: SecurityException) { false } },optional=true,rssi=true))
     }
 
-    private fun subscribe(connection: BluetoothGatt, characteristic: BluetoothGattCharacteristic, done: () -> Unit = {}) {
+    private fun subscribe(connection: BluetoothGatt, characteristic: BluetoothGattCharacteristic, optional: Boolean = false,
+        done: () -> Unit = {}) {
         val descriptor = characteristic.getDescriptor(CCCD_UUID)
         val enabled = try { connection.setCharacteristicNotification(characteristic, true) } catch (_: SecurityException) { false }
         if (descriptor == null || !enabled) {
@@ -118,7 +120,7 @@ class BleSensorClient(
             @Suppress("DEPRECATION")
             g.writeDescriptor(descriptor)
             } catch (_: SecurityException) { false }
-        }, done = done, description="Subscribe ${characteristic.uuid}"))
+        }, optional = optional, done = done, description="Subscribe ${characteristic.uuid}"))
     }
 
     private fun receive(characteristic: BluetoothGattCharacteristic, bytes: ByteArray) {
@@ -126,6 +128,7 @@ class BleSensorClient(
             LIVE_UUID -> SensorSample.decode(bytes)?.let(onSample)
             CONTROL_UUID -> RecorderStatus.decode(bytes)?.let(onRecorder)
             DATA_UUID -> onChunk(FlashChunk.decode(bytes))
+            MOVEMENT_UUID -> MovementEvent.decode(bytes)?.let(onMovement)
             BATTERY_UUID -> onBattery(bytes.firstOrNull()?.toInt()?.and(255)?.takeIf { it <= 100 })
         }
     }
@@ -162,6 +165,9 @@ class BleSensorClient(
                 subscribe(g, data!!)
                 if (gatt !== g) return@dispatch
             }
+            // Older firmware has no movement characteristic, and a failed subscription must not drop the link.
+            service.getCharacteristic(MOVEMENT_UUID)?.let { subscribe(g, it, optional = true) }
+            if (gatt !== g) return@dispatch
             val battery = g.getService(BATTERY_SERVICE_UUID)?.getCharacteristic(BATTERY_UUID)
             if (battery != null) enqueue(Operation({ try { it.readCharacteristic(battery) } catch (_: SecurityException) { false } }, optional = true))
             // Negotiate before readiness so recorder commands cannot overtake MTU negotiation.
@@ -210,6 +216,7 @@ class BleSensorClient(
         private val LIVE_UUID = UUID.fromString("b1e7a100-3c31-4d59-a2c8-1e9f2f810002")
         private val CONTROL_UUID = UUID.fromString("b1e7a100-3c31-4d59-a2c8-1e9f2f810004")
         private val DATA_UUID = UUID.fromString("b1e7a100-3c31-4d59-a2c8-1e9f2f810005")
+        private val MOVEMENT_UUID = UUID.fromString("b1e7a100-3c31-4d59-a2c8-1e9f2f810006")
         private val CCCD_UUID = UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
         private val BATTERY_SERVICE_UUID = UUID.fromString("0000180f-0000-1000-8000-00805f9b34fb")
         private val BATTERY_UUID = UUID.fromString("00002a19-0000-1000-8000-00805f9b34fb")
