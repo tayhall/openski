@@ -54,11 +54,12 @@ Toolchain: AGP 9.0.1 with built-in Kotlin, compile/target SDK 36, minSdk 26, Jav
 
 - IMU is chip-independent: `lib/Imu` defines the interface and `ImuMonitor` (host-testable, normalised samples); `lib/ImuMpu6050` is the only driver. A new chip (e.g. LSM6DSOX) should plug in behind the interface without touching consumers.
 - IMU samples at 100 Hz. BLE live notifications are throttled to 50 Hz; the **flash recorder** (`RecorderService`) stores the full 100 Hz stream (about 10 minutes, one retained session) in SPIFFS until the app downloads it and issues erase.
-- HTTP telemetry (`/api/v1/imu`) and Arduino OTA run over Wi-Fi alongside BLE (NimBLE-Arduino).
+- HTTP telemetry (`/api/v1/imu`, `/api/v1/motion`, `POST /api/v1/motion/zero`) and Arduino OTA run over Wi-Fi alongside BLE (NimBLE-Arduino).
+- Motion recognition (`MotionService`): `lib/Motion` has the portable `GestureTracker` (gyro-burst rules) and `TiltTracker` (`tilt_v1`: gravity+gyro tilt against an auto-captured neutral pose; see `docs/bench-motion-recognition.md`). `include/SensorCalibration.h` holds fixed per-unit accel offset/scale and gyro bias, applied only to recogniser inputs and enabled for the S3 supermini envs. Recogniser output is experimental and in the sensor frame, not ski axes.
 
 ### Wire protocol (shared contract)
 
-`docs/ble-protocol.md` is the single source of truth for GATT UUIDs, the 19-byte little-endian live frame (v1), the 12-byte status characteristic, and the recorder control/data protocol (v2: start/stop/info/erase/download-at-offset/cancel, 16-byte responses). Firmware (`BluetoothService`, `RecorderService`) and Android (`BleSensorClient`, `RecorderProtocol`, `SensorSample`) must change together; update the doc and `RecorderProtocolTest` too. Protocol v2 has no recording ID or checksum, which drives the Android recovery design below.
+`docs/ble-protocol.md` is the single source of truth for GATT UUIDs, the 19-byte little-endian live frame (v1), the 12-byte status characteristic, and the recorder control/data protocol (v2: start/stop/info/erase/download-at-offset/cancel, 16-byte responses). Firmware (`BluetoothService`, `RecorderService`) and Android (`BleSensorClient`, `RecorderProtocol`, `SensorSample`) must change together; update the doc and `RecorderProtocolTest` too. Protocol v2 has no recording ID or checksum, which drives the Android recovery design below. The experimental movement-event characteristic (15-byte frame per `tilt_v1` excursion) is decoded by `MovementEventProtocol.kt`; the Android client does not subscribe to it yet.
 
 ### Android app (`android/app/src/main/java/com/openski/android/`)
 
@@ -86,4 +87,4 @@ Toolchain: AGP 9.0.1 with built-in Kotlin, compile/target SDK 36, minSdk 26, Jav
 ## Housekeeping
 
 - Git-ignored build/local artefacts: `.pio/`, `include/wifi_config.h`, `android/local.properties`, `*.bin`.
-- Branch work happens on feature branches (current: `feat/android-indoor-poc-design`); `main` is the PR target.
+- Branch work happens on feature branches (current: `feat/firmware-development`); `main` is the PR target.
