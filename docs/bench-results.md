@@ -195,3 +195,23 @@ The board ran from the over-the-air update at 23:22 on 6 October until 08:49, ab
 - **No I2C read failures across 3.4 million samples**, which covers the Phase 0 streaming-health check for the sensor and the Wi-Fi side.
 - The `timestamp_us` field in the JSON is a 32-bit microsecond clock that wraps every 71.6 minutes (it read 3976 s after about 9.5 hours), so uptime cannot be read from it directly. The app's analysis already handles the wrap.
 - Not covered: Bluetooth streaming over a long period, the flash recorder, and battery run time. This run used USB power.
+
+## 2026-10-07 (20:13 to 20:51): ESP32-S3 tilt accuracy, X and Y
+
+Handheld bench run of the Android Bench tools against the ESP32-S3 (MPU-6050), with a speed square as the 45° reference. Poses were set by hand, so each tilt reading includes seating error.
+
+**Six faces** (20:13 run, saved as the per-sensor correction): offsets +0.507, −0.169, −0.005 m/s² and scales 0.9988, 1.0056, 1.0305 for x, y, z. Face magnitudes spanned 9.29 to 10.31 m/s². Off-axis error was 1.6° to 2.4° on four faces and 5.9° on −Y up and +Z up; a later +Z-up hold read 4.8° and one with the wires up read about 3.5°, so most of that looks like placement.
+
+| Axis | Test | Raw reading | Raw error | Corrected |
+|---|---|---|---|---|
+| X | +Z up to −Y up | 43.3° | −1.7° | 45.4° (+0.4°) |
+| X | repeat | 43.6° | −1.4° | 44.7° (−0.3°) |
+| Y | +X up to +Z | 42.6° | −2.4° | not recorded |
+| Y | repeat | 44.2° | −0.8° | not recorded |
+
+- A first Y run read 52.8° (+7.8°) and was discarded as a seating error: it disagreed with both later runs by about 10°, and the known offset and scale errors explain at most a few degrees.
+- Raw tilt reads about 1.5° low on both axes, so a shared correction looks plausible. The Y corrected angles were not captured, so the correction is only verified for X.
+- A Z-axis run read 1.9° because the board was rotated about the vertical axis, which gravity cannot observe. It is not a Z result and was skipped. Rotation about whichever axis is vertical needs the gyro.
+- Still noise (20:54:53, 60 s, 50.0 Hz, 0 gaps): gyro bias x −1.90, y +0.23, z +0.40 °/s; gyro noise 0.06 °/s; accelerometer noise 0.033 m/s². The bias matches the settled cold-start values above (x about −1.93, y +0.21, z +0.44 °/s), so it is the known turn-on bias and not new drift. Earlier exports left this section empty.
+
+**Axes (partly measured):** with the header pins and wires pointing up, +Z reads +10.04 m/s² (x −0.36, y −0.38), so +Z is the direction the right-angle header exits the board. +X toward the mounting-hole edge is from the operator and fits an earlier x +9.37 reading; +Y is derived by the right-hand rule and not measured. The board's Wi-Fi dropped out twice during the session.

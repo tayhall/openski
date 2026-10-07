@@ -25,7 +25,7 @@ pio test -e native                        # host Unity tests (test/test_imu_moni
 pio test -e native -f test_imu_monitor    # single suite
 ```
 
-On the Windows dev machine PlatformIO is installed in the git-ignored `.venv` (`.venvScriptspio.exe`, Python 3.13 from `C:Python313`), so `pio` is not on PATH. The DevKit is on COM11; if upload reports "Wrong boot mode detected", hold the BOOT button while it says "Connecting" (tap EN if needed). The first USB flash of the recorder partition layout has been done on the current board, so later updates can go over the air without BOOT: `PLATFORMIO_UPLOAD_FLAGS=--auth=<OTA password from wifi_config.h> .venvScriptspio.exe run -e esp32-devkit-v1-ota -t upload --upload-port ski.local` (redact the password in any output). The board is reachable at `http://ski.local/api/v1/imu`. There is no host C++ compiler on this machine, so `pio test -e native` cannot run here.
+On the Windows dev machine PlatformIO is installed in the git-ignored `.venv` (`.venvScriptspio.exe`, Python 3.13 from `C:Python313`), so `pio` is not on PATH. The DevKit is on COM11; if upload reports "Wrong boot mode detected", hold the BOOT button while it says "Connecting" (tap EN if needed). The first USB flash of the recorder partition layout has been done on the current board, so later updates can go over the air without BOOT: `PLATFORMIO_UPLOAD_FLAGS=--auth=<OTA password from wifi_config.h> .venvScriptspio.exe run -e esp32-devkit-v1-ota -t upload --upload-port ski.local` (redact the password in any output). The board is reachable at `http://ski.local/api/v1/imu`. A host compiler (WinLibs GCC, installed with winget on 7 October 2026) lets `pio test -e native` run; its `mingw64/bin` directory under `%LOCALAPPDATA%\Microsoft\WinGet\Packages\BrechtSanders.WinLibs.POSIX.UCRT_*` must be on PATH, which shells opened before the install do not have. The standalone tests also build directly: `g++ -std=gnu++17 -Ilib/Motion/src tools/test_tilt_tracker.cpp` (and `test_gesture_tracker.cpp`).
 
 Setup: copy `include/wifi_config.example.h` to `include/wifi_config.h` (git-ignored; Wi-Fi SSID/password, OTA password). `AppConfig.h` falls back to empty strings if absent. Pins, hostname (`ski`) and BLE name (`OpenSki-ski`) live in `include/AppConfig.h`.
 
@@ -54,11 +54,12 @@ Toolchain: AGP 9.0.1 with built-in Kotlin, compile/target SDK 36, minSdk 26, Jav
 
 - IMU is chip-independent: `lib/Imu` defines the interface and `ImuMonitor` (host-testable, normalised samples); `lib/ImuMpu6050` is the only driver. A new chip (e.g. LSM6DSOX) should plug in behind the interface without touching consumers.
 - IMU samples at 100 Hz. BLE live notifications are throttled to 50 Hz; the **flash recorder** (`RecorderService`) stores the full 100 Hz stream (about 10 minutes, one retained session) in SPIFFS until the app downloads it and issues erase.
-- HTTP telemetry (`/api/v1/imu`) and Arduino OTA run over Wi-Fi alongside BLE (NimBLE-Arduino).
+- HTTP telemetry (`/api/v1/imu`, `/api/v1/motion`, `POST /api/v1/motion/zero`) and Arduino OTA run over Wi-Fi alongside BLE (NimBLE-Arduino).
+- Motion recognition (`MotionService`): `lib/Motion` has the portable `GestureTracker` (gyro-burst rules) and `TiltTracker` (`tilt_v1`: gravity+gyro tilt against an auto-captured neutral pose; see `docs/bench-motion-recognition.md`). `include/SensorCalibration.h` holds fixed per-unit accel offset/scale and gyro bias, applied only to recogniser inputs and enabled for the S3 supermini envs. Recogniser output is experimental and in the sensor frame, not ski axes.
 
 ### Wire protocol (shared contract)
 
-`docs/ble-protocol.md` is the single source of truth for GATT UUIDs, the 19-byte little-endian live frame (v1), the 12-byte status characteristic, and the recorder control/data protocol (v2: start/stop/info/erase/download-at-offset/cancel, 16-byte responses). Firmware (`BluetoothService`, `RecorderService`) and Android (`BleSensorClient`, `RecorderProtocol`, `SensorSample`) must change together; update the doc and `RecorderProtocolTest` too. Protocol v2 has no recording ID or checksum, which drives the Android recovery design below.
+`docs/ble-protocol.md` is the single source of truth for GATT UUIDs, the 19-byte little-endian live frame (v1), the 12-byte status characteristic, and the recorder control/data protocol (v2: start/stop/info/erase/download-at-offset/cancel, 16-byte responses). Firmware (`BluetoothService`, `RecorderService`) and Android (`BleSensorClient`, `RecorderProtocol`, `SensorSample`) must change together; update the doc and `RecorderProtocolTest` too. Protocol v2 has no recording ID or checksum, which drives the Android recovery design below. The experimental movement-event characteristic (15-byte frame per `tilt_v1` excursion) is decoded by `MovementEventProtocol.kt`; `BleSensorClient` subscribes when the firmware has it and passes events to `SensorSessionService.Listener.onMovementEvent`; no screen shows them yet.
 
 ### Android app (`android/app/src/main/java/com/openski/android/`)
 
@@ -86,4 +87,4 @@ Toolchain: AGP 9.0.1 with built-in Kotlin, compile/target SDK 36, minSdk 26, Jav
 ## Housekeeping
 
 - Git-ignored build/local artefacts: `.pio/`, `include/wifi_config.h`, `android/local.properties`, `*.bin`.
-- Branch work happens on feature branches (current: `feat/android-indoor-poc-design`); `main` is the PR target.
+- Branch work happens on feature branches (current: `feat/firmware-development`); `main` is the PR target.

@@ -1,5 +1,6 @@
 #include "MotionService.h"
 #include "ImuService.h"
+#include "SensorCalibration.h"
 #include <math.h>
 #include <string.h>
 #include <esp_timer.h>
@@ -14,6 +15,7 @@ imu::Vec3 restReference{};
 bool referenceReady = false;
 Event history[16]{};
 GestureTracker gestures;
+TiltTracker tilt;
 }
 
 void tick() {
@@ -23,9 +25,16 @@ void tick() {
   if (sample.timestampUs == lastTimestamp) return;
   lastTimestamp = sample.timestampUs;
   result.sampleTimestampUs = sample.timestampUs;
-  const auto& a = sample.accelMps2;
-  const auto& g = sample.gyroRadps;
+  // Recogniser inputs use the fixed per-unit correction; raw samples stay untouched.
+  namespace cal = openski::calibration;
+  const imu::Vec3 a{(sample.accelMps2.x-cal::kAccelOffsetMps2[0])/cal::kAccelScale[0],
+                    (sample.accelMps2.y-cal::kAccelOffsetMps2[1])/cal::kAccelScale[1],
+                    (sample.accelMps2.z-cal::kAccelOffsetMps2[2])/cal::kAccelScale[2]};
+  const imu::Vec3 g{sample.gyroRadps.x-cal::kGyroBiasRadps[0],
+                    sample.gyroRadps.y-cal::kGyroBiasRadps[1],
+                    sample.gyroRadps.z-cal::kGyroBiasRadps[2]};
   gestures.update(sample.timestampUs, g.x, g.y, g.z);
+  tilt.update(sample.timestampUs, a.x, a.y, a.z, g.x, g.y, g.z);
   const float speed = sqrtf(g.x*g.x + g.y*g.y + g.z*g.z);
   const float magnitude = sqrtf(a.x*a.x + a.y*a.y + a.z*a.z);
   if (!referenceReady) { restReference = a; referenceReady = true; }
@@ -79,6 +88,22 @@ uint32_t gestureCount() { return gestures.count(); }
 uint32_t rejectedGestures() { return gestures.rejected(); }
 uint32_t gestureSampleGaps() { return gestures.gaps(); }
 bool gestureActive() { return gestures.active(); }
+
+TiltStatus tiltStatus() {
+  TiltStatus snapshot;
+  snapshot.neutralReady = tilt.neutralReady();
+  snapshot.active = tilt.active();
+  snapshot.tiltDegrees = tilt.tiltDegrees();
+  for (int i = 0; i < 3; ++i) snapshot.aboutDegrees[i] = tilt.aboutDegrees(i);
+  snapshot.verticalAxis = tilt.verticalAxis();
+  snapshot.verticalSign = tilt.verticalSign();
+  snapshot.count = tilt.count();
+  snapshot.rejected = tilt.rejected();
+  snapshot.gaps = tilt.gaps();
+  return snapshot;
+}
+uint8_t recentExcursions(Excursion* output, uint8_t capacity) { return tilt.recent(output, capacity); }
+void zeroTilt() { tilt.zero(); }
 
 Status status() {
   Status snapshot = result;

@@ -11,6 +11,7 @@
 
 #include "AppConfig.h"
 #include "ImuService.h"
+#include "MotionService.h"
 #include "RecorderService.h"
 
 namespace openski::bluetooth {
@@ -20,10 +21,13 @@ constexpr char kLiveSampleUuid[] = "b1e7a100-3c31-4d59-a2c8-1e9f2f810002";
 constexpr char kStatusUuid[] = "b1e7a100-3c31-4d59-a2c8-1e9f2f810003";
 constexpr char kRecorderControlUuid[] = "b1e7a100-3c31-4d59-a2c8-1e9f2f810004";
 constexpr char kRecorderDataUuid[] = "b1e7a100-3c31-4d59-a2c8-1e9f2f810005";
+constexpr char kMovementEventUuid[] = "b1e7a100-3c31-4d59-a2c8-1e9f2f810006";
 constexpr uint8_t kProtocolVersion = 1;
+constexpr uint8_t kMovementEventVersion = 1;
 constexpr uint8_t kRecorderProtocolVersion = 2;
 constexpr size_t kLiveFrameSize = 19;
 constexpr size_t kStatusFrameSize = 12;
+constexpr size_t kMovementEventSize = 15;
 constexpr size_t kRecordSize = 16;
 constexpr size_t kTransferHeaderSize = 4;
 constexpr size_t kControlRequestSize = 5;
@@ -58,6 +62,8 @@ struct ControlRequest {
 
 NimBLEServer* server = nullptr;
 NimBLECharacteristic* liveCharacteristic = nullptr;
+NimBLECharacteristic* movementCharacteristic = nullptr;
+uint32_t lastMovementSequence = 0;
 NimBLECharacteristic* statusCharacteristic = nullptr;
 NimBLECharacteristic* recorderControlCharacteristic = nullptr;
 NimBLECharacteristic* recorderDataCharacteristic = nullptr;
@@ -177,6 +183,39 @@ void notifyLatestSample() {
   liveCharacteristic->notify();
   lastSentSampleTimestamp = sample.timestampUs;
   lastNotifiedSampleCount = samples;
+}
+
+// One notification per completed tilt excursion (see docs/ble-protocol.md). Events that
+// finish while no client is connected are not replayed.
+void notifyMovementEvents() {
+  if (movementCharacteristic == nullptr) return;
+  const motion::TiltStatus tilt = motion::tiltStatus();
+  if (!clientConnected || tilt.count < lastMovementSequence) {
+    lastMovementSequence = tilt.count;
+    return;
+  }
+  if (tilt.count == lastMovementSequence) return;
+  motion::Excursion events[16];
+  const uint8_t count = motion::recentExcursions(events, 16);
+  for (uint8_t i = 0; i < count; ++i) {
+    if (events[i].sequence <= lastMovementSequence) continue;
+    const motion::Excursion& e = events[i];
+    const uint32_t durationMs = (e.endUs - e.startUs) / 1000U;
+    uint8_t frame[kMovementEventSize]{};
+    frame[0] = kMovementEventVersion;
+    frame[1] = e.axis;
+    putUint16(frame + 2, static_cast<uint16_t>(e.sequence));
+    putUint32(frame + 4, e.startUs / 1000U);
+    putUint16(frame + 8, durationMs > 65535U ? 65535U : static_cast<uint16_t>(durationMs));
+    putSigned16(frame + 10, quantize(e.peakDegrees, 100.0f));
+    putSigned16(frame + 12, quantize(e.aboutDegrees, 100.0f));
+    frame[14] = static_cast<uint8_t>(roundf(e.axisFraction * 100.0f));
+    movementCharacteristic->setValue(frame, sizeof(frame));
+    movementCharacteristic->notify();
+    lastMovementSequence = e.sequence;
+    return;  // one per tick; the next follows on the next loop
+  }
+  lastMovementSequence = tilt.count;  // the missed events fell out of the history
 }
 
 void notifyRecorderResponse(uint8_t opcode, RecorderResult result) {
@@ -361,6 +400,8 @@ void begin() {
   recorderControlCharacteristic->setCallbacks(new ControlCallbacks());
   recorderDataCharacteristic = service->createCharacteristic(
       kRecorderDataUuid, NIMBLE_PROPERTY::NOTIFY);
+  movementCharacteristic = service->createCharacteristic(
+      kMovementEventUuid, NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY);
 
   service->start();
   NimBLEAdvertising* bleAdvertising = NimBLEDevice::getAdvertising();
@@ -392,6 +433,7 @@ void tick() {
   processControlRequests();
   if (statusCharacteristic != nullptr) updateStatus();
   notifyLatestSample();
+  notifyMovementEvents();
   notifyNextRecordChunk();
 }
 }  // namespace openski::bluetooth
