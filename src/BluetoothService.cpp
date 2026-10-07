@@ -4,6 +4,7 @@
 #include <NimBLEDevice.h>
 #include <math.h>
 #include <string.h>
+#include <esp_timer.h>
 
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
@@ -70,6 +71,23 @@ uint16_t sequenceNumber = 0;
 uint32_t lastSentSampleTimestamp = 0;
 uint32_t lastNotifiedSampleCount = 0;
 unsigned long lastTransferMs = 0;
+portMUX_TYPE diagnosticsMux = portMUX_INITIALIZER_UNLOCKED;
+Diagnostics connectionDiagnostics;
+
+int trackGapEvent(ble_gap_event* event, void*) {
+  const uint64_t now = esp_timer_get_time() / 1000ULL;
+  portENTER_CRITICAL(&diagnosticsMux);
+  if (event->type == BLE_GAP_EVENT_CONNECT && event->connect.status == 0) {
+    ++connectionDiagnostics.connections;
+    connectionDiagnostics.lastConnectedMs = now;
+  } else if (event->type == BLE_GAP_EVENT_DISCONNECT) {
+    ++connectionDiagnostics.disconnections;
+    connectionDiagnostics.lastDisconnectedMs = now;
+    connectionDiagnostics.lastDisconnectReason = event->disconnect.reason;
+  }
+  portEXIT_CRITICAL(&diagnosticsMux);
+  return 0;
+}
 
 void putUint16(uint8_t* out, uint16_t value) {
   out[0] = static_cast<uint8_t>(value & 0xff);
@@ -328,6 +346,7 @@ void notifyNextRecordChunk() {
 void begin() {
   controlQueue = xQueueCreate(4, sizeof(ControlRequest));
   NimBLEDevice::init(config::kBleName);
+  NimBLEDevice::setCustomGapHandler(trackGapEvent);
   server = NimBLEDevice::createServer();
   server->setCallbacks(new ServerCallbacks());
 
@@ -356,6 +375,13 @@ void begin() {
 }
 
 bool connected() { return clientConnected; }
+bool advertisingNow() { return NimBLEDevice::getAdvertising()->isAdvertising(); }
+Diagnostics diagnostics() {
+  portENTER_CRITICAL(&diagnosticsMux);
+  const Diagnostics snapshot = connectionDiagnostics;
+  portEXIT_CRITICAL(&diagnosticsMux);
+  return snapshot;
+}
 bool recording() { return recorder::status().recording; }
 
 void tick() {

@@ -1,20 +1,8 @@
-<vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="108dp"
-    android:height="108dp"
-    android:viewportWidth="108"
-    android:viewportHeight="108">
-    <path
-        android:fillColor="@android:color/transparent"
-        android:pathData="M77,28 C70,21 62,18 53,18 C34,18 20,33 20,52 C20,71 35,87 54,87 C68,87 80,78 85,66"
-        android:strokeColor="#C7F36B"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:strokeWidth="7" />
-    <path
-        android:fillColor="@android:color/transparent"
-        android:pathData="M35,66 L49,50 L61,62 L76,42"
-        android:strokeColor="#74D5E8"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"
-        android:strokeWidth="6" />
-</vector>
+<!-- 66 / 108 of the foreground, with proportional margins at every launcher size. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:insetLeft="19.4444%"
+    android:insetTop="19.4444%"
+    android:insetRight="19.4444%"
+    android:insetBottom="19.4444%">
+    <bitmap android:src="@drawable/openski_logo" android:gravity="fill" android:filter="true" />
+</inset>

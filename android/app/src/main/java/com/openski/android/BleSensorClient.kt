@@ -4,6 +4,7 @@ import android.bluetooth.*
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.util.Log
 import java.util.UUID
 
 /** GATT operations are serialised; callbacks from a replaced connection are ignored. */
@@ -21,14 +22,16 @@ class BleSensorClient(
     private val handler = Handler(Looper.getMainLooper())
     private var gatt: BluetoothGatt? = null
     private data class Operation(val start: (BluetoothGatt) -> Boolean, val optional: Boolean = false,
-        val done: () -> Unit = {}, val rssi: Boolean=false)
+        val done: () -> Unit = {}, val rssi: Boolean=false, val mtu: Boolean=false,
+        val description: String="GATT operation")
     private val queue = ArrayDeque<Operation>()
     private var current: Operation? = null
     private var ready = false
     val isReady get() = ready
     private var control: BluetoothGattCharacteristic? = null
     private val timeout = Runnable {
-        if (current?.optional == true) finish(false) else fail("Bluetooth operation timed out")
+        if (current?.optional == true) finish(false)
+        else fail("${current?.description ?: "Bluetooth connection"} timed out")
     }
 
     fun connect(device: BluetoothDevice) {
@@ -52,6 +55,7 @@ class BleSensorClient(
     }
 
     private fun fail(message: String) {
+        Log.w("OpenSkiBLE", "${gatt?.device?.address ?: "unknown sensor"}: $message")
         disconnect()
         onStatus(message)
         onDisconnected()
@@ -71,7 +75,7 @@ class BleSensorClient(
         handler.removeCallbacks(timeout)
         val operation = current ?: return
         current = null
-        if (!success && !operation.optional) { fail("Bluetooth operation failed; retrying"); return }
+        if (!success && !operation.optional) { fail("${operation.description} failed; retrying"); return }
         operation.done()
         advance()
     }
@@ -114,7 +118,7 @@ class BleSensorClient(
             @Suppress("DEPRECATION")
             g.writeDescriptor(descriptor)
             } catch (_: SecurityException) { false }
-        }, done = done))
+        }, done = done, description="Subscribe ${characteristic.uuid}"))
     }
 
     private fun receive(characteristic: BluetoothGattCharacteristic, bytes: ByteArray) {
@@ -132,6 +136,7 @@ class BleSensorClient(
             if(current?.rssi==true) finish(status==BluetoothGatt.GATT_SUCCESS)
         }
         override fun onConnectionStateChange(g: BluetoothGatt, status: Int, state: Int) = dispatch(g) {
+            Log.i("OpenSkiBLE","${g.device.address}: connection status=$status state=$state")
             if (status != BluetoothGatt.GATT_SUCCESS) { fail("Connection failed ($status)"); return@dispatch }
             if (state == BluetoothProfile.STATE_CONNECTED) {
                 handler.removeCallbacks(timeout)
@@ -160,7 +165,7 @@ class BleSensorClient(
             val battery = g.getService(BATTERY_SERVICE_UUID)?.getCharacteristic(BATTERY_UUID)
             if (battery != null) enqueue(Operation({ try { it.readCharacteristic(battery) } catch (_: SecurityException) { false } }, optional = true))
             // Negotiate before readiness so recorder commands cannot overtake MTU negotiation.
-            enqueue(Operation({ try { it.requestMtu(247) } catch (_: SecurityException) { false } }, optional = true))
+            enqueue(Operation({ try { it.requestMtu(247) } catch (_: SecurityException) { false } }, optional = true,mtu=true,description="MTU negotiation"))
             subscribe(g, live) {
                 ready = true
                 onStatus("Live stream ready")
@@ -173,7 +178,12 @@ class BleSensorClient(
         override fun onCharacteristicWrite(g: BluetoothGatt, c: BluetoothGattCharacteristic, status: Int) = dispatch(g) {
             finish(status == BluetoothGatt.GATT_SUCCESS)
         }
-        override fun onMtuChanged(g: BluetoothGatt, mtu: Int, status: Int) = dispatch(g) { finish(true) }
+        override fun onMtuChanged(g: BluetoothGatt, mtu: Int, status: Int) = dispatch(g) {
+            Log.i("OpenSkiBLE","${g.device.address}: MTU=$mtu status=$status")
+            // Android can report an MTU change independently of our queued request.
+            // It must not complete service discovery or a descriptor/characteristic write.
+            if(current?.mtu==true) finish(status==BluetoothGatt.GATT_SUCCESS)
+        }
         @Deprecated("Required below API 33")
         override fun onCharacteristicRead(g: BluetoothGatt, c: BluetoothGattCharacteristic, status: Int) = dispatch(g) {
             @Suppress("DEPRECATION")

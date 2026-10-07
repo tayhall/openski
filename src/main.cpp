@@ -3,6 +3,7 @@
 #include "Diagnostics.h"
 #include "BluetoothService.h"
 #include "ImuService.h"
+#include "MotionService.h"
 #include "OtaService.h"
 #include "RecorderService.h"
 #include "TelemetryService.h"
@@ -19,6 +20,7 @@ void setup() {
 
 void loop() {
   openski::imu::tick();
+  openski::motion::tick();
   openski::recorder::tick(openski::imu::monitor());
   openski::wifi::tick();
   openski::ota::tick();
