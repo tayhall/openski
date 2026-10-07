@@ -178,3 +178,20 @@ The raw log is in [`data/cold-start-2026-10-06.csv`](data/cold-start-2026-10-06.
 
 - **Slow settling:** about 0.02 °/s over 14 minutes at constant temperature, small next to the 0.27 °/s temperature effect but not zero. Turn-on drift is therefore part of what the temperature fit captured.
 - **Hysteresis:** Y and Z settle at about +0.21 and +0.44 °/s, against the pre-freezer warm baseline of +0.06 and +0.37 at the same temperature. The thermal cycle left an offset of roughly 0.07 to 0.15 °/s. A temperature table alone will not remove that; re-calibrating at the start of each session will.
+
+## 2026-10-07 (08:49): overnight streaming health
+
+The board ran from the over-the-air update at 23:22 on 6 October until 08:49, about 9.5 hours, in a sealed bag on the desk, powered over USB and on Wi-Fi throughout. Read from its Wi-Fi JSON:
+
+| Measure | Value |
+|---|---|
+| Samples captured | 3,401,973 |
+| Average capture rate | **100.0 samples/s** (3,401,973 over about 34,000 s) |
+| Read failures | **0** |
+| Dropped samples | 0 (the recorder was not recording) |
+| Sensor temperature | 25.96 °C (room about 19 °C; the bag traps heat) |
+
+- **The capture-rate fix holds** over a whole night. The 98.1 samples/s measured earlier included the cost of the HTTP polling itself.
+- **No I2C read failures across 3.4 million samples**, which covers the Phase 0 streaming-health check for the sensor and the Wi-Fi side.
+- The `timestamp_us` field in the JSON is a 32-bit microsecond clock that wraps every 71.6 minutes (it read 3976 s after about 9.5 hours), so uptime cannot be read from it directly. The app's analysis already handles the wrap.
+- Not covered: Bluetooth streaming over a long period, the flash recorder, and battery run time. This run used USB power.
