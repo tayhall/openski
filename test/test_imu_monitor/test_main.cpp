@@ -97,6 +97,39 @@ void test_sensor_name_is_exposed() {
   TEST_ASSERT_EQUAL_STRING("none", withoutSensor.sensorName());
 }
 
+void test_retry_recovers_a_sensor_that_was_missed_at_boot() {
+  FakeImu imu;
+  imu.beginOk = false;
+  ImuMonitor monitor(&imu);
+  TEST_ASSERT_FALSE(monitor.begin());
+
+  // Too soon after the first attempt: no retry yet.
+  TEST_ASSERT_FALSE(monitor.retryBegin(1000, 2000));
+  imu.beginOk = true;
+  TEST_ASSERT_FALSE(monitor.retryBegin(2999, 2000));
+  TEST_ASSERT_FALSE(monitor.stats().ready);
+
+  // After the interval it retries once and succeeds.
+  TEST_ASSERT_TRUE(monitor.retryBegin(3000, 2000));
+  TEST_ASSERT_TRUE(monitor.stats().ready);
+  // A ready sensor is never re-initialised.
+  TEST_ASSERT_FALSE(monitor.retryBegin(10000, 2000));
+  monitor.poll();
+  TEST_ASSERT_EQUAL_UINT32(1, monitor.stats().samples);
+}
+
+void test_retry_keeps_trying_at_the_interval_while_the_sensor_stays_missing() {
+  FakeImu imu;
+  imu.beginOk = false;
+  ImuMonitor monitor(&imu);
+  TEST_ASSERT_FALSE(monitor.retryBegin(0, 2000));
+  TEST_ASSERT_FALSE(monitor.retryBegin(1999, 2000));
+  TEST_ASSERT_FALSE(monitor.retryBegin(2000, 2000));
+  imu.beginOk = true;
+  TEST_ASSERT_FALSE(monitor.retryBegin(3999, 2000));
+  TEST_ASSERT_TRUE(monitor.retryBegin(4000, 2000));
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_no_sensor_is_not_ready);
@@ -105,5 +138,7 @@ int main() {
   RUN_TEST(test_no_data_is_neither_sample_nor_failure);
   RUN_TEST(test_read_error_is_counted_and_keeps_previous_sample);
   RUN_TEST(test_sensor_name_is_exposed);
+  RUN_TEST(test_retry_recovers_a_sensor_that_was_missed_at_boot);
+  RUN_TEST(test_retry_keeps_trying_at_the_interval_while_the_sensor_stays_missing);
   return UNITY_END();
 }

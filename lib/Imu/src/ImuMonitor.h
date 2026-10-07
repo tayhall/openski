@@ -18,6 +18,10 @@ class ImuMonitor {
   bool begin();
   void poll();
 
+  // While the sensor is not ready, tries begin() again at most once per intervalMs. Returns true only when a
+  // retry brings the sensor up, so a missed detection at boot (or a bus left stuck by a reset) recovers.
+  bool retryBegin(uint32_t nowMs, uint32_t intervalMs);
+
   const Stats& stats() const { return stats_; }
   bool hasSample() const { return stats_.samples > 0; }
   const Sample& latest() const { return latest_; }
@@ -27,5 +31,7 @@ class ImuMonitor {
   ImuSensor* sensor_;
   Stats stats_{};
   Sample latest_{};
+  bool attempted_ = false;
+  uint32_t lastAttemptMs_ = 0;
 };
 }  // namespace openski::imu

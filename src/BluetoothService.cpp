@@ -26,7 +26,9 @@ constexpr size_t kStatusFrameSize = 12;
 constexpr size_t kRecordSize = 16;
 constexpr size_t kTransferHeaderSize = 4;
 constexpr size_t kControlRequestSize = 5;
-constexpr unsigned long kLiveRateLimitMs = 20;  // 50 Hz; fits default ATT MTU.
+// The IMU samples at 100 Hz. Sending every second sample gives a steady 50 Hz that fits the default ATT MTU.
+// Counting samples, rather than timing sends against a loop tick, avoids the 20/30 ms quantisation that measured 38 Hz.
+constexpr uint32_t kLiveDecimation = 2;
 constexpr unsigned long kTransferRateLimitMs = 10;
 
 enum class RecorderCommand : uint8_t {
@@ -66,7 +68,7 @@ uint16_t connectionId = 0;
 uint32_t downloadOffset = 0;
 uint16_t sequenceNumber = 0;
 uint32_t lastSentSampleTimestamp = 0;
-unsigned long lastNotifyMs = 0;
+uint32_t lastNotifiedSampleCount = 0;
 unsigned long lastTransferMs = 0;
 
 void putUint16(uint8_t* out, uint16_t value) {
@@ -137,8 +139,8 @@ void notifyLatestSample() {
   const imu::ImuMonitor& monitor = imu::monitor();
   if (!clientConnected || !monitor.hasSample() || liveCharacteristic == nullptr) return;
 
-  const unsigned long now = millis();
-  if (now - lastNotifyMs < kLiveRateLimitMs) return;
+  const uint32_t samples = monitor.stats().samples;
+  if (samples - lastNotifiedSampleCount < kLiveDecimation) return;
   const imu::Sample& sample = monitor.latest();
   if (sample.timestampUs == lastSentSampleTimestamp) return;
 
@@ -156,7 +158,7 @@ void notifyLatestSample() {
   liveCharacteristic->setValue(frame, sizeof(frame));
   liveCharacteristic->notify();
   lastSentSampleTimestamp = sample.timestampUs;
-  lastNotifyMs = now;
+  lastNotifiedSampleCount = samples;
 }
 
 void notifyRecorderResponse(uint8_t opcode, RecorderResult result) {

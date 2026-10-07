@@ -121,6 +121,8 @@ Placeholders to agree after Phase 0. They are targets for the POC, not claims.
 
 Noise is not the concern: at about 5 mdps/√Hz, integrating for 10 seconds adds only a few hundredths of a degree. **Gyro bias and its drift with temperature are.** A bias error of 1 °/s grows into 60° of roll error per minute, and boots start warm and end up cold. Calibration removes the bias at a still stance, and rest events re-anchor it, but only if the bias has not moved in between. The IMU itself draws milliamps, so a better chip would not save battery.
 
+**Cold-start result (6 October, see [bench results](bench-results.md)):** between about −4 °C and 27 °C the gyro bias shifts by x −0.10, y +0.19, z +0.27 °/s, so uncompensated it fails the 0.05 °/s target. The change is smooth and near-linear in X and Z (Y is curved), so software temperature compensation looks viable. One run only.
+
 **Baseline so far** (warm, room temperature, 6 October): gyro bias x −1.93 then −1.94, y +0.06, z +0.38 then +0.37 °/s across 55 minutes, noise 0.05 °/s; see [bench results](bench-results.md). The cold-start comparison is still to do.
 
 **Decision rule.** Use the Phase 0 measurements (still captures warm, cold and re-warmed, and step 12):
@@ -157,8 +159,8 @@ These come from general knowledge, not from measurements in this project. Treat 
 - Rename "boot roll" to "cuff roll" in the app once the mounting is settled.
 - Mounting-picker wording: ask which way the shin faces rather than "toward the toe".
 - Should the ADC divider on the iSpindel board feed a battery-level reading into the BLE battery service?
-- The live stream measures 37.9 Hz, not the documented 50 Hz, because of the 20 ms send limit on a 10 ms loop (see [bench results](bench-results.md)). Fix with a decimated 50 Hz stream or batching.
-- Add an IMU retry at boot; the sensor was missed once after a flash.
+- The live stream measured 37.9 Hz because of a 20 ms send limit on a 10 ms loop, and the IMU was captured at only about 83 samples/s. Fixed on 6 October (see [bench results](bench-results.md)); confirm 50 Hz through the app.
+- IMU retry and I2C bus recovery added. A Wi-Fi-off field mode is still to do.
 
 ## Later: on-device processing
 

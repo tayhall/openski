@@ -120,3 +120,78 @@ The board was taken out of a −25 °C freezer in a sealed bag, plugged in throu
 The freezer test was not completed on 6 October. The first attempt (20:10) was handled through a bag and is unusable, and a second attempt planned around a USB serial log fell through because the board was powered from a network-side supply, not the PC; by the time that was clear the board had warmed to room temperature (25.2 °C). The cold-start bias comparison, and any bias-against-temperature fit, are therefore still open.
 
 For next time, no USB link is needed. `tools/wifi_imu_log.py` polls the board's Wi-Fi endpoint (`http://ski.local/api/v1/imu`, which includes `temperature_c`) twice a second and records gyro, accelerometer and temperature, so it works with the board powered from any charger. Start it before the board is powered; a drop in the uptime column marks the power-up. Freeze for 30 to 45 minutes in a sealed bag, power the board through the taped neck, lay it flat chip side up, and leave it untouched for about 25 minutes.
+
+## 2026-10-06 (22:58): cold start, logged over Wi-Fi
+
+The board was taken from the freezer in its bag, powered on, and left untouched while `tools/wifi_imu_log.py` polled it twice a second. The first reading was −4.4 °C at 25 s after power-up (the board had been out of the freezer for a short while before power-up, so it was probably about −10 °C at the start, not −25 °C), warming at roughly 10 to 15 °C a minute at first and settling near 26.9 °C within about 15 minutes. Room temperature was about 19 °C. The board stayed in its sealed bag throughout, which traps heat, and the sensor reports its own die temperature, so it settled about 8 °C above the room. A sealed enclosure on a boot would behave similarly, and the results are against the chip's own temperature, so this does not affect the comparison. The board lay tilted, about 33° off flat, which does not matter for gyro bias. About 2100 samples, uptime 25 s to 1082 s.
+
+Gyro bias by sensor temperature (mean of single readings in each 3 °C bin):
+
+| Temp bin (°C) | n | x (°/s) | y (°/s) | z (°/s) |
+|---|---|---|---|---|
+| −6 to −3 | 10 | −1.823 | +0.018 | +0.110 |
+| −3 to 0 | 19 | −1.831 | +0.022 | +0.128 |
+| 0 to 3 | 15 | −1.858 | −0.024 | +0.183 |
+| 3 to 6 | 36 | −1.862 | −0.029 | +0.195 |
+| 6 to 9 | 38 | −1.878 | −0.028 | +0.223 |
+| 9 to 12 | 60 | −1.882 | −0.022 | +0.257 |
+| 12 to 15 | 71 | −1.900 | −0.007 | +0.283 |
+| 15 to 18 | 108 | −1.910 | +0.028 | +0.316 |
+| 18 to 21 | 173 | −1.919 | +0.057 | +0.352 |
+| 21 to 24 | 285 | −1.936 | +0.109 | +0.386 |
+| 24 to 27 | 1279 | −1.943 | +0.187 | +0.428 |
+
+**Fitted slope:** x −0.0040, y +0.0048, z +0.0104 °/s per °C. Between the cold bins (below 5 °C) and the warm bins (above 26 °C) the bias shifts by x −0.10, y +0.19, z +0.27 °/s.
+
+### What it means
+
+- **Uncompensated, the bias fails the 0.05 °/s target.** If a boot were calibrated cold and the board then warmed by about 30 °C, the worst axis (Z) would drift by roughly 0.27 °/s, about 16° of error a minute.
+- **The change is smooth and close to linear in X and Z** (residuals within about 0.02 °/s), so **software temperature compensation looks viable**, using the chip's own temperature reading. Y is curved (flat below about 12 °C, then rising), so it needs a quadratic or a small table.
+- **Caveats.** Temperature and time since power-up rise together, so part of this may be turn-on drift, not temperature. Y and Z at 24 to 27 °C (+0.19, +0.43) are higher than the earlier warm baseline at the same temperature (+0.06, +0.37 °/s), so there is some hysteresis or settling of about 0.1 °/s. This is a single cold run; repeatability is unknown.
+- Gyro noise and the accelerometer were not assessed in this run.
+
+## 2026-10-06 (23:22): IMU capture rate fixed, retry and build ID added
+
+**Finding.** The board's JSON `samples` counter, divided by uptime, showed the IMU was captured at only about **83 samples/s**, not 100. The main loop ran a 10 ms delay plus work, so it caught about five of every six IMU samples. That also explains the 37.9 Hz live stream, and the flash recorder takes its samples from the same loop, so recordings were affected as well.
+
+**Fix** (firmware, flashed over the air):
+
+- Loop delay 10 ms to 2 ms, so every sample is caught.
+- Live stream sends every second IMU sample (counted), a steady 50 Hz, instead of a 20 ms timer.
+- IMU start-up retried every 2 s, with I2C bus recovery (a reset in the middle of a transfer can leave the sensor holding the data line low, which probably explains the one missed IMU after the first flash).
+- A build ID (git commit, `-dirty` if uncommitted, and the date) printed at boot and served in the Wi-Fi JSON as `build`.
+
+**Result.** After the update the board reports build `3507c23-dirty 2026-10-06` and measures **98.1 samples/s** over a 12.8 s window with no read failures (the HTTP request itself costs a few samples). The 50 Hz live rate has not yet been measured through the app; run Still 60 s in Bench tools and check the rate.
+
+Not verified: the native firmware unit tests for the retry logic could not be run because this machine has no host C++ compiler. The logic was checked by hand against the tests.
+
+### Cold start addendum: settling and the archived data
+
+The raw log is in [`data/cold-start-2026-10-06.csv`](data/cold-start-2026-10-06.csv) (2888 readings, uptime 25 s to 1479 s, −4.3 to 26.8 °C), so the table above can be re-derived. The table used the first 1082 s; the file also holds the longer warm tail. At a steady 26.9 °C the bias keeps creeping slowly:
+
+| Uptime (s) | Temp (°C) | Gyro x | Gyro y | Gyro z (°/s) |
+|---|---|---|---|---|
+| 600 to 800 | 26.2 | −1.944 | +0.187 | +0.427 |
+| 800 to 1000 | 26.8 | −1.941 | +0.200 | +0.436 |
+| 1000 to 1200 | 26.9 | −1.936 | +0.207 | +0.439 |
+| 1200 to 1400 | 26.9 | −1.931 | +0.213 | +0.441 |
+
+- **Slow settling:** about 0.02 °/s over 14 minutes at constant temperature, small next to the 0.27 °/s temperature effect but not zero. Turn-on drift is therefore part of what the temperature fit captured.
+- **Hysteresis:** Y and Z settle at about +0.21 and +0.44 °/s, against the pre-freezer warm baseline of +0.06 and +0.37 at the same temperature. The thermal cycle left an offset of roughly 0.07 to 0.15 °/s. A temperature table alone will not remove that; re-calibrating at the start of each session will.
+
+## 2026-10-07 (08:49): overnight streaming health
+
+The board ran from the over-the-air update at 23:22 on 6 October until 08:49, about 9.5 hours, in a sealed bag on the desk, powered over USB and on Wi-Fi throughout. Read from its Wi-Fi JSON:
+
+| Measure | Value |
+|---|---|
+| Samples captured | 3,401,973 |
+| Average capture rate | **100.0 samples/s** (3,401,973 over about 34,000 s) |
+| Read failures | **0** |
+| Dropped samples | 0 (the recorder was not recording) |
+| Sensor temperature | 25.96 °C (room about 19 °C; the bag traps heat) |
+
+- **The capture-rate fix holds** over a whole night. The 98.1 samples/s measured earlier included the cost of the HTTP polling itself.
+- **No I2C read failures across 3.4 million samples**, which covers the Phase 0 streaming-health check for the sensor and the Wi-Fi side.
+- The `timestamp_us` field in the JSON is a 32-bit microsecond clock that wraps every 71.6 minutes (it read 3976 s after about 9.5 hours), so uptime cannot be read from it directly. The app's analysis already handles the wrap.
+- Not covered: Bluetooth streaming over a long period, the flash recorder, and battery run time. This run used USB power.

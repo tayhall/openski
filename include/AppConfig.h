@@ -1,5 +1,9 @@
 #pragma once
 
+#ifndef OPENSKI_BUILD_ID
+#define OPENSKI_BUILD_ID "unknown"
+#endif
+
 #if __has_include("wifi_config.h")
 #include "wifi_config.h"
 #else
@@ -13,6 +17,7 @@ inline constexpr char kWifiSsid[] = OPENSKI_WIFI_SSID;
 inline constexpr char kWifiPassword[] = OPENSKI_WIFI_PASSWORD;
 inline constexpr char kOtaPassword[] = OPENSKI_OTA_PASSWORD;
 inline constexpr char kHostname[] = "ski";
+inline constexpr char kBuildId[] = OPENSKI_BUILD_ID;
 inline constexpr char kBleName[] = "OpenSki-ski";
 inline constexpr int kImuSdaPin = 21;
 inline constexpr int kImuSclPin = 22;

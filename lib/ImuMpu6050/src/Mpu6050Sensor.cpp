@@ -27,6 +27,21 @@ constexpr float kTemperatureOffsetC = 36.53f;
 int16_t toSignedWord(uint8_t high, uint8_t low) {
   return static_cast<int16_t>((static_cast<uint16_t>(high) << 8) | low);
 }
+// A reset in the middle of an I2C transfer can leave the sensor holding SDA low, which makes every later
+// start-up miss it until the bus is cleared. Clock SCL up to nine times until the sensor releases SDA.
+void recoverBus(int sdaPin, int sclPin) {
+  pinMode(sdaPin, INPUT_PULLUP);
+  pinMode(sclPin, OUTPUT);
+  digitalWrite(sclPin, HIGH);
+  delayMicroseconds(10);
+  for (int pulse = 0; pulse < 9 && digitalRead(sdaPin) == LOW; ++pulse) {
+    digitalWrite(sclPin, LOW);
+    delayMicroseconds(10);
+    digitalWrite(sclPin, HIGH);
+    delayMicroseconds(10);
+  }
+}
+
 }  // namespace
 
 Mpu6050Sensor::Mpu6050Sensor(TwoWire& wire, int sdaPin, int sclPin,
@@ -39,6 +54,8 @@ Mpu6050Sensor::Mpu6050Sensor(TwoWire& wire, int sdaPin, int sclPin,
 
 bool Mpu6050Sensor::begin() {
   initialized_ = false;
+  wire_.end();  // A retry must not find the bus already started.
+  recoverBus(sdaPin_, sclPin_);
   if (!wire_.begin(sdaPin_, sclPin_, busFrequencyHz_)) return false;
 
   // Wake the device and use the X gyro PLL as its clock source.

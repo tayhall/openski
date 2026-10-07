@@ -25,5 +25,6 @@ void loop() {
   openski::telemetry::tick();
   openski::bluetooth::tick();
   openski::diagnostics::tick();
-  delay(10);
+  // Poll fast enough to catch every 100 Hz IMU sample. A 10 ms delay plus work caught only about 83 per second.
+  delay(2);
 }
