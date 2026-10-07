@@ -18,6 +18,44 @@ namespace {
 WebServer server(80);
 bool serverStarted = false;
 
+String tiltJson() {
+  const auto tilt = motion::tiltStatus();
+  const char* const names[] = {"+x", "-x", "+y", "-y", "+z", "-z"};
+  const char* vertical = "none";
+  if (tilt.verticalAxis >= 0) vertical = names[tilt.verticalAxis*2 + (tilt.verticalSign > 0 ? 0 : 1)];
+  char head[640];
+  snprintf(head, sizeof(head),
+           "{\"algorithm\":\"tilt_v1\",\"frame\":\"sensor\",\"neutral_ready\":%s,"
+           "\"tilt_degrees\":%.2f,\"about_degrees\":{\"x\":%.2f,\"y\":%.2f,\"z\":%.2f},"
+           "\"vertical_axis\":\"%s\",\"excursion_active\":%s,\"excursion_count\":%lu,"
+           "\"rejected_excursions\":%lu,\"sample_gaps\":%lu,"
+           "\"axes\":{\"x\":\"toward the mounting-hole edge\","
+           "\"y\":\"right-hand rule from z and x (derived, not yet measured)\","
+           "\"z\":\"the way the right-angle header pins exit the board (measured)\"},"
+           "\"recent_excursions\":[",
+           tilt.neutralReady ? "true" : "false", tilt.tiltDegrees, tilt.aboutDegrees[0],
+           tilt.aboutDegrees[1], tilt.aboutDegrees[2], vertical, tilt.active ? "true" : "false",
+           static_cast<unsigned long>(tilt.count), static_cast<unsigned long>(tilt.rejected),
+           static_cast<unsigned long>(tilt.gaps));
+  String json(head);
+  motion::Excursion excursions[16];
+  const uint8_t count = motion::recentExcursions(excursions, 16);
+  for (uint8_t i = 0; i < count; ++i) {
+    const auto& e = excursions[i];
+    char body[256];
+    snprintf(body, sizeof(body),
+             "%s{\"sequence\":%lu,\"start_us\":%lu,\"peak_us\":%lu,\"end_us\":%lu,\"axis\":\"%c\","
+             "\"peak_degrees\":%.2f,\"about_degrees\":%.2f,\"duration_ms\":%lu,\"axis_fraction\":%.3f}",
+             i ? "," : "", static_cast<unsigned long>(e.sequence), static_cast<unsigned long>(e.startUs),
+             static_cast<unsigned long>(e.peakUs), static_cast<unsigned long>(e.endUs), 'x'+e.axis,
+             e.peakDegrees, e.aboutDegrees, static_cast<unsigned long>((e.endUs-e.startUs)/1000),
+             e.axisFraction);
+    json += body;
+  }
+  json += "]}";
+  return json;
+}
+
 void handleMotion() {
   const auto state = motion::status();
   char body[512];
@@ -61,8 +99,15 @@ void handleMotion() {
              static_cast<unsigned long>((gesture.endUs-gesture.startUs)/1000),gesture.peakRadps,gesture.axisFraction);
     response += gestureBody;
   }
-  response += "]}";
+  response += "],\"tilt\":";
+  response += tiltJson();
+  response += "}";
   server.send(200, "application/json", response);
+}
+
+void handleZero() {
+  motion::zeroTilt();
+  server.send(200, "application/json", "{\"zeroing\":true}");
 }
 
 void handleRoot() {
@@ -153,6 +198,7 @@ void begin() {
   server.on("/", HTTP_GET, handleRoot);
   server.on("/api/v1/imu", HTTP_GET, handleImu);
   server.on("/api/v1/motion", HTTP_GET, handleMotion);
+  server.on("/api/v1/motion/zero", HTTP_POST, handleZero);
   server.on("/api/v1/status", HTTP_GET, handleStatus);
   server.on("/api/v1/ble", HTTP_GET, handleStatus);
   server.onNotFound(handleNotFound);

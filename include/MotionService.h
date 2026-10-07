@@ -1,6 +1,7 @@
 #pragma once
 #include <stdint.h>
 #include "GestureTracker.h"
+#include "TiltTracker.h"
 
 namespace openski::motion {
 struct Status {
@@ -21,6 +22,15 @@ uint32_t gestureCount();
 uint32_t rejectedGestures();
 uint32_t gestureSampleGaps();
 bool gestureActive();
+struct TiltStatus {
+  bool neutralReady = false, active = false;
+  float tiltDegrees = 0, aboutDegrees[3]{};
+  int verticalAxis = -1, verticalSign = 0;
+  uint32_t count = 0, rejected = 0, gaps = 0;
+};
+TiltStatus tiltStatus();
+uint8_t recentExcursions(Excursion* output, uint8_t capacity);
+void zeroTilt();
 void tick();
 Status status();
 }
