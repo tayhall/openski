@@ -87,3 +87,20 @@ object ProductionModeRule {
         else -> null
     }
 }
+
+/** The same event as seen from the other leg: roll side and sign flip, everything else is unchanged. */
+fun SkiEvent.mirrored(): SkiEvent = copy(peakRollDegrees = -peakRollDegrees, positive = !positive)
+
+/** The same state as seen from the other leg: only roll flips. */
+fun SkiState.mirrored(): SkiState = copy(rollDegrees = -rollDegrees)
+
+/**
+ * Both boots run identical firmware and are mounted identically on the outer side of the cuff, so the
+ * lateral axis points outward on each leg and roll comes out mirrored between them. The phone knows
+ * which boot is which, so it mirrors the right boot: positive roll then means leaning to the skier's left
+ * on both legs. Sides are "L" and "R", as used by SensorSessionService.
+ */
+object SkierFrame {
+    fun of(side: String, event: SkiEvent): SkiEvent = if (side == "R") event.mirrored() else event
+    fun of(side: String, state: SkiState): SkiState = if (side == "R") state.mirrored() else state
+}

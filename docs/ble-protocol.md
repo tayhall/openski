@@ -75,7 +75,7 @@ Sent when a half-turn completes: roll leaves a ±8° band around the zeroed pose
 | 2 | 2 | sequence | unsigned, `ski_v0` event count modulo 65536 (starts at 1 after boot) |
 | 4 | 4 | start time | unsigned milliseconds, the same clock as the live frame |
 | 8 | 2 | duration | unsigned milliseconds, saturating at 65535 |
-| 10 | 2 | peak roll | signed, value / 100 gives degrees; positive means the leg leaned toward the sensor's lateral axis |
+| 10 | 2 | peak roll | signed, value / 100 gives degrees; positive means the leg leaned toward the sensor's lateral axis (the boot's outer side when mounted as described in the motion recognition notes; the app mirrors the right boot so positive reads as leaning left on both legs) |
 | 12 | 2 | peak roll rate | unsigned, value / 10 gives degrees per second |
 | 14 | 2 | pitch at peak | signed, value / 100 gives degrees forward of the zeroed pose |
 | 16 | 2 | reserved | `0` |

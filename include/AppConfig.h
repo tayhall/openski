@@ -35,8 +35,9 @@ inline constexpr uint32_t kImuI2cFrequencyHz = 400000;
 // Which sensor axis points up the leg, forward and sideways when the board sits in its cuff clip,
 // and the sign that makes it point that way. Assumed for the first mounting: board length (y) up
 // the leg, holes edge (x) forward, header side (z) as the lateral axis. Confirm against the real
-// mounting and override per board with build flags; the right boot normally needs
-// -DOPENSKI_MOUNT_LATERAL_SIGN=-1 so roll has the same meaning on both legs.
+// mounting and override with build flags if the board sits differently. Mount both boards the same
+// way on the outer side of each cuff and flash identical firmware: the app mirrors the right boot's
+// roll, so no per-boot build is needed.
 #ifndef OPENSKI_MOUNT_UP_AXIS
 #define OPENSKI_MOUNT_UP_AXIS 1
 #endif

@@ -254,8 +254,8 @@ class SensorSessionService : Service() {
                 updateInfo(side) },
             onRssi = { value -> rssiLevels[side]=value to System.currentTimeMillis(); updateInfo(side) },
             onMovement = { event -> listener?.onMovementEvent(side, event) },
-            onSkiEvent = { event -> listener?.onSkiEvent(side, event) },
-            onSkiState = { state -> listener?.onSkiState(side, state) },
+            onSkiEvent = { event -> listener?.onSkiEvent(side, SkierFrame.of(side, event)) },
+            onSkiState = { state -> listener?.onSkiState(side, SkierFrame.of(side, state)) },
             onDisconnected = {
                 latestOrientation.remove(side)
                 listener?.onBootOrientation(side,null)

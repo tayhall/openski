@@ -79,4 +79,28 @@ class SkiEventProtocolTest {
         assertNull(MotionFrames.decode(mutate(eventGolden, 0, 1)))  // an 18-byte v1 is not valid
         assertNull(MotionFrames.decode(stateGolden.copyOf(18)))
     }
+
+    @Test fun mirroringFlipsTheRollSideAndNothingElse() {
+        val event = SkiEvent.decode(eventGolden)!!
+        val mirrored = event.mirrored()
+        assertEquals(32.5f, mirrored.peakRollDegrees, 0.001f)
+        assertTrue(mirrored.positive)
+        assertEquals(event.pitchDegrees, mirrored.pitchDegrees, 0f)
+        assertEquals(event.peakRateDps, mirrored.peakRateDps, 0f)
+        assertEquals(event.durationMs, mirrored.durationMs)
+        assertEquals(event, mirrored.mirrored())
+        val state = SkiState.decode(stateGolden)!!
+        assertEquals(-12.34f, state.mirrored().rollDegrees, 0.001f)
+        assertEquals(state.pitchDegrees, state.mirrored().pitchDegrees, 0f)
+        assertEquals(state, state.mirrored().mirrored())
+    }
+
+    @Test fun onlyTheRightBootIsMirroredIntoTheSkierFrame() {
+        val event = SkiEvent.decode(eventGolden)!!
+        val state = SkiState.decode(stateGolden)!!
+        assertEquals(event, SkierFrame.of("L", event))
+        assertEquals(event.mirrored(), SkierFrame.of("R", event))
+        assertEquals(state, SkierFrame.of("L", state))
+        assertEquals(state.mirrored(), SkierFrame.of("R", state))
+    }
 }
