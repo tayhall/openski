@@ -22,7 +22,7 @@ Success criteria:
 4. On real boots and earbuds the flow works end to end (device checklist; not verifiable here).
 
 Assumptions, not yet measured:
-- 20 seconds without a half-turn is a good "the run is over" signal; a long stop mid-run ends the run early and the skier starts another.
+- 20 seconds without a half-turn is a good "the run is over" signal (120 s before the first one); a long stop mid-run ends the run early and the skier starts another.
 - Downloading a boot's flash (about 1 MB) over Bluetooth takes a few minutes, so it completes during a lift ride. The device checklist measures it.
 
 ## The run lifecycle
@@ -32,14 +32,14 @@ A run is a recording session with a new purpose. It reuses the existing recordin
 | State | What happens |
 | --- | --- |
 | **Ready** | Checks: both boots connected, earbuds connected (or phone speaker allowed), enough phone storage (20 MB, the existing recording rule), and no earlier run still on a boot's flash (if there is, it is downloaded first and the screen says so). Start is disabled with the reason shown. |
-| **Zeroing** | Start sets the boots to on-snow mode, then sends the zero command to both. The screen says "Stand upright. Hold still." and waits until both boots' state frames report zeroed. Without a zero the boots emit no half-turns. After 15 s with a boot not zeroed it names the boot and offers Retry and Cancel; Cancel restores the mode. |
+| **Zeroing** | Start sets the boots to on-snow mode, then sends the zero command to both. The screen says "Stand upright. Hold still." and waits until both boots' state frames report zeroed. A state frame already in flight when the command was sent still reports the old zero, and zeroing needs at least a second of stillness, so only a report arriving a second or more after the command counts (`ZeroTracker`). Without a zero the boots emit no half-turns. After 15 s with a boot not zeroed it names the boot and offers Retry and Cancel; Cancel restores the mode. |
 | **Running** | A start chime plays. The session starts, which starts each boot's on-board recording, and coaching (spec 1) begins. Half-turn events and verdicts are stored. |
-| **Ending** | After 20 s with no half-turn from either boot, or on a manual Stop, an end chime plays and the session stops. The reason is recorded: `quiet`, `manual` or `error`. |
+| **Ending** | After 20 s with no half-turn from either boot (120 s if no half-turn has happened yet, because the skier is still pocketing the phone and getting going), or on a manual Stop, an end chime plays and the session stops. The reason is recorded: `quiet`, `manual` or `error`. |
 | **Saving** | The existing recovery downloads, checks and erases each boot's flash. Progress per boot is shown. The app can be closed meanwhile. |
 | **Done** | Once both boots are erased, the boots return to the mode they were in before the run, but only if the run changed it. The summary is shown. |
 
 Mode rules:
-- The Ready screen shows a two-state switch, **Training** (Wi-Fi and raw stream on) or **On snow** (Wi-Fi and raw stream off, for battery). It can be flipped by hand at any time outside a run. The switch may be removed at ship.
+- The Ready screen shows a mode switch, **Training** (Wi-Fi and raw stream on) or **On snow** (Wi-Fi and raw stream off, for battery). It can be flipped by hand at any time outside a run. The switch may be removed at ship.
 - Starting a run sets On snow automatically and remembers the mode it found. The mode is restored only after the flash is saved (the radio stays quiet during the download). If saving fails, the boots stay as they are and the user is told.
 - The production-mode recording guard from PR #8 keeps blocking drills and test recordings, which need the raw stream, with its message naming the boot and telling the user to switch to training mode. Runs are exempt, because their raw data comes from boot flash.
 
@@ -58,7 +58,9 @@ Failure rules:
 | Service host | `SensorSessionService.kt` | Hosts one `RunController`, supplies the real `RunBoots` (zero and mode commands, start and stop recording, recovery progress), forwards raw `ski_v0` events, state frames and coach verdicts, and posts the run notification with a Stop action. The run logic does not go into the service itself. |
 | `RunActivity` | `RunActivity.kt` | The Snow-look screens: Ready, Zeroing, Running, Saving, Done. It only shows the controller's state and sends commands. |
 | Chimes | `ToneSynth.kt` | Two new short sounds: a start chime and an end chime, distinct from the coaching chirps. |
-| Entry points | `HomeActivity.kt` | A "Start a run" card at the top of Today with a one-line boot status, a progress card while saving, and the existing coaching card on Boots (the coaching screen remains the settings page). |
+| Zero confirmation | `ZeroTracker.kt` | Ignores zeroed reports that were already in flight when a zero command was sent. |
+| Run records | `RunRecords.kt` | The stored row types, the flag bits, and the CSV for the export. |
+| Entry points | `HomeActivity.kt` | A "Start a run" card at the top of Today (the drill's button becomes secondary, so each screen keeps one primary action), and the existing coaching card on Boots (the coaching screen remains the settings page). |
 
 No firmware change: the state frame already reports zeroed and mode, and the zero and mode commands already exist.
 
@@ -80,7 +82,7 @@ All in the Snow look. Targets are 56 dp or more (64 dp for the main button), no 
 - **Ready:** a tall header with a simple ridge-line drawing and a large "Ready?". Large status rows: left boot, right boot, earbuds, the mode switch, and the coaching target (tap to open the coaching settings). A full-width Start run button in the thumb zone, with the reason it is disabled just above it. A smaller "Try with demo boots" button.
 - **Zeroing:** "Stand upright. Hold still." with two large marks that turn solid as each boot zeroes. The screen stays on. Retry and Cancel appear on timeout.
 - **Running:** elapsed time, turn count, and the last verdict as a word plus a shape; one large Stop button. The screen may turn off. The notification reads "Run in progress · 03:12 · 24 turns" and has a Stop action. A banner appears if a boot drops.
-- **Saving:** "Run ended. Saving boot data" with a progress line per boot ("Left 40% · Right 12%"). Today shows a small progress card until it finishes.
+- **Saving:** "Run ended. Saving boot data" with a progress line per boot ("Left 40% · Right 12%"). The run notification shows the same progress ("Saving run data · Left 40% · Right 12%"), so it is visible with the app closed. (A progress card on Today would need Today to bind the service; the notification does the job.)
 - **Done:** duration, total turns with left and right counts, counts of matched, off-target and unclear windows, notes for a capped flash or a gap, and Back to ready and Open in logbook buttons. A caption states that it compares dry-ski boot roll with a training target. The wave comparison arrives with spec 3.
 
 ## Testing
