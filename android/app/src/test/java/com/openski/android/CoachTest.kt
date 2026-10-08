@@ -91,6 +91,17 @@ class CoachTest {
         assertNotNull(coach.onEvent(event(4, 6500, false)))   // a full fresh window of four, none left over
     }
 
+    @Test fun eventsStampedAtTheSameTimeNeverCrashTheCoach() {
+        // A buggy or hostile sender: distinct sequences and alternating sides, but one boot-clock time.
+        // That makes every beat zero, which used to produce NaN scores and an exception when rounding.
+        val coach = Coach(target)
+        val results = (0 until 8).map { coach.onEvent(event(it + 1, 50_000, it % 2 == 0)) }
+        assertTrue(results.all { it == null })
+        // And the coach recovers: a proper window afterwards still gets a verdict.
+        val proper = (0 until 4).map { coach.onEvent(event(100 + it, 60_000L + it * 2000, it % 2 == 0)) }
+        assertEquals(Verdict.POSITIVE, proper[3]!!.verdict)
+    }
+
     @Test fun theSameEventTwiceIsIgnored() {
         val coach = Coach(target)
         coach.onEvent(event(1, 10_000, true))

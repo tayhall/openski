@@ -79,8 +79,11 @@ class Coach(private val target: CoachTarget, windowSize: Int = DEFAULT_WINDOW) {
         return verdict
     }
 
-    private fun judge(events: List<SkiEvent>): CoachVerdict {
+    /** Returns null for a window that cannot be judged, so a bad sender can neither crash nor steer the coach. */
+    private fun judge(events: List<SkiEvent>): CoachVerdict? {
         val beats = events.zipWithNext { a, b -> bootClockDelta(a.startMs, b.startMs) / 1000.0 }
+        // Half-turns cannot start at the same instant. Zero beats would make the steadiness maths divide 0 by 0.
+        if (beats.any { it <= 0.0 }) return null
         val meanBeat = beats.average()
         val peaks = events.map { abs(it.peakRollDegrees.toDouble()) }
         val meanDepth = peaks.average()
@@ -94,6 +97,7 @@ class Coach(private val target: CoachTarget, windowSize: Int = DEFAULT_WINDOW) {
         val parts = listOfNotNull(tempo, steadiness, depth, balance)
         val outside = events.any { it.outsideEnvelope }
         var score = parts.average()
+        if (!score.isFinite() || parts.any { !it.isFinite() }) return null  // rounding a NaN would throw
         if (outside) score = minOf(score, OUTSIDE_CAP)
         val weakest = parts.min()
         // Averaging alone would let one total failure (say, no depth at all) hide behind three good parts, so a
