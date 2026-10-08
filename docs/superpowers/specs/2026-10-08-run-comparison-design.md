@@ -58,15 +58,15 @@ Decisions made with the user:
 | Done screen | `RunActivity.kt` | Shows the card under the summary. |
 | Logbook | `SessionDetailActivity.kt` | A new "Run" tab, first and selected for runs, showing the same card. |
 
-No new chart view is needed: `CarvedLineView` already draws a `RollTrace` against a target depth band with a dashed ghost line and a `progress` replay. The recorded wave is the trace, the target wave is the ghost, and the band is the target depth.
+No new chart view is needed: `CarvedLineView` already draws a `RollTrace` against a target depth band with a pale ghost line and a `progress` replay. The recorded wave is the trace, the target wave is the ghost, and the band is the target depth.
 
 ## The card
 
 - The sentence and the four numbers.
 - A scrolling row of window tiles, one per window, marked ▲ matched, ▼ off target, ● close, or grey with no verdict.
-- One chart for the selected window: recorded solid, target dashed, with the depth band. Tapping a tile selects it. The default is the first off-target window, since that is the most useful one, or the first window if everything matched.
+- One chart for the selected window: recorded solid blue, target pale, with the depth band. Tapping a tile selects it. The default is the first off-target window, since that is the most useful one, or the first window if everything matched.
 - A Play button that animates the recorded line being drawn.
-- A caption: "Reconstructed from your half-turns. Dashed is the target. Dry-ski boot roll against a training target, not on-snow technique."
+- A caption: "Reconstructed from your half-turns. The pale line is the target. Dry-ski boot roll against a training target, not on-snow technique."
 
 Edge cases:
 - fewer turns than one window: one partial window labelled "Too few turns for a verdict";
