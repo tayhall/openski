@@ -19,6 +19,8 @@ class SensorSessionService : Service() {
         fun onBootOrientation(side: String, value: BootRoll?) {}
         fun onTestFeedback(message: String) {}
         fun onMovementEvent(side: String, event: MovementEvent) {}
+        fun onSkiEvent(side: String, event: SkiEvent) {}
+        fun onSkiState(side: String, state: SkiState) {}
     }
     inner class LocalBinder : Binder() { val service: SensorSessionService get() = this@SensorSessionService }
     private val binder = LocalBinder()
@@ -252,6 +254,8 @@ class SensorSessionService : Service() {
                 updateInfo(side) },
             onRssi = { value -> rssiLevels[side]=value to System.currentTimeMillis(); updateInfo(side) },
             onMovement = { event -> listener?.onMovementEvent(side, event) },
+            onSkiEvent = { event -> listener?.onSkiEvent(side, event) },
+            onSkiState = { state -> listener?.onSkiState(side, state) },
             onDisconnected = {
                 latestOrientation.remove(side)
                 listener?.onBootOrientation(side,null)
@@ -557,6 +561,16 @@ class SensorSessionService : Service() {
             catch(error: Exception) { mainHandler.post { if(!destroyed) storageError(error) } } }
         return true
     }
+
+    /** Boots with a live, ready link; only these can take a command. */
+    fun connectedSides(): List<String> = clients.filterValues { it.isReady }.keys.sorted()
+
+    /** Ask a boot to recapture its neutral pose from the next still second. Stand upright and still first. */
+    fun zeroSensor(side: String): Boolean = clients[side]?.command(RecorderCommand.ZERO) == true
+
+    /** Production turns the boot's Wi-Fi and raw stream off to save battery; diagnostics turns them back on. */
+    fun setSensorMode(side: String, production: Boolean): Boolean =
+        clients[side]?.command(RecorderCommand.SET_MODE, if (production) 1 else 0) == true
 
     fun calibrateTest(side: String, axis: Int, sign: Int, completed: (String)->Unit) {
         val id=activeSessionId
