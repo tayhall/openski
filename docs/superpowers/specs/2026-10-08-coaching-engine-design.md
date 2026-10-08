@@ -54,8 +54,11 @@ All judgement is pure Kotlin with no Android or Bluetooth dependency, so it is u
   - tempo: closeness of the mean beat to `beatSeconds`, zero at 50% either side;
   - steadiness: from the spread of the beats relative to their mean, zero at 35%;
   - depth: closeness of the mean peak roll magnitude to `depthDegrees`, zero at 60% either side;
-  - balance: the smaller of the mean positive and mean negative peaks over the larger, as a percentage; omitted if the window holds only one side.
-- **Score:** the mean of the available components. At or above 70, `POSITIVE`. Below 40, `NEGATIVE`. Otherwise `NONE`.
+  - balance: the smaller of the mean positive and mean negative peaks over the larger, as a percentage. Because a repeated side resets the window, every window holds both sides, so balance is always present; the code still omits it defensively if it is ever absent.
+- **Score and verdict:** the score is the mean of the available components. A mean alone would let one total failure (for example no depth at all) hide behind three good parts, so the weakest component also counts:
+  - `POSITIVE` needs a score of at least 70 and every component at least 60;
+  - `NEGATIVE` is a score below 40, or any one component below 20 (a clear miss);
+  - anything else is `NONE`, and plays no sound.
 - **Resets, no verdict:**
   - the gap between two event starts exceeds twice the target beat (the skier stopped or paused);
   - two events on the same side in a row (a half-turn was missed);
@@ -70,7 +73,7 @@ All judgement is pure Kotlin with no Android or Bluetooth dependency, so it is u
   - positive chirp: two rising notes, about 880 then 1320 Hz, about 110 ms each;
   - negative chirp: two falling notes, about 660 then 440 Hz, about 110 ms each;
   - every sound has a short fade in and out so it does not click, and a hard cap on peak amplitude.
-- **Metronome:** one `AudioTrack` in streaming mode writes a continuous stream in which each beat is an exact number of samples. Fractional samples carry forward, so 100 beats of 1.7 s total 170 s to within one sample. An optional four-tick count-in opens the session.
+- **Metronome:** one `AudioTrack` in streaming mode writes a continuous stream in which each beat is an exact number of samples. Fractional samples carry forward, so 100 beats of 1.7 s total 170 s to within one sample. The count-in is the first four ticks: chirps are muted for those four beats so a verdict cannot play before the skier has started. It has no effect when the metronome is off.
 - **Chirps:** a second `AudioTrack` plays short sounds on top of the metronome.
 - **Mixing:** no audio focus is requested, so music or a podcast keeps playing and the cues mix over it. Ducking music is a possible later setting.
 - **Volume:** the phone's media volume, a gain setting in the app, and a cap on peak level. The app never changes system volume. A "play test sounds" button lets the skier set the volume before starting.
@@ -85,7 +88,7 @@ Stored on the phone: metronome on or off; count-in on or off; section chirps on 
 
 ## The Coaching screen
 
-A Snow-look `CoachingActivity`, entered from the Boots tab. It shows the target, a Start/Stop button, the settings, one line for the last window's verdict with its component scores, and the test-sounds button. The first time it runs, a short explainer plays each chirp with its meaning. A caption states that it compares dry-ski boot roll with a training target, not on-snow technique.
+A Snow-look `CoachingActivity`, entered from the Boots tab. It shows the target, a Start/Stop button, a demo-boots button, the settings, one line for the last window's verdict, and the test-sounds button. An always-visible card explains what each sound means, and the test-sounds button plays them. A caption states that it compares dry-ski boot roll with a training target, not on-snow technique. The target is chosen from a stock dialog listing the drills plus a custom beat and depth, as the mounting picker does.
 
 Coaching consumes half-turn events, which flow in both firmware modes, so it works in the garden in training mode and unchanged on the slope in on-snow mode. It needs no raw stream and records nothing, so the production-mode recording guard does not apply to it.
 
@@ -94,7 +97,7 @@ Demo boots feed `Coach` through `DemoCoachFeed`, so the metronome and chirps can
 ## Testing
 
 JVM unit tests (no device):
-- `CoachTest`, with an injected sequence of events: on-target windows give `POSITIVE`; shallow, too deep, too fast, too slow and uneven windows give `NEGATIVE` or `NONE` as expected; a one-sided window omits balance; a pause (gap over twice the beat) resets with no verdict; two same-side events in a row reset; an out-of-envelope event caps the score; the boot clock wrapping mid-window gives the right beats; a target change resets; window sizes 3 and 5.
+- `CoachTest`, with an injected sequence of events (the shallow-roll case is the one that proves the weakest-component rule): on-target windows give `POSITIVE`; shallow, too deep, too fast, too slow and uneven windows give `NEGATIVE` or `NONE` as expected; a pause (gap over twice the beat) resets with no verdict; two same-side events in a row reset; an out-of-envelope event caps the score; the boot clock wrapping mid-window gives the right beats; a target change resets; window sizes 3 and 5.
 - `ToneSynthTest`: lengths, zero (or near-zero) first and last samples, peak below the cap, frequency by zero-crossing count, the rising chirp rising and the falling chirp falling, the metronome buffer placing the tick at sample 0 with silence after, and no tempo drift over 100 beats.
 - `CoachSettingsTest`: defaults, clamping of custom values.
 
