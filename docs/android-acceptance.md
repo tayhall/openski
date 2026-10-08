@@ -66,3 +66,14 @@ The JVM tests cover the run state machine, the zero confirmation, the chimes and
 11. Start a run while a boot still holds an earlier recording. Expect Start to name the boot and say it is still saving.
 12. Rotate the phone, press Home and reopen the app during each phase. Expect the screen to show the current phase and taps on Stop and Cancel to work every time.
 13. After any storage change, rerun the migration check on an emulator: `adb shell am instrument -w com.openski.android.test/com.openski.android.StorageInstrumentation`. Expect a line starting `PASS:`.
+
+## Run comparison checks
+
+Observed on the Pixel 9a emulator with a demo run (8 October 2026): the card on the Done screen (sentence, number lines, window tiles opening on the first off-target window, solid recorded line against the pale target line, Play) and the logbook "Run" tab first and selected with the same card and no crash. The rest needs real runs.
+
+1. After a real run, the sentence and numbers are believable against how it felt: depth and beat averages close to what the coaching reported, and the first off-target window is one you remember being off.
+2. Tap each window tile on a long run (more than 20 windows): the tiles row scrolls, the chart changes, and Play animates the selected window.
+3. Do a run that leans to the skier's left first on each boot (swap the boots between legs if practical): the recorded line should start on the same side on both boots, since the right boot is mirrored.
+4. Open a run in the logbook straight after it ends, before the boots' data is saved, and again after saving. Expect the Run tab and no crash. Open an ordinary recording: expect the old three tabs only.
+5. Check a run where a boot dropped its link for 30 s: the window around the gap shows flat stretches at zero, and the sentence still reads sensibly.
+6. Tune the sentence thresholds (2°, 0.15 s, 20%) if "close" or "uneven" feels wrong on real runs.

@@ -261,6 +261,13 @@ class RunActivity : Activity() {
             card.add(t("This compares dry-ski boot roll with a training target. It is not an on-snow technique score.", Snow.Type.CAPTION, Snow.INK_SOFT), top = 10)
             column.add(card, top = 16, bottom = 16)
         }
+        val comparisonHolder = FrameLayout(this)
+        column.add(comparisonHolder, bottom = 16)
+        service?.lastRunId()?.let { id ->
+            service?.loadRunComparison(id) { comparison ->
+                if (comparison != null && comparisonHolder.isAttachedToWindow) comparisonHolder.addView(RunComparisonCard.build(this, comparison))
+            }
+        }
         column.add(Snow.button(this, "Back to ready") { service?.resetRun() }, bottom = 10)
         column.add(Snow.button(this, "Open in logbook", Snow.ButtonKind.SECONDARY) {
             startActivity(Intent(this, MainActivity::class.java))

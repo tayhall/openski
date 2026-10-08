@@ -70,8 +70,8 @@ class SensorSessionService : Service() {
         override fun run() {
             val feed = coachDemo ?: return
             val step = feed.next()
+            runController.onHalfTurn("L", step.event, System.currentTimeMillis())   // before the coach, so a verdict is never stamped earlier than its last turn
             coachSession?.onEvent("L", step.event)
-            runController.onHalfTurn("L", step.event, System.currentTimeMillis())
             mainHandler.postDelayed(this, step.afterMs)
         }
     }
@@ -85,6 +85,7 @@ class SensorSessionService : Service() {
     private var runIsDemo = false
     private var runStartedMonitoring = false
     private var runTicks = 0
+    private var lastRunId: String? = null
     @Volatile private var runCaptures: List<SensorCapture> = emptyList()
     private var runSidesAtStart = setOf<String>()
     private var runListener: ((RunState) -> Unit)? = null
@@ -128,6 +129,7 @@ class SensorSessionService : Service() {
                 return problem
             }
             coachAudio?.playChime(ToneSynth.startChime())
+            lastRunId = runSessionId
             refreshRunCaptures()
             return null
         }
@@ -385,8 +387,8 @@ class SensorSessionService : Service() {
                 val skier = SkierFrame.of(side, event)
                 listener?.onSkiEvent(side, skier)
                 mainHandler.post {
+                    runController.onHalfTurn(side, event, System.currentTimeMillis())   // stored as the boot sent it; stamped before the coach can stamp a verdict
                     coachSession?.onEvent(side, skier)
-                    runController.onHalfTurn(side, event, System.currentTimeMillis())   // stored as the boot sent it
                 }
             },
             onSkiState = { state ->
@@ -736,6 +738,20 @@ class SensorSessionService : Service() {
     private fun refreshRunCaptures() {
         val id = runSessionId ?: return
         io.execute { try { runCaptures = store.captures(id) } catch (_: Exception) { /* keep the last snapshot */ } }
+    }
+
+    /** The run most recently started, for the Done screen's comparison. */
+    fun lastRunId(): String? = lastRunId
+
+    /** Builds a run's comparison off the main thread; the callback gets null if the run is not found. */
+    fun loadRunComparison(id: String, callback: (RunComparison?) -> Unit) {
+        io.execute {
+            val result = try {
+                val session = store.getSession(id)
+                if (session == null || session.kind != "run") null else RunComparisons.build(store.runData(id), session.origin == "synthetic")
+            } catch (error: Exception) { null }
+            mainHandler.post { if (!destroyed) callback(result) }
+        }
     }
 
     fun cancelRun() { runController.cancel(); runFinished(); runListener?.invoke(runState()) }
