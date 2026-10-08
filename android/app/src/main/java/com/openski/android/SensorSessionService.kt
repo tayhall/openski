@@ -63,6 +63,7 @@ class SensorSessionService : Service() {
     private var coachAudio: CoachAudio? = null
     private var coachSettings = CoachSettings()
     private var coachStartedAt = 0L
+    private var coachStartedMonitoring = false
     private var coachDemo: DemoCoachFeed? = null
     private var coachListener: ((CoachState) -> Unit)? = null
     private val coachDemoStep = object : Runnable {
@@ -611,6 +612,7 @@ class SensorSessionService : Service() {
                 message = if (headphones) "Coaching resumed." else "Coaching paused: earbuds disconnected.")) } },
             onProblem = { text -> mainHandler.post { stopCoaching(); publishCoach(CoachState(message = text)) } })
         audio.start(chosen, target)?.let { return it }
+        val wasMonitoring = monitoring
         try {
             startMonitoring()  // keeps this service in the foreground with the screen off
         } catch (error: Exception) {
@@ -618,6 +620,7 @@ class SensorSessionService : Service() {
             return "Could not keep coaching running in the background."
         }
         acquireWakeLock()
+        coachStartedMonitoring = !wasMonitoring
         coachSettings = chosen
         coachAudio = audio
         coachStartedAt = SystemClock.elapsedRealtime()
@@ -643,6 +646,8 @@ class SensorSessionService : Service() {
         coachAudio = null
         if (!coachState.running) return
         publishCoach(CoachState(message = "Coaching stopped."))
+        // Coaching turned monitoring on only if it was off; put it back so the service can stop when nothing else needs it.
+        if (coachStartedMonitoring) { monitoring = false; coachStartedMonitoring = false }
         settleForeground()
     }
 
@@ -888,7 +893,7 @@ class SensorSessionService : Service() {
     }
     private fun settleForeground() {
         if (activeSessionId == null && transfers.isEmpty() && !coachState.running) releaseWakeLock()
-        if (!monitoring && activeSessionId == null && !store.hasPendingRecovery() && transfers.isEmpty() && !storageFailed) {
+        if (!monitoring && !coachState.running && activeSessionId == null && !store.hasPendingRecovery() && transfers.isEmpty() && !storageFailed) {
             if (foreground) stopForeground(STOP_FOREGROUND_REMOVE)
             foreground = false
             stopSelf()

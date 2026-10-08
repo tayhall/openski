@@ -74,4 +74,12 @@ class CoachSessionTest {
         assertTrue(settings.targetLabel().startsWith("Custom"))
         assertTrue(CoachSettings().targetLabel().startsWith("Steady rhythm"))
     }
+
+    @Test fun aCustomTargetSurvivesStorage() {
+        // SharedPreferences removes a key stored as null, so "custom" must be stored as something else.
+        assertEquals("", presetToStored(null))
+        assertNull(presetFromStored(presetToStored(null), "steady-rhythm"))
+        assertEquals("quick-edge-change", presetFromStored(presetToStored("quick-edge-change"), "steady-rhythm"))
+        assertEquals("steady-rhythm", presetFromStored(null, "steady-rhythm"))   // never saved: the default preset
+    }
 }

@@ -111,7 +111,7 @@ class CoachAudio(
 
     /** Plays the section chirp, if the verdict has one. */
     fun chirp(verdict: Verdict) {
-        if (!running || paused) return
+        if (!running || paused || !routeOk()) return   // never trust the flag alone: the route callback can lag
         val clip = when (verdict) {
             Verdict.POSITIVE -> ToneSynth.chirpPositive()
             Verdict.NEGATIVE -> ToneSynth.chirpNegative()
@@ -149,6 +149,8 @@ class CoachAudio(
         val ok = routeOk()
         if (ok == !paused) return
         paused = !ok
+        // Pausing the stream and discarding what is queued stops the last quarter-second of ticks from sounding.
+        track?.let { runCatching { if (ok) it.play() else { it.pause(); it.flush() } } }
         onRoute(ok)
     }
 

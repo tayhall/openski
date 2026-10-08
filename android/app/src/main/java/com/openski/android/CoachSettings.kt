@@ -4,6 +4,16 @@ import android.content.Context
 
 enum class CoachBoot { AUTO, LEFT, RIGHT }
 
+/** SharedPreferences deletes a key stored as null, so a custom target (no preset) is stored as an empty string. */
+internal fun presetToStored(id: String?): String = id ?: ""
+
+/** [stored] is null when nothing was ever saved, which means the default preset. */
+internal fun presetFromStored(stored: String?, default: String?): String? = when (stored) {
+    null -> default
+    "" -> null
+    else -> stored
+}
+
 /** Everything the skier can change about coaching. [normalised] clamps values that came from storage or a text box. */
 data class CoachSettings(
     val metronome: Boolean = true,
@@ -52,7 +62,7 @@ class CoachSettingsStore(context: Context) {
                 chirps = prefs.getBoolean("chirps", defaults.chirps),
                 windowSize = prefs.getInt("window", defaults.windowSize),
                 coachBoot = CoachBoot.entries.firstOrNull { it.name == prefs.getString("boot", null) } ?: defaults.coachBoot,
-                presetDrillId = if (prefs.contains("preset")) prefs.getString("preset", null) else defaults.presetDrillId,
+                presetDrillId = presetFromStored(prefs.getString("preset", null), defaults.presetDrillId),
                 customBeat = prefs.getFloat("custom_beat", defaults.customBeat.toFloat()).toDouble(),
                 customDepth = prefs.getFloat("custom_depth", defaults.customDepth.toFloat()).toDouble(),
                 gainPercent = prefs.getInt("gain", defaults.gainPercent),
@@ -63,7 +73,7 @@ class CoachSettingsStore(context: Context) {
             val v = value.normalised()
             prefs.edit()
                 .putBoolean("metronome", v.metronome).putBoolean("count_in", v.countIn).putBoolean("chirps", v.chirps)
-                .putInt("window", v.windowSize).putString("boot", v.coachBoot.name).putString("preset", v.presetDrillId)
+                .putInt("window", v.windowSize).putString("boot", v.coachBoot.name).putString("preset", presetToStored(v.presetDrillId))
                 .putFloat("custom_beat", v.customBeat.toFloat()).putFloat("custom_depth", v.customDepth.toFloat())
                 .putInt("gain", v.gainPercent).putBoolean("phone_speaker", v.allowPhoneSpeaker)
                 .apply()

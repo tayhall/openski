@@ -46,3 +46,5 @@ The JVM tests cover the judgement, sounds, settings and demo feed. These cover w
 8. With a real boot in the garden (training mode) and then in on-snow mode, roll the boot from side to side at the target beat. Expect chirps after each window. Record how often a clearly good window gets no sound, to tune the thresholds.
 9. Leave the Coaching screen and reopen it while coaching runs. Expect coaching to continue and the screen to show the current state.
 10. Disconnect the boot during a run. Expect the metronome to keep ticking and no crash.
+11. Switch the earbuds off at the moment a chirp would play, several times. Expect silence from the phone speaker every time: no stray tick or chirp. Check Play test sounds separately: it deliberately plays on whatever route is active so the volume can be set.
+12. While coaching, pull down the notification and tap Disconnect sensors, then lock the phone. Expect coaching to keep playing until you tap Stop coaching, after which the notification and the foreground service go away (unless a recording or recovery needs them).
