@@ -41,6 +41,8 @@ class SensorSessionService : Service() {
     private val rssiLevels = mutableMapOf<String, Pair<Int,Long>>()
     private val lastSampleTime = mutableMapOf<String, Long>()
     private val flashRetries = mutableMapOf<String, Int>()
+    /** Boots last seen in production mode (from state frames and recorder responses); sticky until a frame says otherwise. */
+    private val productionSides = mutableSetOf<String>()
     private val captures = mutableMapOf<String, SensorCapture>()
     private data class Pending(val sessionId: String, val record: RecordedSample)
     private val pendingSamples = mutableListOf<Pending>()
@@ -255,7 +257,10 @@ class SensorSessionService : Service() {
             onRssi = { value -> rssiLevels[side]=value to System.currentTimeMillis(); updateInfo(side) },
             onMovement = { event -> listener?.onMovementEvent(side, event) },
             onSkiEvent = { event -> listener?.onSkiEvent(side, SkierFrame.of(side, event)) },
-            onSkiState = { state -> listener?.onSkiState(side, SkierFrame.of(side, state)) },
+            onSkiState = { state ->
+                if (state.production) productionSides.add(side) else productionSides.remove(side)
+                listener?.onSkiState(side, SkierFrame.of(side, state))
+            },
             onDisconnected = {
                 latestOrientation.remove(side)
                 listener?.onBootOrientation(side,null)
@@ -302,6 +307,7 @@ class SensorSessionService : Service() {
 
     private fun handleRecorder(side: String, status: RecorderStatus) {
         recorderStates[side] = status
+        if (status.production) productionSides.add(side) else productionSides.remove(side)
         updateInfo(side)
         if (status.opcode == 0x85) {
             val transfer = transfers[side] ?: return
@@ -632,6 +638,12 @@ class SensorSessionService : Service() {
         if (available < 20L * 1024 * 1024 || clients.values.none { it.isReady }) {
             listener?.onRecordingChanged(null, if (available < 20L * 1024 * 1024) "Phone storage too low to record"
                 else "Wait for a sensor's live stream before recording")
+            settleForeground()
+            return
+        }
+        val inProduction = clients.filterValues { it.isReady }.keys.filter { it in productionSides }
+        ProductionModeRule.recordingBlockedReason(inProduction)?.let { reason ->
+            listener?.onRecordingChanged(null, reason)
             settleForeground()
             return
         }

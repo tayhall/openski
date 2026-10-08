@@ -86,6 +86,17 @@ object ProductionModeRule {
         recovering -> "Wait for sensor flash recovery to finish first."
         else -> null
     }
+
+    /**
+     * The other direction: a boot already in production sends no raw stream, so a recording or drill
+     * started now would hold no live samples. Sides are "L" and "R".
+     */
+    fun recordingBlockedReason(productionSides: Collection<String>): String? {
+        val names = productionSides.distinct().sorted().map { if (it == "L") "left" else "right" }
+        if (names.isEmpty()) return null
+        return "The ${names.joinToString(" and ")} boot is in production mode and sends no raw stream. " +
+            "Switch it to diagnostics in Geek mode > Test lab first."
+    }
 }
 
 /** The same event as seen from the other leg: roll side and sign flip, everything else is unchanged. */
