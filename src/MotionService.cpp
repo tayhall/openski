@@ -1,6 +1,7 @@
 #include "MotionService.h"
 #include "ImuService.h"
 #include "SensorCalibration.h"
+#include "AppConfig.h"
 #include <math.h>
 #include <string.h>
 #include <esp_timer.h>
@@ -16,6 +17,9 @@ bool referenceReady = false;
 Event history[16]{};
 GestureTracker gestures;
 TiltTracker tilt;
+SkiTracker ski{Mounting{{config::kMountUpAxis, config::kMountUpSign},
+                        {config::kMountForwardAxis, config::kMountForwardSign},
+                        {config::kMountLateralAxis, config::kMountLateralSign}}};
 }
 
 void tick() {
@@ -35,6 +39,7 @@ void tick() {
                     sample.gyroRadps.z-cal::kGyroBiasRadps[2]};
   gestures.update(sample.timestampUs, g.x, g.y, g.z);
   tilt.update(sample.timestampUs, a.x, a.y, a.z, g.x, g.y, g.z);
+  ski.update(sample.timestampUs, a.x, a.y, a.z, g.x, g.y, g.z);
   const float speed = sqrtf(g.x*g.x + g.y*g.y + g.z*g.z);
   const float magnitude = sqrtf(a.x*a.x + a.y*a.y + a.z*a.z);
   if (!referenceReady) { restReference = a; referenceReady = true; }
@@ -104,6 +109,22 @@ TiltStatus tiltStatus() {
 }
 uint8_t recentExcursions(Excursion* output, uint8_t capacity) { return tilt.recent(output, capacity); }
 void zeroTilt() { tilt.zero(); }
+
+SkiStatus skiStatus() {
+  SkiStatus snapshot;
+  snapshot.zeroed = ski.zeroed();
+  snapshot.zeroing = ski.zeroing();
+  snapshot.rollDegrees = ski.rollDegrees();
+  snapshot.pitchDegrees = ski.pitchDegrees();
+  snapshot.count = ski.count();
+  snapshot.rejected = ski.rejected();
+  snapshot.gaps = ski.gaps();
+  return snapshot;
+}
+uint8_t recentSkiEvents(SkiEvent* output, uint8_t capacity) { return ski.recent(output, capacity); }
+SkiHeartbeat takeSkiHeartbeat() { return ski.takeHeartbeat(); }
+bool takeSkiGapSeen() { return ski.takeGapSeen(); }
+void zeroMotion() { tilt.zero(); ski.zero(); }
 
 Status status() {
   Status snapshot = result;
