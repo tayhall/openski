@@ -70,8 +70,8 @@ class SensorSessionService : Service() {
         override fun run() {
             val feed = coachDemo ?: return
             val step = feed.next()
+            runController.onHalfTurn("L", step.event, System.currentTimeMillis())   // before the coach, so a verdict is never stamped earlier than its last turn
             coachSession?.onEvent("L", step.event)
-            runController.onHalfTurn("L", step.event, System.currentTimeMillis())
             mainHandler.postDelayed(this, step.afterMs)
         }
     }
@@ -387,8 +387,8 @@ class SensorSessionService : Service() {
                 val skier = SkierFrame.of(side, event)
                 listener?.onSkiEvent(side, skier)
                 mainHandler.post {
+                    runController.onHalfTurn(side, event, System.currentTimeMillis())   // stored as the boot sent it; stamped before the coach can stamp a verdict
                     coachSession?.onEvent(side, skier)
-                    runController.onHalfTurn(side, event, System.currentTimeMillis())   // stored as the boot sent it
                 }
             },
             onSkiState = { state ->

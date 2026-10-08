@@ -48,8 +48,11 @@ object RunComparisonCard {
         fun showChart() {
             animator?.cancel()
             val window = comparison.windows[selected]
-            val depth = comparison.target?.depthDegrees ?: max(10.0, window.recorded.degrees.maxOfOrNull { kotlin.math.abs(it) }?.toDouble() ?: 10.0)
-            line = CarvedLineView(context, window.recorded, window.target, depth, Snow.BLUE)
+            // With no target data the chart shows the turns alone: a depth of zero draws no band and no "Reach" label.
+            line = CarvedLineView(context, window.recorded, window.target, comparison.target?.depthDegrees ?: 0.0, Snow.BLUE).apply {
+                contentDescription = "Roll for window ${selected + 1}, reconstructed from your half-turns" +
+                    if (comparison.target != null) ", against the target wave." else "."
+            }
             chartHolder.removeAllViews()
             chartHolder.addView(line, FrameLayout.LayoutParams(-1, -2))
             styleTiles()
@@ -71,6 +74,10 @@ object RunComparisonCard {
         card.add(chartHolder, 12)
         showChart()
 
+        card.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+            override fun onViewAttachedToWindow(view: View) = Unit
+            override fun onViewDetachedFromWindow(view: View) { animator?.cancel() }
+        })
         card.add(Snow.button(context, "Play", Snow.ButtonKind.SECONDARY) {
             val chart = line ?: return@button
             animator?.cancel()

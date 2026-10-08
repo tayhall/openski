@@ -842,3 +842,13 @@ EOF
 - Spec coverage: the two waves, windows, boot choice, numbers and sentence (Task 1); the card, the Done screen and the logbook tab (Task 2); docs and the real-run checks (Task 3). Out-of-scope items (the measured trace, best-run and shared targets, pitch, left-right overlay, export, video sync, next-run suggestions, zoom, the logbook restyle) have no task.
 - One detail settled while prototyping and recorded in the spec: the target line is pale, not dashed, because that is how the existing `CarvedLineView` draws its ghost line.
 - The card and wiring are verified by compilation, lint and an emulator demo run; real-run shapes need hardware.
+
+## Changes made after the whole-branch review
+
+The reviewer's findings were fixed on top of the tasks above, test first. The code in Tasks 1 and 2 describes the first version; the repository has the final one. What changed:
+
+- A verdict is matched to its turns with a 50 ms tolerance (`VERDICT_TOLERANCE_MS`), and the service now stamps a turn before the coach can stamp its verdict, so a verdict can never look earlier than its last turn and shift every later window by one.
+- With automatic boot following, the side is the boot the verdicts came from; only without verdicts does it fall back to the boot with more turns.
+- A turn stamped before its window's first turn is treated as starting at zero, not as a delta of almost the whole clock wrap.
+- With no target data the chart draws no band and no "Reach" label (`CarvedLineView` skips both for a zero target), its description says the roll is reconstructed, and the Play animator is cancelled when the card goes away.
+- Deferred minors: trailing chunks after the last verdict ignore pauses and coach resets; the 0.15 s boundary can print as 0.1 or 0.2 s; the Done screen reloads the comparison on each re-render and resets the selected tile.

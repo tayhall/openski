@@ -65,14 +65,16 @@ class CarvedLineView(context: Context, private var trace: RollTrace, private val
         val spacing = Snow.dp(context, 9).toFloat()
         var y = spacing / 2
         while (y < h) { canvas.drawLine(0f, y, w, y, corduroy); y += spacing }
-        val extent = max(targetDegrees * 1.5, max(peak(trace), peak(ghost))).toFloat()
+        val extent = max(targetDegrees * 1.5, max(peak(trace), peak(ghost))).coerceAtLeast(1.0).toFloat()
         val mid = h / 2; val pad = Snow.dp(context, 18).toFloat()
         fun yOf(degrees: Float) = mid - degrees / extent * (h / 2 - pad)
         // Shade beyond the target on both sides: the line should reach into the shaded zone.
-        canvas.drawRect(0f, 0f, w, yOf(targetDegrees.toFloat()), band)
-        canvas.drawRect(0f, yOf(-targetDegrees.toFloat()), w, h, band)
+        if (targetDegrees > 0) {   // no target (zero) means no band and no label
+            canvas.drawRect(0f, 0f, w, yOf(targetDegrees.toFloat()), band)
+            canvas.drawRect(0f, yOf(-targetDegrees.toFloat()), w, h, band)
+        }
         canvas.drawLine(0f, mid, w, mid, neutral)
-        canvas.drawText("Reach ${targetDegrees.toInt()}°", pad, yOf(targetDegrees.toFloat()) - Snow.dp(context, 4), label)
+        if (targetDegrees > 0) canvas.drawText("Reach ${targetDegrees.toInt()}°", pad, yOf(targetDegrees.toFloat()) - Snow.dp(context, 4), label)
         val total = max(max(trace.duration, liveWindow), if (live) 0f else ghost?.duration ?: 0f).coerceAtLeast(1f)
         fun xOf(seconds: Float) = pad + seconds / total * (w - pad * 2)
         ghost?.let { draw(canvas, it, 1f, ::xOf, ::yOf, ghostPaint) }

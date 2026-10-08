@@ -54,6 +54,8 @@ object RunComparisons {
     const val CLOSE_DEPTH_DEGREES = 2.0
     const val CLOSE_BEAT_SECONDS = 0.15
     const val UNEVEN_SHARE = 0.2
+    /** A verdict may be stamped a few milliseconds before the turn that completed its window; this forgives that. */
+    const val VERDICT_TOLERANCE_MS = 50L
 
     private class Turn(val row: RunEventRow, val peak: Float)
 
@@ -61,7 +63,7 @@ object RunComparisons {
         val info = data.info
         val target = info?.let { CoachTarget(it.targetBeat, it.targetDepth) }
         val windowSize = (info?.windowSize ?: Coach.DEFAULT_WINDOW).coerceIn(Coach.MIN_WINDOW, Coach.MAX_WINDOW)
-        val side = chooseSide(info?.coachBoot, data.events)
+        val side = chooseSide(info?.coachBoot, data.events, data.verdicts)
         val mirror = if (side == "R") -1f else 1f
         // Half-turns are stored as the boot sent them; roll is mirrored into the skier frame on read.
         val turns = data.events.filter { it.side == side }.map { Turn(it, it.peakRoll * mirror) }
@@ -70,7 +72,7 @@ object RunComparisons {
         val windows = mutableListOf<ComparisonWindow>()
         var used = 0
         for (verdict in verdicts) {
-            val end = turns.indexOfLast { it.row.receivedMs <= verdict.timeMs } + 1
+            val end = turns.indexOfLast { it.row.receivedMs <= verdict.timeMs + VERDICT_TOLERANCE_MS } + 1
             val start = maxOf(used, end - windowSize)
             if (end - start <= 0) continue
             windows.add(window(turns.subList(start, end), runCatching { Verdict.valueOf(verdict.verdict) }.getOrNull(), end - start < windowSize, target))
@@ -88,9 +90,11 @@ object RunComparisons {
         return RunComparison(side, target, demo, windows, numbers, sentence(numbers, target), defaultWindow)
     }
 
-    private fun chooseSide(coachBoot: String?, events: List<RunEventRow>): String = when (coachBoot) {
-        "LEFT" -> "L"
-        "RIGHT" -> "R"
+    /** The boot the coach followed: pinned in the settings, else the boot its verdicts came from, else the boot with more turns. */
+    private fun chooseSide(coachBoot: String?, events: List<RunEventRow>, verdicts: List<RunVerdictRow>): String = when {
+        coachBoot == "LEFT" -> "L"
+        coachBoot == "RIGHT" -> "R"
+        verdicts.isNotEmpty() -> if (verdicts.count { it.side == "R" } > verdicts.count { it.side == "L" }) "R" else "L"
         else -> if (events.count { it.side == "R" } > events.count { it.side == "L" }) "R" else "L"
     }
 
@@ -100,7 +104,9 @@ object RunComparisons {
         val degrees = ArrayList<Float>()
         var previousEnd = 0.0
         for (turn in turns) {
-            val start = maxOf(bootClockDelta(origin, turn.row.startMs) / 1000.0, previousEnd)
+            // A start stamped before the window's first turn would look like a delta of almost the whole clock wrap: treat it as zero.
+            val delta = bootClockDelta(origin, turn.row.startMs).let { if (it > BOOT_CLOCK_WRAP_MS / 2) 0L else it }
+            val start = maxOf(delta / 1000.0, previousEnd)
             val length = (turn.row.durationMs / 1000.0).coerceAtLeast(0.05)
             if (seconds.isNotEmpty() && start > previousEnd + 1e-6) {
                 // A real gap between two half-turns: flat at zero.

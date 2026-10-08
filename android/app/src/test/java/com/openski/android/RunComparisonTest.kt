@@ -135,6 +135,29 @@ class RunComparisonTest {
         assertEquals(listOf(Verdict.POSITIVE, Verdict.NEGATIVE), comparison.windows.map { it.verdict })
     }
 
+    @Test fun aVerdictStampedAMomentBeforeItsLastTurnStillClosesThatTurnsWindow() {
+        // The coach stamps a verdict a few milliseconds before the run stamps the turn that completed the window.
+        val events = turns(count = 8)
+        val verdicts = listOf(verdict(events[3].receivedMs - 20, Verdict.POSITIVE), verdict(events[7].receivedMs - 20, Verdict.NEGATIVE))
+        val comparison = run(events, verdicts)
+        assertEquals(listOf(4, 4), comparison.windows.map { it.turns })
+        assertEquals(listOf(Verdict.POSITIVE, Verdict.NEGATIVE), comparison.windows.map { it.verdict })
+    }
+
+    @Test fun automaticBootFollowingUsesTheBootTheVerdictsCameFrom() {
+        // The coach followed the left boot (it spoke first) even though the right boot reported more turns.
+        val events = turns("L", 4) + turns("R", 8, firstSequence = 20)
+        val comparison = run(events, listOf(verdict(events[3].receivedMs + 10, Verdict.POSITIVE, side = "L")))
+        assertEquals("L", comparison.side)
+        assertEquals(Verdict.POSITIVE, comparison.windows[0].verdict)
+    }
+
+    @Test fun aTurnStampedBeforeTheWindowStartDoesNotStretchTheTimeAxis() {
+        val events = listOf(row("L", 1, 10_000, 1800, 20f), row("L", 2, 9_990, 1800, -20f),
+            row("L", 3, 12_000, 1800, 20f), row("L", 4, 14_000, 1800, -20f))
+        assertTrue(run(events).windows[0].recorded.duration < 30f)
+    }
+
     @Test fun withNoVerdictsTurnsAreChunkedIntoPartialWindows() {
         val chunks = run(turns(count = 9)).windows
         assertEquals(listOf(4, 4, 1), chunks.map { it.turns })
