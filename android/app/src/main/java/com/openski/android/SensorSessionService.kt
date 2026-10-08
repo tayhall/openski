@@ -58,6 +58,22 @@ class SensorSessionService : Service() {
     private var listener: Listener? = null
     private var foreground = false
     private var monitoring = false
+    private var coachState = CoachState()
+    private var coachSession: CoachSession? = null
+    private var coachAudio: CoachAudio? = null
+    private var coachSettings = CoachSettings()
+    private var coachStartedAt = 0L
+    private var coachStartedMonitoring = false
+    private var coachDemo: DemoCoachFeed? = null
+    private var coachListener: ((CoachState) -> Unit)? = null
+    private val coachDemoStep = object : Runnable {
+        override fun run() {
+            val feed = coachDemo ?: return
+            val step = feed.next()
+            coachSession?.onEvent("L", step.event)
+            mainHandler.postDelayed(this, step.afterMs)
+        }
+    }
     private var lastNotificationMessage: String? = null
     private var uiVisible = false
     private var destroyed = false
@@ -256,7 +272,11 @@ class SensorSessionService : Service() {
                 updateInfo(side) },
             onRssi = { value -> rssiLevels[side]=value to System.currentTimeMillis(); updateInfo(side) },
             onMovement = { event -> listener?.onMovementEvent(side, event) },
-            onSkiEvent = { event -> listener?.onSkiEvent(side, SkierFrame.of(side, event)) },
+            onSkiEvent = { event ->
+                val skier = SkierFrame.of(side, event)
+                listener?.onSkiEvent(side, skier)
+                mainHandler.post { coachSession?.onEvent(side, skier) }
+            },
             onSkiState = { state ->
                 if (state.production) productionSides.add(side) else productionSides.remove(side)
                 listener?.onSkiState(side, SkierFrame.of(side, state))
@@ -568,6 +588,82 @@ class SensorSessionService : Service() {
         return true
     }
 
+    // Coaching ------------------------------------------------------------------------------------------
+
+    fun coachState(): CoachState = coachState
+    fun setCoachListener(value: ((CoachState) -> Unit)?) { coachListener = value }
+
+    private fun publishCoach(state: CoachState) {
+        coachState = state
+        coachListener?.invoke(state)
+        if (foreground) ensureForeground()  // refresh the notification text
+    }
+
+    /**
+     * Starts the metronome and section chirps. With [demo] on, synthetic half-turns drive the coach so it can be
+     * heard without boots. Returns a reason if it could not start, or null if it started.
+     */
+    fun startCoaching(settings: CoachSettings, demo: Boolean): String? {
+        if (coachState.running) return null
+        val chosen = settings.normalised()
+        val target = chosen.target()
+        val audio = CoachAudio(this,
+            onRoute = { headphones -> mainHandler.post { publishCoach(coachState.copy(paused = !headphones,
+                message = if (headphones) "Coaching resumed." else "Coaching paused: earbuds disconnected.")) } },
+            onProblem = { text -> mainHandler.post { stopCoaching(); publishCoach(CoachState(message = text)) } })
+        audio.start(chosen, target)?.let { return it }
+        val wasMonitoring = monitoring
+        try {
+            startMonitoring()  // keeps this service in the foreground with the screen off
+        } catch (error: Exception) {
+            audio.stop()
+            return "Could not keep coaching running in the background."
+        }
+        acquireWakeLock()
+        coachStartedMonitoring = !wasMonitoring
+        coachSettings = chosen
+        coachAudio = audio
+        coachStartedAt = SystemClock.elapsedRealtime()
+        coachSession = CoachSession(chosen) { _, verdict -> onCoachVerdict(verdict) }
+        if (demo) {
+            coachDemo = DemoCoachFeed(target)
+            mainHandler.postDelayed(coachDemoStep, (target.beatSeconds * 1000).toLong())
+        }
+        publishCoach(CoachState(running = true, demo = demo, target = target,
+            message = when {
+                demo -> "Coaching on demo boots."
+                clients.values.none { it.isReady } -> "No boot connected yet. You will hear the metronome, and chirps start once a boot sends turns."
+                else -> "Coaching. Start skiing when you hear the first ticks."
+            }))
+        return null
+    }
+
+    fun stopCoaching() {
+        mainHandler.removeCallbacks(coachDemoStep)
+        coachDemo = null
+        coachSession = null
+        coachAudio?.stop()
+        coachAudio = null
+        if (!coachState.running) return
+        publishCoach(CoachState(message = "Coaching stopped."))
+        // Coaching turned monitoring on only if it was off; put it back so the service can stop when nothing else needs it.
+        if (coachStartedMonitoring) { monitoring = false; coachStartedMonitoring = false }
+        settleForeground()
+    }
+
+    fun playCoachTestSounds(settings: CoachSettings) {
+        val audio = coachAudio ?: CoachAudio(this, onRoute = {}, onProblem = { text -> mainHandler.post { coachListener?.invoke(CoachState(message = text)) } })
+        audio.playTestSounds(settings.normalised().gainPercent)
+    }
+
+    private fun onCoachVerdict(verdict: CoachVerdict) {
+        val target = coachState.target ?: return
+        val countInMs = (COUNT_IN_BEATS * target.beatSeconds * 1000).toLong()
+        val counting = coachSettings.metronome && coachSettings.countIn && SystemClock.elapsedRealtime() - coachStartedAt < countInMs
+        if (coachSettings.chirps && !counting && !coachState.paused) coachAudio?.chirp(verdict.verdict)
+        publishCoach(coachState.copy(last = verdict))
+    }
+
     /** Boots with a live, ready link; only these can take a command. */
     fun connectedSides(): List<String> = clients.filterValues { it.isReady }.keys.sorted()
 
@@ -779,6 +875,7 @@ class SensorSessionService : Service() {
         val warnings = addresses.keys.filter { side -> clients[side]?.isReady != true ||
             SystemClock.elapsedRealtime() - (lastSampleTime[side] ?: 0) > 3_000 }
         return when {
+            coachState.running && coachState.paused -> "Coaching paused: earbuds disconnected"
             activeSessionId != null -> if (warnings.isEmpty()) "Recording both available boot streams" else "Recording · ${warnings.joinToString("/")} boot samples unavailable"
             transfers.isNotEmpty() -> "Recovering sensor flash · keep sensors powered and nearby"
             store.hasPendingRecovery() -> "Live recording saved · sensor flash recovery pending"
@@ -795,8 +892,8 @@ class SensorSessionService : Service() {
         foreground = true
     }
     private fun settleForeground() {
-        if (activeSessionId == null && transfers.isEmpty()) releaseWakeLock()
-        if (!monitoring && activeSessionId == null && !store.hasPendingRecovery() && transfers.isEmpty() && !storageFailed) {
+        if (activeSessionId == null && transfers.isEmpty() && !coachState.running) releaseWakeLock()
+        if (!monitoring && !coachState.running && activeSessionId == null && !store.hasPendingRecovery() && transfers.isEmpty() && !storageFailed) {
             if (foreground) stopForeground(STOP_FOREGROUND_REMOVE)
             foreground = false
             stopSelf()
@@ -832,6 +929,7 @@ class SensorSessionService : Service() {
 
     override fun onDestroy() {
         destroyed = true
+        stopCoaching()
         mainHandler.removeCallbacks(tick)
         listOf("L", "R").forEach { invalidate(it) }
         reconnectTasks.values.forEach(mainHandler::removeCallbacks)
@@ -847,6 +945,7 @@ class SensorSessionService : Service() {
 
     companion object {
         const val ACTION_MONITOR = "com.openski.android.MONITOR"
+        private const val COUNT_IN_BEATS = 4
         const val ACTION_STOP_MONITORING = "com.openski.android.STOP_MONITORING"
         const val ACTION_START_RECORDING = "com.openski.android.START_RECORDING"
         const val ACTION_STOP_RECORDING = "com.openski.android.STOP_RECORDING"

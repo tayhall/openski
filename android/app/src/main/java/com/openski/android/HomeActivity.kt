@@ -365,6 +365,15 @@ class HomeActivity : Activity() {
         add(status, bottom = 12)
         add(Snow.button(this@HomeActivity, if (paired.isEmpty()) "Pair my boots" else "Manage sensors", if (paired.isEmpty()) Snow.ButtonKind.PRIMARY else Snow.ButtonKind.SECONDARY) { openBoots() }, bottom = 28)
 
+        add(t("Coaching", Snow.Type.DISPLAY), bottom = 6)
+        val coaching = Snow.card(this@HomeActivity, 18)
+        coaching.add(t("Metronome and turn chirps", Snow.Type.TITLE))
+        coaching.add(t("Audio cues for pace and depth, for skiing with the phone in a pocket. Needs earbuds or a helmet speaker.", Snow.Type.BODY, Snow.INK_SOFT), top = 6)
+        coaching.add(Snow.button(this@HomeActivity, "Open coaching", Snow.ButtonKind.SECONDARY) {
+            startActivity(Intent(this@HomeActivity, CoachingActivity::class.java))
+        }, top = 14)
+        add(coaching, bottom = 28)
+
         add(t("Geek mode", Snow.Type.DISPLAY), bottom = 6)
         val geek = Snow.card(this@HomeActivity, 18, Snow.INK)
         geek.addView(t("Raw telemetry and the logbook", Snow.Type.TITLE, Snow.SNOW))

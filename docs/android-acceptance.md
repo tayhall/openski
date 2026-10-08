@@ -31,3 +31,20 @@ Recorder v2 does not expose a persistent session identity, an independent checks
 Battery support reads the standard BLE Battery Service if firmware provides it. Current firmware displays Battery not reported. Battery hardware/circuit details and firmware support are needed to report actual charge.
 
 Automatic alignment is approximate. Matching live samples estimates each boot's clock independently. Recovered recordings without matches use the phone's start/recovery time and are labelled approximate. Manual offsets are saved in metadata. No firmware image or partition table was changed during this Android work.
+
+## Audio coaching checks (phone and earbuds needed)
+
+The JVM tests cover the judgement, sounds, settings and demo feed. These cover what only a phone can show. Use Bluetooth earbuds or a helmet speaker unless a step says otherwise.
+
+1. Open Boots > Coaching, tap Play test sounds. Expect a tick, a higher accent tick, a rising chirp, then a falling chirp, at a comfortable volume. Try the Volume setting at 30% and 90%.
+2. Tap Try with demo boots. Expect ticks at the target beat and, after about eight turns, a rising chirp, then later a falling chirp as the demo drifts off target.
+3. Lock the phone and put it in a pocket. Expect the ticks to carry on for at least two minutes and the notification to stay.
+4. Switch the earbuds off mid-run. Expect the ticks to stop, no sound from the phone speaker, and the notification "Coaching paused: earbuds disconnected". Switch them back on and expect coaching to resume.
+5. With no earbuds connected and Allow phone speaker off, tap Start coaching. Expect a refusal with a message. Turn Allow phone speaker on and expect the ticks from the speaker.
+6. Play music in another app, then start coaching. Expect the ticks and chirps to mix over the music, and the music not to pause.
+7. Start coaching with no boot connected. Expect the message that no boot is connected and the metronome still playing. Connect a boot and expect chirps once it sends turns.
+8. With a real boot in the garden (training mode) and then in on-snow mode, roll the boot from side to side at the target beat. Expect chirps after each window. Record how often a clearly good window gets no sound, to tune the thresholds.
+9. Leave the Coaching screen and reopen it while coaching runs. Expect coaching to continue and the screen to show the current state.
+10. Disconnect the boot during a run. Expect the metronome to keep ticking and no crash.
+11. Switch the earbuds off at the moment a chirp would play, several times. Expect silence from the phone speaker every time: no stray tick or chirp. Check Play test sounds separately: it deliberately plays on whatever route is active so the volume can be set.
+12. While coaching, pull down the notification and tap Disconnect sensors, then lock the phone. Expect coaching to keep playing until you tap Stop coaching, after which the notification and the foreground service go away (unless a recording or recovery needs them).

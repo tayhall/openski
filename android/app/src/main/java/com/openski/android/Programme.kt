@@ -86,8 +86,18 @@ object DrillScoring {
     const val GREAT = 90
 
     /** Maps [value] from a perfect-at-[ideal], zero-at-[ideal]±[tolerance] triangle onto 0..100. */
-    private fun closeness(value: Double, ideal: Double, tolerance: Double) =
+    internal fun closeness(value: Double, ideal: Double, tolerance: Double) =
         (100 * (1 - abs(value - ideal) / tolerance)).coerceIn(0.0, 100.0)
+
+    /** 100 for perfectly even beats, falling to zero when the spread reaches 35% of the mean beat. */
+    internal fun steadiness(beats: List<Double>): Double {
+        val mean = beats.average()
+        val spread = if (beats.size < 2) 1.0 else {
+            val variance = beats.sumOf { (it - mean) * (it - mean) } / (beats.size - 1)
+            kotlin.math.sqrt(variance) / mean
+        }
+        return (100 * (1 - spread / 0.35)).coerceIn(0.0, 100.0)
+    }
 
     fun score(drill: Drill, detection: DryDetection): DrillResult {
         val moves = detection.movements.take(drill.movements)
@@ -100,11 +110,7 @@ object DrillScoring {
         val mean = beats.average()
         // 50% either side of the target beat scores zero.
         val tempo = closeness(mean, drill.paceSeconds, drill.paceSeconds * 0.5)
-        val spread = if (beats.size < 2) 1.0 else {
-            val variance = beats.sumOf { (it - mean) * (it - mean) } / (beats.size - 1)
-            kotlin.math.sqrt(variance) / mean
-        }
-        val steadiness = (100 * (1 - spread / 0.35)).coerceIn(0.0, 100.0)
+        val steadiness = steadiness(beats)
         val balance = DrySkiAnalysis.balance(DryDetection(moves, emptyList()))?.let {
             (it.durationRatioPercent + it.peakRatioPercent) / 2
         } ?: 50.0
