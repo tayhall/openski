@@ -114,19 +114,24 @@ class SessionDetailActivity : Activity() {
             summary.addView(SkiUi.label(this,"Left boot / right boot · Experimental indoor detector",12f,SkiUi.SECONDARY))
             analysisPage.addView(summary,LinearLayout.LayoutParams(-1,-2).apply { bottomMargin=dp(14) })
         }
-        val pages=listOf(replayPage,analysisPage,detailsPage)
+        val runPage=if(loaded.run!=null) reviewPage() else null
+        runPage?.let { page ->
+            loaded.run?.let { page.addView(RunComparisonCard.build(this,RunComparisons.build(it,session.origin=="synthetic")),LinearLayout.LayoutParams(-1,-2).apply { bottomMargin=dp(14) }) }
+        }
+        val pages=listOfNotNull(runPage,replayPage,analysisPage,detailsPage)
+        val replayIndex=if(runPage!=null) 1 else 0
         val tabRow=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL; setPadding(dp(16),0,dp(16),dp(8)) }
         val scrolls=pages.map { content -> ScrollView(this).apply { isFillViewport=true; addView(content) } }
         val content=FrameLayout(this)
         scrolls.forEach { content.addView(it,FrameLayout.LayoutParams(-1,-1)) }
         val tabs=mutableListOf<Button>()
         fun selectTab(index: Int) {
-            selectedTab=index.coerceIn(0,2)
+            selectedTab=index.coerceIn(0,pages.size-1)
             scrolls.forEachIndexed { i, view -> view.visibility=if(i==selectedTab) android.view.View.VISIBLE else android.view.View.GONE }
             tabs.forEachIndexed { i, view -> view.isSelected=i==selectedTab; SkiUi.styleButton(view,if(i==selectedTab) SkiUi.ButtonStyle.PRIMARY else SkiUi.ButtonStyle.QUIET) }
-            if(selectedTab!=0) video?.pause()
+            if(selectedTab!=replayIndex) video?.pause()
         }
-        listOf("Replay","Analysis","Details").forEachIndexed { index, title ->
+        (if(runPage!=null) listOf("Run","Replay","Analysis","Details") else listOf("Replay","Analysis","Details")).forEachIndexed { index, title ->
             val tab=button(title) { selectTab(index) }
             tabs.add(tab); tabRow.addView(tab,LinearLayout.LayoutParams(0,-2,1f))
         }

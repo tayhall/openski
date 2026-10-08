@@ -166,6 +166,14 @@ class RunComparisonTest {
         assertEquals(2, numbers.windowsWithVerdict)
     }
 
+    @Test fun theNumberLinesStateTheFactsBehindTheSentence() {
+        val events = turns(count = 4, peak = 16f, beatMs = 2400)
+        val comparison = run(events, listOf(verdict(events[3].receivedMs, Verdict.POSITIVE), verdict(events[3].receivedMs + 1, Verdict.NEGATIVE)))
+        assertEquals(listOf("Depth: 16° average, aim 20°", "Beat: 2.4 s average, aim 2.0 s",
+            "Left turns 16° · right turns 16°", "Matched 1 of 2 windows"), RunComparisonCard.numberLines(comparison))
+        assertTrue(RunComparisonCard.numberLines(run(emptyList())).isEmpty())
+    }
+
     @Test fun beatsLongerThanTwiceTheTargetAreAPauseNotABeat() {
         val events = turns(count = 2) + turns(count = 2, from = 10_000 + 2 * 2000 + 9000, firstSequence = 3)
         assertEquals(0.0, run(events).numbers.beatDifferenceSeconds!!, 0.001)       // the 9 s pause is ignored
