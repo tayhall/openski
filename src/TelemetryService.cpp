@@ -56,6 +56,35 @@ String tiltJson() {
   return json;
 }
 
+String skiJson() {
+  const auto ski = motion::skiStatus();
+  char head[320];
+  snprintf(head, sizeof(head),
+           "{\"algorithm\":\"ski_v0\",\"frame\":\"leg\",\"zeroed\":%s,\"zeroing\":%s,"
+           "\"roll_degrees\":%.2f,\"pitch_degrees\":%.2f,\"half_turn_count\":%lu,"
+           "\"rejected\":%lu,\"sample_gaps\":%lu,\"recent\":[",
+           ski.zeroed ? "true" : "false", ski.zeroing ? "true" : "false", ski.rollDegrees,
+           ski.pitchDegrees, static_cast<unsigned long>(ski.count),
+           static_cast<unsigned long>(ski.rejected), static_cast<unsigned long>(ski.gaps));
+  String json(head);
+  motion::SkiEvent events[16];
+  const uint8_t count = motion::recentSkiEvents(events, 16);
+  for (uint8_t i = 0; i < count; ++i) {
+    const auto& e = events[i];
+    char body[288];
+    snprintf(body, sizeof(body),
+             "%s{\"sequence\":%lu,\"start_us\":%lu,\"end_us\":%lu,\"duration_ms\":%lu,"
+             "\"peak_roll_degrees\":%.2f,\"peak_rate_dps\":%.1f,\"pitch_degrees\":%.2f,"
+             "\"outside_envelope\":%s}",
+             i ? "," : "", static_cast<unsigned long>(e.sequence), static_cast<unsigned long>(e.startUs),
+             static_cast<unsigned long>(e.endUs), static_cast<unsigned long>((e.endUs - e.startUs)/1000),
+             e.peakRollDegrees, e.peakRateDps, e.pitchDegrees, e.outsideEnvelope ? "true" : "false");
+    json += body;
+  }
+  json += "]}";
+  return json;
+}
+
 void handleMotion() {
   const auto state = motion::status();
   char body[512];
@@ -101,12 +130,14 @@ void handleMotion() {
   }
   response += "],\"tilt\":";
   response += tiltJson();
+  response += ",\"ski\":";
+  response += skiJson();
   response += "}";
   server.send(200, "application/json", response);
 }
 
 void handleZero() {
-  motion::zeroTilt();
+  motion::zeroMotion();
   server.send(200, "application/json", "{\"zeroing\":true}");
 }
 
@@ -205,7 +236,14 @@ void begin() {
 }
 
 void tick() {
-  if (!wifi::connected()) return;
+  if (!wifi::connected()) {
+    // Close the listener so it is rebuilt cleanly when Wi-Fi returns.
+    if (serverStarted) {
+      server.stop();
+      serverStarted = false;
+    }
+    return;
+  }
   if (!serverStarted) {
     server.begin();
     serverStarted = true;

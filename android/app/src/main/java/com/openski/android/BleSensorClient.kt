@@ -19,6 +19,8 @@ class BleSensorClient(
     private val onDisconnected: () -> Unit = {},
     private val onRssi: (Int) -> Unit = {},
     private val onMovement: (MovementEvent) -> Unit = {},
+    private val onSkiEvent: (SkiEvent) -> Unit = {},
+    private val onSkiState: (SkiState) -> Unit = {},
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private var gatt: BluetoothGatt? = null
@@ -128,7 +130,12 @@ class BleSensorClient(
             LIVE_UUID -> SensorSample.decode(bytes)?.let(onSample)
             CONTROL_UUID -> RecorderStatus.decode(bytes)?.let(onRecorder)
             DATA_UUID -> onChunk(FlashChunk.decode(bytes))
-            MOVEMENT_UUID -> MovementEvent.decode(bytes)?.let(onMovement)
+            MOVEMENT_UUID -> when (val frame = MotionFrames.decode(bytes)) {
+                is MovementEvent -> onMovement(frame)
+                is SkiEvent -> onSkiEvent(frame)
+                is SkiState -> onSkiState(frame)
+                null -> Unit
+            }
             BATTERY_UUID -> onBattery(bytes.firstOrNull()?.toInt()?.and(255)?.takeIf { it <= 100 })
         }
     }

@@ -12,7 +12,15 @@ bool started = false;
 }  // namespace
 
 void tick() {
-  if (!wifi::connected() || config::kOtaPassword[0] == '\0') return;
+  if (config::kOtaPassword[0] == '\0') return;
+  if (!wifi::connected()) {
+    // Wi-Fi went away (production mode or a drop); restart OTA cleanly when it returns.
+    if (started) {
+      ArduinoOTA.end();
+      started = false;
+    }
+    return;
+  }
 
   if (!started) {
     ArduinoOTA.setHostname(config::kHostname);

@@ -19,6 +19,8 @@ class SensorSessionService : Service() {
         fun onBootOrientation(side: String, value: BootRoll?) {}
         fun onTestFeedback(message: String) {}
         fun onMovementEvent(side: String, event: MovementEvent) {}
+        fun onSkiEvent(side: String, event: SkiEvent) {}
+        fun onSkiState(side: String, state: SkiState) {}
     }
     inner class LocalBinder : Binder() { val service: SensorSessionService get() = this@SensorSessionService }
     private val binder = LocalBinder()
@@ -39,6 +41,8 @@ class SensorSessionService : Service() {
     private val rssiLevels = mutableMapOf<String, Pair<Int,Long>>()
     private val lastSampleTime = mutableMapOf<String, Long>()
     private val flashRetries = mutableMapOf<String, Int>()
+    /** Boots last seen in production mode (from state frames and recorder responses); sticky until a frame says otherwise. */
+    private val productionSides = mutableSetOf<String>()
     private val captures = mutableMapOf<String, SensorCapture>()
     private data class Pending(val sessionId: String, val record: RecordedSample)
     private val pendingSamples = mutableListOf<Pending>()
@@ -252,6 +256,11 @@ class SensorSessionService : Service() {
                 updateInfo(side) },
             onRssi = { value -> rssiLevels[side]=value to System.currentTimeMillis(); updateInfo(side) },
             onMovement = { event -> listener?.onMovementEvent(side, event) },
+            onSkiEvent = { event -> listener?.onSkiEvent(side, SkierFrame.of(side, event)) },
+            onSkiState = { state ->
+                if (state.production) productionSides.add(side) else productionSides.remove(side)
+                listener?.onSkiState(side, SkierFrame.of(side, state))
+            },
             onDisconnected = {
                 latestOrientation.remove(side)
                 listener?.onBootOrientation(side,null)
@@ -298,6 +307,7 @@ class SensorSessionService : Service() {
 
     private fun handleRecorder(side: String, status: RecorderStatus) {
         recorderStates[side] = status
+        if (status.production) productionSides.add(side) else productionSides.remove(side)
         updateInfo(side)
         if (status.opcode == 0x85) {
             val transfer = transfers[side] ?: return
@@ -558,6 +568,22 @@ class SensorSessionService : Service() {
         return true
     }
 
+    /** Boots with a live, ready link; only these can take a command. */
+    fun connectedSides(): List<String> = clients.filterValues { it.isReady }.keys.sorted()
+
+    /** Ask a boot to recapture its neutral pose from the next still second. Stand upright and still first. */
+    fun zeroSensor(side: String): Boolean = clients[side]?.command(RecorderCommand.ZERO) == true
+
+    /** Production turns the boot's Wi-Fi and raw stream off to save battery; diagnostics turns them back on. */
+    fun setSensorMode(side: String, production: Boolean): Boolean {
+        if (ProductionModeRule.blockedReason(activeSessionId != null, transfers.isNotEmpty() || waits.isNotEmpty(), production) != null) return false
+        return clients[side]?.command(RecorderCommand.SET_MODE, if (production) 1 else 0) == true
+    }
+
+    /** Why production mode cannot be entered right now, or null if it can. */
+    fun productionBlockedReason(): String? =
+        ProductionModeRule.blockedReason(activeSessionId != null, transfers.isNotEmpty() || waits.isNotEmpty())
+
     fun calibrateTest(side: String, axis: Int, sign: Int, completed: (String)->Unit) {
         val id=activeSessionId
         if(id==null || !testRecording) { completed("Start a test session first"); return }
@@ -612,6 +638,12 @@ class SensorSessionService : Service() {
         if (available < 20L * 1024 * 1024 || clients.values.none { it.isReady }) {
             listener?.onRecordingChanged(null, if (available < 20L * 1024 * 1024) "Phone storage too low to record"
                 else "Wait for a sensor's live stream before recording")
+            settleForeground()
+            return
+        }
+        val inProduction = clients.filterValues { it.isReady }.keys.filter { it in productionSides }
+        ProductionModeRule.recordingBlockedReason(inProduction)?.let { reason ->
+            listener?.onRecordingChanged(null, reason)
             settleForeground()
             return
         }

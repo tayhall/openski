@@ -8,7 +8,7 @@ import java.nio.ByteOrder
  * (docs/ble-protocol.md). Angles are sensor-frame estimates, not validated boot or ski angles.
  */
 data class MovementEvent(val axis: Int, val sequence: Int, val startMs: Long, val durationMs: Int,
-    val peakTiltDegrees: Float, val aboutAxisDegrees: Float, val axisFraction: Float) {
+    val peakTiltDegrees: Float, val aboutAxisDegrees: Float, val axisFraction: Float) : MotionFrame {
     val axisName get() = "xyz"[axis]
     companion object {
         const val SIZE = 15

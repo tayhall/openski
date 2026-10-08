@@ -32,4 +32,34 @@ inline constexpr int kImuSdaPin = OPENSKI_IMU_SDA_PIN;
 inline constexpr int kImuSclPin = OPENSKI_IMU_SCL_PIN;
 inline constexpr uint8_t kImuI2cAddress = 0x68;
 inline constexpr uint32_t kImuI2cFrequencyHz = 400000;
+// Which sensor axis points up the leg, forward and sideways when the board sits in its cuff clip,
+// and the sign that makes it point that way. Assumed for the first mounting: board length (y) up
+// the leg, holes edge (x) forward, header side (z) as the lateral axis. Confirm against the real
+// mounting and override with build flags if the board sits differently. Mount both boards the same
+// way on the outer side of each cuff and flash identical firmware: the app mirrors the right boot's
+// roll, so no per-boot build is needed.
+#ifndef OPENSKI_MOUNT_UP_AXIS
+#define OPENSKI_MOUNT_UP_AXIS 1
+#endif
+#ifndef OPENSKI_MOUNT_UP_SIGN
+#define OPENSKI_MOUNT_UP_SIGN 1
+#endif
+#ifndef OPENSKI_MOUNT_FORWARD_AXIS
+#define OPENSKI_MOUNT_FORWARD_AXIS 0
+#endif
+#ifndef OPENSKI_MOUNT_FORWARD_SIGN
+#define OPENSKI_MOUNT_FORWARD_SIGN 1
+#endif
+#ifndef OPENSKI_MOUNT_LATERAL_AXIS
+#define OPENSKI_MOUNT_LATERAL_AXIS 2
+#endif
+#ifndef OPENSKI_MOUNT_LATERAL_SIGN
+#define OPENSKI_MOUNT_LATERAL_SIGN 1
+#endif
+inline constexpr uint8_t kMountUpAxis = OPENSKI_MOUNT_UP_AXIS;
+inline constexpr int8_t kMountUpSign = OPENSKI_MOUNT_UP_SIGN;
+inline constexpr uint8_t kMountForwardAxis = OPENSKI_MOUNT_FORWARD_AXIS;
+inline constexpr int8_t kMountForwardSign = OPENSKI_MOUNT_FORWARD_SIGN;
+inline constexpr uint8_t kMountLateralAxis = OPENSKI_MOUNT_LATERAL_AXIS;
+inline constexpr int8_t kMountLateralSign = OPENSKI_MOUNT_LATERAL_SIGN;
 }  // namespace openski::config

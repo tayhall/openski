@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include "GestureTracker.h"
 #include "TiltTracker.h"
+#include "SkiFrames.h"
 
 namespace openski::motion {
 struct Status {
@@ -31,6 +32,17 @@ struct TiltStatus {
 TiltStatus tiltStatus();
 uint8_t recentExcursions(Excursion* output, uint8_t capacity);
 void zeroTilt();
+struct SkiStatus {
+  bool zeroed = false, zeroing = false;
+  float rollDegrees = 0, pitchDegrees = 0;
+  uint32_t count = 0, rejected = 0, gaps = 0;
+};
+SkiStatus skiStatus();
+uint8_t recentSkiEvents(SkiEvent* output, uint8_t capacity);
+SkiHeartbeat takeSkiHeartbeat();
+bool takeSkiGapSeen();
+// Recapture the neutral pose of both the tilt and ski recognisers from the next still second.
+void zeroMotion();
 void tick();
 Status status();
 }

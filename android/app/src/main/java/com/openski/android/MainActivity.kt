@@ -61,6 +61,10 @@ class MainActivity : Activity() {
     private val testButtons=mutableListOf<Button>()
     private lateinit var liveOrientationLabel: TextView
     private lateinit var testFeedback: TextView
+    private lateinit var skiStatus: TextView
+    private lateinit var skiCommand: TextView
+    private val skiEventText = mutableMapOf<String, String>()
+    private val skiStateText = mutableMapOf<String, String>()
     private val liveOrientation=mutableMapOf<String,BootRoll>()
 
     private val serviceConnection = object : ServiceConnection {
@@ -111,6 +115,20 @@ class MainActivity : Activity() {
             if(value==null) liveOrientation.remove(side) else liveOrientation[side]=value
         }
         override fun onTestFeedback(message: String) = runOnUiThread { testFeedback.text=message }
+        override fun onSkiEvent(side: String, event: SkiEvent) = runOnUiThread {
+            skiEventText[side] = "half-turn ${"%+.0f".format(java.util.Locale.US, event.peakRollDegrees)}° over " +
+                "${"%.1f".format(java.util.Locale.US, event.durationMs / 1000f)} s, peak " +
+                "${"%.0f".format(java.util.Locale.US, event.peakRateDps)}°/s" +
+                if (event.outsideEnvelope) " (outside expected range)" else ""
+            renderSki()
+        }
+        override fun onSkiState(side: String, state: SkiState) = runOnUiThread {
+            skiStateText[side] = "${if (state.production) "production" else "diagnostics"} · " +
+                "${if (state.zeroed) "zeroed" else "not zeroed"} · roll " +
+                "${"%.0f".format(java.util.Locale.US, state.rollDegrees)}° pitch " +
+                "${"%.0f".format(java.util.Locale.US, state.pitchDegrees)}°"
+            renderSki()
+        }
         override fun onRecordingChanged(sessionId: String?, message: String) = runOnUiThread {
             activeSessionId = sessionId
             renderRecordingState(sessionId, message)
@@ -291,6 +309,27 @@ class MainActivity : Activity() {
             })
         }
         lab.addView(testCard, bottomMargin(dp(16)))
+        val bootCard = SkiUi.card(this)
+        bootCard.addView(label("Boot sensors · experimental", 22f, WHITE, true))
+        bootCard.addView(label("Stand upright in your ski stance, then zero. Production mode switches the boots' Wi-Fi and raw stream off to save battery; a boot always starts in diagnostics after a power cycle. Half-turn lean is cuff lean, not ski edge angle.", 14f, SUBTLE).apply {
+            setPadding(0, dp(10), 0, dp(16))
+        })
+        skiCommand = label("Connect a boot to send commands.", 14f, ACCENT)
+        bootCard.addView(skiCommand, bottomMargin(dp(12)))
+        bootCard.addView(SkiUi.button(this, "Zero boots (stand still)", SkiUi.ButtonStyle.PRIMARY) {
+            commandBoots("Zero") { service, side -> service.zeroSensor(side) }
+        })
+        bootCard.addView(SkiUi.button(this, "Production mode (battery)") {
+            val blocked = sensorService?.productionBlockedReason()
+            if (blocked != null) skiCommand.text = blocked
+            else commandBoots("Production") { service, side -> service.setSensorMode(side, true) }
+        })
+        bootCard.addView(SkiUi.button(this, "Diagnostics mode (Wi-Fi + raw)") {
+            commandBoots("Diagnostics") { service, side -> service.setSensorMode(side, false) }
+        })
+        skiStatus = label("No boot turn data yet.", 13f, SUBTLE)
+        bootCard.addView(skiStatus, bottomMargin(dp(4)))
+        lab.addView(bootCard, bottomMargin(dp(16)))
         val markers = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         markers.addView(label("Observer labels use your tap time. Film the test and mark SYNC for video alignment.", 13f, SUBTLE), bottomMargin(dp(12)))
         listOf("LEFT", "RIGHT", "TRANSITION", "SYNC", "START_TEST", "PAUSE", "EVENT").forEach { marker ->
@@ -304,6 +343,20 @@ class MainActivity : Activity() {
         SkiUi.applyInsets(root)
         setContentView(root)
         selectTab(selectedTab)
+    }
+
+    private fun renderSki() {
+        val sides = (skiEventText.keys + skiStateText.keys).sorted()
+        skiStatus.text = if (sides.isEmpty()) "No boot turn data yet." else sides.joinToString("\n") { side ->
+            "$side · ${skiStateText[side] ?: "no state yet"}\n   ${skiEventText[side] ?: "no half-turn yet"}"
+        }
+    }
+
+    private fun commandBoots(name: String, action: (SensorSessionService, String) -> Boolean) {
+        val service = sensorService
+        val sides = service?.connectedSides().orEmpty()
+        skiCommand.text = if (service == null || sides.isEmpty()) "Connect a boot first."
+        else "$name: " + sides.joinToString { side -> "$side ${if (action(service, side)) "sent" else "failed"}" }
     }
 
     private fun selectTab(index: Int) {

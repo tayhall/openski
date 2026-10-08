@@ -118,3 +118,15 @@ hold. `tools/test_tilt_tracker.cpp` repeats those cases against the firmware
 header and passes with GCC on the host. The firmware builds for `esp32-s3-supermini`. It has not been run on the board or
 compared with recordings of real movements, and the Y axis calibration rests on
 two bench tilt readings.
+
+## Half-turn recognition (`ski_v0`)
+
+`ski_v0` runs beside `tilt_v1` and is built for a sensor on the boot cuff, with the board's length up the leg. It separates **roll** (lean about the forward axis) from **pitch** (forward flex) relative to a pose captured by `POST /api/v1/motion/zero` or the app's Zero button, so a skier who holds 20° of forward flex all run still produces roll events. A half-turn runs between zero crossings of roll and is reported if its peak reaches 8°; very short ones (under 150 ms) are counted as rejected.
+
+- **Mounting map.** `include/AppConfig.h` says which sensor axis points up the leg, forward and sideways (`OPENSKI_MOUNT_*` build flags). The defaults are assumptions for the first mounting; confirm them. Mount both boards identically on the outer side of each cuff with identical firmware: roll comes out mirrored between the legs and the Android app mirrors the right boot's, so positive roll means leaning to the skier's left on both.
+- **Fusion.** The accelerometer pull fades out as |a| leaves 1 g and is zero beyond 15%, so hard turns follow the gyro. Samples above 2.5 g, below 0.3 g or with a gyro reading above 12 rad/s are skipped and the state is held.
+- **Expected values** (general ski mechanics, not yet measured here): cuff roll ±10° to ±25° on easy runs and ±30° to ±50° carving; roll rate 60 to 200 °/s at an edge change; forward flex 10° to 30° beyond the zeroed stance; a half-turn lasting 0.5 to 1.5 s. Events outside the envelope are flagged, not dropped.
+- **Slope.** A slope does not change the lean of the leg relative to vertical in a fall-line stance, but a traverse adds an offset on one side. Symmetric turns show it as unequal left and right peaks.
+- **Verification.** `tools/test_ski_tracker.cpp` and `tools/test_ski_frames.cpp` run synthetic ski-like traces and golden frame bytes on the host. They show the code matches the model, not that the model matches a skier; that needs the Phase 1 and 2 runs in the [POC plan](poc-plan.md).
+
+Build and run on the host: `g++ -std=gnu++17 -Ilib/Motion/src tools/test_ski_tracker.cpp` (and `test_ski_frames.cpp`).
