@@ -10,6 +10,7 @@ namespace {
 constexpr unsigned long kRetryIntervalMs = 10000;
 unsigned long lastAttemptMs = 0;
 bool wasConnected = false;
+bool radioEnabled = true;
 }  // namespace
 
 void begin() {
@@ -21,10 +22,23 @@ void begin() {
   lastAttemptMs = millis();
 }
 
-bool connected() { return WiFi.status() == WL_CONNECTED; }
+bool connected() { return radioEnabled && WiFi.status() == WL_CONNECTED; }
+
+void setEnabled(bool enabled) {
+  if (enabled == radioEnabled) return;
+  radioEnabled = enabled;
+  wasConnected = false;
+  if (!enabled) {
+    WiFi.disconnect(true, false);
+    WiFi.mode(WIFI_OFF);
+    Serial.println("Wi-Fi off (production mode)");
+  } else {
+    begin();
+  }
+}
 
 void tick() {
-  if (config::kWifiSsid[0] == '\0') return;
+  if (!radioEnabled || config::kWifiSsid[0] == '\0') return;
 
   const bool isConnected = connected();
   if (isConnected != wasConnected) {

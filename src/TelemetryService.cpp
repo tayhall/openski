@@ -236,7 +236,14 @@ void begin() {
 }
 
 void tick() {
-  if (!wifi::connected()) return;
+  if (!wifi::connected()) {
+    // Close the listener so it is rebuilt cleanly when Wi-Fi returns.
+    if (serverStarted) {
+      server.stop();
+      serverStarted = false;
+    }
+    return;
+  }
   if (!serverStarted) {
     server.begin();
     serverStarted = true;
