@@ -30,4 +30,9 @@ class ProductionModeRuleTest {
         val reason = ProductionModeRule.recordingBlockedReason(listOf("R", "L"))!!
         assertTrue(reason.indexOf("left") in 0 until reason.indexOf("right"))
     }
+
+    @Test fun runsAreExemptBecauseTheirRawDataComesFromBootFlash() {
+        assertNull(ProductionModeRule.recordingBlockedReason(listOf("L", "R"), run = true))
+        assertNotNull(ProductionModeRule.recordingBlockedReason(listOf("L", "R"), run = false))
+    }
 }

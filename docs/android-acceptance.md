@@ -48,3 +48,21 @@ The JVM tests cover the judgement, sounds, settings and demo feed. These cover w
 10. Disconnect the boot during a run. Expect the metronome to keep ticking and no crash.
 11. Switch the earbuds off at the moment a chirp would play, several times. Expect silence from the phone speaker every time: no stray tick or chirp. Check Play test sounds separately: it deliberately plays on whatever route is active so the volume can be set.
 12. While coaching, pull down the notification and tap Disconnect sensors, then lock the phone. Expect coaching to keep playing until you tap Stop coaching, after which the notification and the foreground service go away (unless a recording or recovery needs them).
+
+## Run flow checks (phone, both boots and earbuds needed)
+
+The JVM tests cover the run state machine, the zero confirmation, the chimes and the run records. Already observed on the Pixel 9a emulator with demo boots (8 October 2026): Today card, Ready screen with the disabled Start and its reason, a demo run through Running to the Done summary, the run stored in the database at version 8 (kind `run`, half-turns, verdicts and run settings), the run listed in the logbook as "DEMO · Run" and opening without a crash, and the version 8 migration check passing. The rest needs real hardware.
+
+1. On the Ready screen with both boots on and earbuds in, the status rows show both boots and the earbuds as connected and Start run is enabled. Switch one boot off: Start run becomes disabled and the line above it names that boot.
+2. Tap the boot-mode button. Both boots change between Training and On snow (check `http://ski-s3.local/api/v1/status` goes silent in On snow and returns in Training).
+3. Tap Start run. Expect the boots to switch to On snow, "Stand upright. Hold still.", both marks turning solid after about a second of stillness, then the start chime and the metronome. Repeat while deliberately moving one boot: expect it to time out after 15 s naming that boot, and Try again to work.
+4. Ski or roll the boots for a minute with the phone locked in a pocket. Expect the notification "Run in progress" with the elapsed time and turn count, the coaching chirps, and the Stop action working with the screen off.
+5. Stop moving for 20 s. Expect the end chime, the run ending by itself, and the notification changing to "Saving run data".
+6. Switch one boot off for 30 s during a run, then back on. Expect a banner naming it, the run continuing, and a "lost its link" note in the summary.
+7. Walk out of range for a minute with both boots, then return. Expect the run to carry on or end sensibly, no crash, and the gap shown.
+8. After the end chime, watch the saving progress while riding a lift. Record how long the download takes for a full 10-minute recording. Expect the boots to return to the mode they were in once saving finishes, and the Done summary.
+9. Open a real run in the logbook straight after it ends, again while saving, and again after saving. Expect no crash and the half-turns visible; export it and check the zip contains `half-turns.csv`, `coach-verdicts.csv` and a `run` entry in `session.json`.
+10. Record for longer than 10 minutes. Expect the summary to say the raw data covers the first 10 minutes only.
+11. Start a run while a boot still holds an earlier recording. Expect Start to name the boot and say it is still saving.
+12. Rotate the phone, press Home and reopen the app during each phase. Expect the screen to show the current phase and taps on Stop and Cancel to work every time.
+13. After any storage change, rerun the migration check on an emulator: `adb shell am instrument -w com.openski.android.test/com.openski.android.StorageInstrumentation`. Expect a line starting `PASS:`.

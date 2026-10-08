@@ -46,7 +46,18 @@ object SessionExport {
                 val writer = zip.writer(Charsets.UTF_8)
                 body(writer); writer.flush(); zip.closeEntry()
             }
+            data.run?.info?.let { info ->
+                metadata.put("kind", session.kind).put("run", JSONObject().put("target_beat_s", info.targetBeat)
+                    .put("target_depth_deg", info.targetDepth).put("target_label", info.targetLabel).put("window_size", info.windowSize)
+                    .put("coach_boot", info.coachBoot).put("mode_before", JSONObject(info.modeBeforeJson)).put("ended_by", info.endedBy)
+                    .put("first_turn_ms", info.firstTurnMs ?: JSONObject.NULL).put("last_turn_ms", info.lastTurnMs ?: JSONObject.NULL)
+                    .put("gaps", JSONArray(info.gapsJson)).put("roll_frame", "boot frame, right boot not mirrored"))
+            }
             entry("session.json") { it.write(metadata.toString(2)) }
+            data.run?.let { run ->
+                entry("half-turns.csv") { w -> w.write(RunCsv.halfTurns(run.events, session.startedAtMs)) }
+                entry("coach-verdicts.csv") { w -> w.write(RunCsv.verdicts(run.verdicts, session.startedAtMs)) }
+            }
             entry("samples.csv") { w ->
                 w.write("side,source,capture_id,record_index,session_elapsed_ms,aligned_time_ms,received_at_ms,sensor_time_ms,sensor_time_us,sequence,ax_mps2,ay_mps2,az_mps2,gx_radps,gy_radps,gz_radps\n")
                 analysis.raw.forEach { p -> val s = p.sample

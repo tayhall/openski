@@ -120,6 +120,9 @@ class CoachAudio(
         playClip(clip)
     }
 
+    /** Plays a short chime (the start or end of a run), at the user's volume. */
+    fun playChime(clip: ShortArray) { if (routeOk()) playClip(clip) }
+
     /** Plays a tick, the accent, then both chirps, so the skier can set the volume before starting. */
     fun playTestSounds(gainPercent: Int) {
         gain = gainPercent.coerceIn(0, 100) / 100f

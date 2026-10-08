@@ -47,6 +47,38 @@ class StorageInstrumentation : Instrumentation() {
                     }
                 } finally { context.deleteDatabase(migrationName) }
             }
+            // Version 8: runs. Old sessions become kind 'session'; a run stores, reads back and deletes its records.
+            val runMigration="openski-migration-7-${UUID.randomUUID()}.db"
+            try {
+                val runPath=context.getDatabasePath(runMigration)
+                runPath.parentFile!!.mkdirs()
+                // A version-1 database, as in the existing check below: the store then migrates it through every step to 8,
+                // so all the tables a real database has by version 7 exist when the run tables are added.
+                SQLiteDatabase.openOrCreateDatabase(runPath,null).use { db ->
+                    db.execSQL("CREATE TABLE sessions(id TEXT PRIMARY KEY,started_at_ms INTEGER NOT NULL,ended_at_ms INTEGER,video_uri TEXT,video_name TEXT)")
+                    db.execSQL("CREATE TABLE samples(id INTEGER PRIMARY KEY AUTOINCREMENT,session_id TEXT NOT NULL,side TEXT NOT NULL,received_at_ms INTEGER NOT NULL,sensor_time_ms INTEGER NOT NULL,sequence INTEGER NOT NULL,ax REAL NOT NULL,ay REAL NOT NULL,az REAL NOT NULL,gx REAL NOT NULL,gy REAL NOT NULL,gz REAL NOT NULL)")
+                    db.execSQL("INSERT INTO sessions VALUES('before-runs',100000,160000,NULL,NULL)")
+                    db.version=1
+                }
+                LocalSessionStore(context,runMigration).use { store ->
+                    check(store.getSession("before-runs")!!.kind=="session")
+                    val id="a-run"
+                    store.createSession(id,200000,false,"sensor","run")
+                    check(store.getSession(id)!!.kind=="run")
+                    store.saveRunStart(id,RunStartInfo(200000,false,CoachTarget(2.0,20.0),"Steady rhythm",4,"AUTO",mapOf("L" to false,"R" to null)))
+                    store.addRunEvent(id,"R",SkiEvent(3,5000,1800,-21.5f,120f,15f,false,true,false,true),200500)
+                    store.addRunVerdict(id,"R",CoachVerdict(Verdict.POSITIVE,91,90,92,93,null,2.0,20.0,false),203000)
+                    store.saveRunEnd(id,RunEndInfo(260000,RunEnd.QUIET,200500,250000,listOf(RunGap("R",220000,225000))))
+                    store.finishSession(id,260000)
+                    val run=store.loadData(id)!!.run!!
+                    check(run.events.single().let { it.side=="R" && it.peakRoll==-21.5f && it.flags==(2 or 8) && it.receivedMs==200500L })
+                    check(run.verdicts.single().let { it.verdict=="POSITIVE" && it.balance==null })
+                    check(run.info!!.endedBy=="quiet" && run.info!!.targetLabel=="Steady rhythm" && run.info!!.lastTurnMs==250000L)
+                    check(store.deleteSession(id))
+                    check(store.runData(id).let { it.events.isEmpty() && it.verdicts.isEmpty() && it.info==null })
+                    check(store.getSession("before-runs")!!.let { it.startedAtMs==100000L && it.kind=="session" })
+                }
+            } finally { context.deleteDatabase(runMigration) }
             val path=context.getDatabasePath(name)
             path.parentFile!!.mkdirs()
             SQLiteDatabase.openOrCreateDatabase(path,null).use { db ->

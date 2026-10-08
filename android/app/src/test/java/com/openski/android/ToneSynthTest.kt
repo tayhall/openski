@@ -75,4 +75,14 @@ class ToneSynthTest {
         assertEquals(0.8 * ToneSynth.SAMPLE_RATE, beat.size.toDouble(), 1.0)
         assertTrue(beat.any { it.toInt() != 0 })
     }
+
+    @Test fun theRunChimesAreLongerThanChirpsAndRiseOrFall() {
+        val start = ToneSynth.startChime()
+        val end = ToneSynth.endChime()
+        assertTrue(start.size > ToneSynth.chirpPositive().size)
+        assertEquals(start.size, end.size)
+        val third = start.size / 3
+        assertTrue(crossings(start, 2 * third, start.size) > crossings(start, 0, third))
+        assertTrue(crossings(end, 2 * third, end.size) < crossings(end, 0, third))
+    }
 }
