@@ -34,6 +34,12 @@ object ToneSynth {
 
     /** Two falling notes in a lower register: the last few turns did not. */
     fun chirpNegative(): ShortArray = concat(tone(660.0, 110, 10), tone(440.0, 110, 10))
+
+    /** Three rising notes, longer than a chirp: the run has started. */
+    fun startChime(): ShortArray = concat(tone(660.0, 140, 12), tone(880.0, 140, 12), tone(1175.0, 220, 14))
+
+    /** Three falling notes, longer than a chirp: the run is over and is being saved. */
+    fun endChime(): ShortArray = concat(tone(1175.0, 140, 12), tone(880.0, 140, 12), tone(660.0, 220, 14))
 }
 
 /**

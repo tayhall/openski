@@ -91,7 +91,8 @@ object ProductionModeRule {
      * The other direction: a boot already in production sends no raw stream, so a recording or drill
      * started now would hold no live samples. Sides are "L" and "R".
      */
-    fun recordingBlockedReason(productionSides: Collection<String>): String? {
+    fun recordingBlockedReason(productionSides: Collection<String>, run: Boolean = false): String? {
+        if (run) return null  // a run keeps its raw data in the boots' flash, so on-snow mode is what it wants
         val names = productionSides.distinct().sorted().map { if (it == "L") "left" else "right" }
         if (names.isEmpty()) return null
         return "The ${names.joinToString(" and ")} boot is in production mode and sends no raw stream. " +
