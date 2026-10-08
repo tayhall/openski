@@ -50,7 +50,7 @@ Failure modes the spec implies but the happy path does not exercise, most likely
 - Produces (used by Task 2): `data class ComparisonWindow(verdict: Verdict?, partial: Boolean, turns: Int, recorded: RollTrace, target: RollTrace?)`; `data class ComparisonNumbers(turns, depthDifferenceDegrees, beatDifferenceSeconds, leftDepthDegrees, rightDepthDegrees, matchedShare, windowsWithVerdict)`; `data class RunComparison(side, target: CoachTarget?, demo, windows, numbers, sentence, defaultWindow)`; `object RunComparisons { fun build(data: RunData, demo: Boolean): RunComparison; fun sentence(numbers, target): String; const val POINTS_PER_TURN = 16 }`.
 - Consumes: `RunData`, `RunEventRow`, `RunVerdictRow`, `RunInfoRow` (`RunRecords.kt`), `CoachTarget`, `Verdict`, `Coach.DEFAULT_WINDOW/MIN_WINDOW/MAX_WINDOW`, `bootClockDelta`, `RollTrace`.
 
-The code below was written and run in a scratch copy before this plan was finalised: 20 `RunComparisonTest` cases pass.
+The code below was written and run in a scratch copy before this plan was finalised: 21 `RunComparisonTest` cases pass.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -182,6 +182,16 @@ class RunComparisonTest {
         assertEquals(listOf(4, 4), comparison.windows.map { it.turns })
         assertEquals(7.8f, comparison.windows[1].recorded.duration, 0.05f)     // turns 7 to 10: starts at 0, 2, 4, 6 s; the last lasts 1.8 s
         assertEquals(listOf(Verdict.POSITIVE, Verdict.NONE), comparison.windows.map { it.verdict })
+    }
+
+    @Test fun aVerdictNeverReusesTurnsFromTheWindowBeforeIt() {
+        // The second verdict arrives after only two new turns (the coach reset in between): it covers those two, not four.
+        val events = turns(count = 6)
+        val verdicts = listOf(verdict(events[3].receivedMs + 10, Verdict.POSITIVE), verdict(events[5].receivedMs + 10, Verdict.NEGATIVE))
+        val comparison = run(events, verdicts)
+        assertEquals(listOf(4, 2), comparison.windows.map { it.turns })
+        assertEquals(listOf(false, true), comparison.windows.map { it.partial })
+        assertEquals(listOf(Verdict.POSITIVE, Verdict.NEGATIVE), comparison.windows.map { it.verdict })
     }
 
     @Test fun withNoVerdictsTurnsAreChunkedIntoPartialWindows() {
@@ -463,11 +473,11 @@ object RunComparisons {
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `./gradlew.bat :app:testDebugUnitTest --tests "com.openski.android.RunComparisonTest"`
-Expected: `BUILD SUCCESSFUL`; `TEST-com.openski.android.RunComparisonTest.xml` reports `tests="19"` (the 20 minus the number-lines test) and `failures="0"`.
+Expected: `BUILD SUCCESSFUL`; `TEST-com.openski.android.RunComparisonTest.xml` reports `tests="20"` (the 21 minus the number-lines test) and `failures="0"`.
 
 - [ ] **Step 5: Prove the window rule is tested**
 
-Temporarily change `val start = maxOf(used, end - windowSize)` to `val start = maxOf(0, end - windowSize)` in `RunComparison.kt`, rerun, and expect FAIL in `aCoachResetLeavesTheDroppedTurnsOutOfAnyWindow` or the windows tests. Restore it and rerun to see all pass. Do not commit the temporary change.
+Temporarily change `val start = maxOf(used, end - windowSize)` to `val start = maxOf(0, end - windowSize)` in `RunComparison.kt`, rerun, and expect FAIL in `aVerdictNeverReusesTurnsFromTheWindowBeforeIt` (the other windows tests do not catch it, because there the two bounds happen to agree). Restore it and rerun to see all pass. Do not commit the temporary change.
 
 - [ ] **Step 6: Commit**
 
@@ -750,7 +760,7 @@ Expected: each applies with no output; `git diff --stat` lists only the three fi
 - [ ] **Step 4: Build, test and lint**
 
 Run (from `android/`): `./gradlew.bat :app:assembleDebug :app:testDebugUnitTest :app:lintDebug :app:assembleDebugAndroidTest`
-Expected: `BUILD SUCCESSFUL`, no new warnings from the touched files, `RunComparisonTest` `tests="20"` and the earlier suites unchanged (`RunControllerTest` 31, `CoachTest` 18, `ToneSynthTest` 11).
+Expected: `BUILD SUCCESSFUL`, no new warnings from the touched files, `RunComparisonTest` `tests="21"` and the earlier suites unchanged (`RunControllerTest` 31, `CoachTest` 18, `ToneSynthTest` 11).
 
 - [ ] **Step 5: Check it on the emulator with a demo run**
 

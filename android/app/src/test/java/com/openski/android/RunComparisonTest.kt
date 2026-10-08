@@ -125,6 +125,16 @@ class RunComparisonTest {
         assertEquals(listOf(Verdict.POSITIVE, Verdict.NONE), comparison.windows.map { it.verdict })
     }
 
+    @Test fun aVerdictNeverReusesTurnsFromTheWindowBeforeIt() {
+        // The second verdict arrives after only two new turns (the coach reset in between): it covers those two, not four.
+        val events = turns(count = 6)
+        val verdicts = listOf(verdict(events[3].receivedMs + 10, Verdict.POSITIVE), verdict(events[5].receivedMs + 10, Verdict.NEGATIVE))
+        val comparison = run(events, verdicts)
+        assertEquals(listOf(4, 2), comparison.windows.map { it.turns })
+        assertEquals(listOf(false, true), comparison.windows.map { it.partial })
+        assertEquals(listOf(Verdict.POSITIVE, Verdict.NEGATIVE), comparison.windows.map { it.verdict })
+    }
+
     @Test fun withNoVerdictsTurnsAreChunkedIntoPartialWindows() {
         val chunks = run(turns(count = 9)).windows
         assertEquals(listOf(4, 4, 1), chunks.map { it.turns })
