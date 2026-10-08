@@ -168,6 +168,12 @@ class HomeActivity : Activity() {
         header.addView(t("${NumberFormat.getInstance().format(progress.vert)} vert", Snow.Type.TITLE))
         add(header, bottom = 20)
 
+        val runCard = Snow.card(this@HomeActivity, 22, radius = 28)
+        runCard.addView(t("Ready to ski?", Snow.Type.DISPLAY))
+        runCard.add(t("Check your boots and earbuds, then start a run. Coaching plays through your earbuds with the phone in your pocket.", Snow.Type.BODY, Snow.INK_SOFT), top = 6)
+        runCard.add(Snow.button(this@HomeActivity, "Start a run") { startActivity(Intent(this@HomeActivity, RunActivity::class.java)) }, top = 16)
+        add(runCard, bottom = 16)
+
         val drill = progress.next(goal)
         if (drill != null) {
             val done = progress.stars(drill.id) > 0
@@ -180,7 +186,7 @@ class HomeActivity : Activity() {
             hero.add(t(drill.title, Snow.Type.HERO), top = 10)
             hero.add(t(drill.summary, Snow.Type.BODY, Snow.INK_SOFT), top = 6)
             hero.add(t("${drill.minutes} min  ·  ${drill.movements} rolls  ·  aim for ${drill.depthDegrees.toInt()}°", Snow.Type.STRONG), top = 14)
-            hero.add(Snow.button(this@HomeActivity, "Start drill") { openDrill(drill) }, top = 18)
+            hero.add(Snow.button(this@HomeActivity, "Start drill", Snow.ButtonKind.SECONDARY) { openDrill(drill) }, top = 18)
             add(hero, bottom = 16)
         }
 
