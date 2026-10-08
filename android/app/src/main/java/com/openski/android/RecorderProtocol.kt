@@ -10,6 +10,7 @@ data class RecorderStatus(val opcode: Int, val result: Int, val flags: Int,
     val hasSession get() = flags and 4 != 0
     val full get() = flags and 8 != 0
     val storageError get() = flags and 16 != 0
+    val production get() = flags and 64 != 0
     companion object {
         fun decode(bytes: ByteArray): RecorderStatus? {
             if (bytes.size != 16 || bytes[0].toInt() != 2) return null
@@ -73,7 +74,12 @@ object RecorderCommand {
     const val ERASE = 4
     const val DOWNLOAD = 5
     const val CANCEL = 6
-    fun bytes(opcode: Int, offset: Int = 0): ByteArray = if (opcode == DOWNLOAD) {
-        ByteBuffer.allocate(5).order(ByteOrder.LITTLE_ENDIAN).put(opcode.toByte()).putInt(offset).array()
-    } else byteArrayOf(opcode.toByte())
+    const val ZERO = 7
+    const val SET_MODE = 8
+    /** For DOWNLOAD [offset] is the first record; for SET_MODE it is the mode (0 diagnostics, 1 production). */
+    fun bytes(opcode: Int, offset: Int = 0): ByteArray = when (opcode) {
+        DOWNLOAD -> ByteBuffer.allocate(5).order(ByteOrder.LITTLE_ENDIAN).put(opcode.toByte()).putInt(offset).array()
+        SET_MODE -> byteArrayOf(opcode.toByte(), offset.toByte())
+        else -> byteArrayOf(opcode.toByte())
+    }
 }

@@ -50,4 +50,17 @@ class RecorderProtocolTest {
     @Test fun encodesDownloadOffsetLittleEndian() {
         assertArrayEquals(byteArrayOf(5,0x78,0x56,0x34,0x12),RecorderCommand.bytes(5,0x12345678))
     }
+
+    @Test fun encodesTheMotionCommands() {
+        assertArrayEquals(byteArrayOf(7), RecorderCommand.bytes(RecorderCommand.ZERO))
+        assertArrayEquals(byteArrayOf(8, 0), RecorderCommand.bytes(RecorderCommand.SET_MODE, 0))
+        assertArrayEquals(byteArrayOf(8, 1), RecorderCommand.bytes(RecorderCommand.SET_MODE, 1))
+        assertArrayEquals(byteArrayOf(5, 4, 0, 0, 0), RecorderCommand.bytes(RecorderCommand.DOWNLOAD, 4))
+        assertArrayEquals(byteArrayOf(3), RecorderCommand.bytes(RecorderCommand.INFO))
+    }
+
+    @Test fun productionIsFlagBitSix() {
+        assertTrue(RecorderStatus(8, 0, 0x40, 0, 0, 60000).production)
+        assertFalse(RecorderStatus(8, 0, 0x3f, 0, 0, 60000).production)
+    }
 }
