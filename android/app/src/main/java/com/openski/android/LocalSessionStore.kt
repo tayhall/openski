@@ -29,6 +29,7 @@ data class SkiSession(
     val testSession: Boolean = false,
     val origin: String = "sensor",
     val analysisJson: String = "{}",
+    val kind: String = "session",
 )
 
 data class SensorCapture(val id: String, val sessionId: String, val side: String, val address: String,
@@ -37,14 +38,15 @@ data class StoredLive(val side: String, val receivedAtMs: Long, val sample: Sens
 data class StoredFlash(val capture: SensorCapture, val index: Int, val record: FlashRecord)
 data class SessionData(val session: SkiSession, val live: List<StoredLive>, val flash: List<StoredFlash>,
     val captures: List<SensorCapture>, val events: List<Pair<Long, String>>,
-    val markers: List<TestMarker> = emptyList(), val health: List<SensorHealth> = emptyList())
+    val markers: List<TestMarker> = emptyList(), val health: List<SensorHealth> = emptyList(),
+    val run: RunData? = null)
 
 data class TestMarker(val id: Long, val timeMs: Long, val label: String, val side: String,
     val source: String, val note: String)
 data class SensorHealth(val side: String, val timeMs: Long, val battery: Int?, val batteryAtMs: Long?,
     val rssi: Int?, val rssiAtMs: Long?)
 
-class LocalSessionStore(context: Context, databaseName: String = "openski-local.db") : SQLiteOpenHelper(context, databaseName, null, 7) {
+class LocalSessionStore(context: Context, databaseName: String = "openski-local.db") : SQLiteOpenHelper(context, databaseName, null, 8) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE sessions (
             id TEXT PRIMARY KEY, started_at_ms INTEGER NOT NULL, ended_at_ms INTEGER,
@@ -62,6 +64,7 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
         addTestSchema(db)
         addOriginSchema(db)
         addAnalysisSchema(db)
+        addRunSchema(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -71,10 +74,26 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
         if (oldVersion < 5) addTestSchema(db)
         if (oldVersion < 6) addOriginSchema(db)
         if (oldVersion < 7) addAnalysisSchema(db)
+        if (oldVersion < 8) addRunSchema(db)
     }
 
     private fun addOriginSchema(db: SQLiteDatabase) {
         db.execSQL("ALTER TABLE sessions ADD COLUMN origin TEXT NOT NULL DEFAULT 'sensor'")
+    }
+
+    /** Version 8: runs. A run is a session with kind 'run' plus its half-turns, coaching verdicts and run settings. */
+    private fun addRunSchema(db: SQLiteDatabase) {
+        db.execSQL("ALTER TABLE sessions ADD COLUMN kind TEXT NOT NULL DEFAULT 'session'")
+        db.execSQL("""CREATE TABLE run_events(session_id TEXT NOT NULL, side TEXT NOT NULL, sequence INTEGER NOT NULL,
+            start_ms INTEGER NOT NULL, duration_ms INTEGER NOT NULL, peak_roll REAL NOT NULL, peak_rate REAL NOT NULL,
+            pitch REAL NOT NULL, flags INTEGER NOT NULL, received_ms INTEGER NOT NULL)""")
+        db.execSQL("CREATE INDEX run_events_session_idx ON run_events(session_id, received_ms)")
+        db.execSQL("""CREATE TABLE run_verdicts(session_id TEXT NOT NULL, time_ms INTEGER NOT NULL, side TEXT NOT NULL,
+            verdict TEXT NOT NULL, score INTEGER NOT NULL, tempo INTEGER NOT NULL, steadiness INTEGER NOT NULL,
+            depth INTEGER NOT NULL, balance INTEGER, mean_beat REAL NOT NULL, mean_depth REAL NOT NULL, outside INTEGER NOT NULL)""")
+        db.execSQL("""CREATE TABLE run_info(session_id TEXT PRIMARY KEY, target_beat REAL NOT NULL, target_depth REAL NOT NULL,
+            target_label TEXT NOT NULL, window_size INTEGER NOT NULL, coach_boot TEXT NOT NULL, mode_before TEXT NOT NULL,
+            ended_by TEXT NOT NULL DEFAULT '', first_turn_ms INTEGER, last_turn_ms INTEGER, gaps_json TEXT NOT NULL DEFAULT '[]')""")
     }
 
     private fun addAnalysisSchema(db: SQLiteDatabase) {
@@ -217,7 +236,7 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
         try {
             for (table in listOf("flash_samples", "download_samples")) db.execSQL(
                 "DELETE FROM $table WHERE capture_id IN (SELECT id FROM captures WHERE session_id=?)", arrayOf(id))
-            for (table in listOf("samples", "captures", "session_events", "test_markers", "sensor_health")) db.delete(table, "session_id=?", arrayOf(id))
+            for (table in listOf("samples", "captures", "session_events", "test_markers", "sensor_health", "run_events", "run_verdicts", "run_info")) db.delete(table, "session_id=?", arrayOf(id))
             db.delete("sessions", "id=?", arrayOf(id))
             db.setTransactionSuccessful()
             return true
@@ -316,17 +335,72 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
             buildList { while(c.moveToNext()) add(SensorHealth(c.getString(0),c.getLong(1),if(c.isNull(2)) null else c.getInt(2),
                 if(c.isNull(3)) null else c.getLong(3),if(c.isNull(4)) null else c.getInt(4),if(c.isNull(5)) null else c.getLong(5))) }
         }
-        return SessionData(session, live, flash, captures, events,markers,health)
+        return SessionData(session, live, flash, captures, events,markers,health, if (session.kind == "run") runData(id) else null)
     }
 
-    @Synchronized fun createSession(id: String, startedAtMs: Long, testSession: Boolean=false, origin: String="sensor") {
+    @Synchronized fun createSession(id: String, startedAtMs: Long, testSession: Boolean=false, origin: String="sensor", kind: String="session") {
         require(origin in listOf("sensor","synthetic"))
+        require(kind in listOf("session","run"))
         writableDatabase.insertOrThrow("sessions", null, ContentValues().apply {
             put("id", id); put("started_at_ms", startedAtMs)
             put("test_session",if(testSession) 1 else 0)
             put("origin",origin)
+            put("kind",kind)
+            if(kind=="run") put("title","Run")
             if(testSession) put("title","Indoor test")
         })
+    }
+
+    // Runs ---------------------------------------------------------------------------------------------------
+
+    @Synchronized fun saveRunStart(sessionId: String, info: RunStartInfo) {
+        writableDatabase.insertWithOnConflict("run_info", null, ContentValues().apply {
+            put("session_id", sessionId); put("target_beat", info.target.beatSeconds); put("target_depth", info.target.depthDegrees)
+            put("target_label", info.targetLabel); put("window_size", info.windowSize); put("coach_boot", info.coachBoot)
+            put("mode_before", org.json.JSONObject().apply { info.modeBefore.forEach { (side, mode) -> put(side, mode ?: org.json.JSONObject.NULL) } }.toString())
+        }, SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    @Synchronized fun saveRunEnd(sessionId: String, info: RunEndInfo) {
+        writableDatabase.update("run_info", ContentValues().apply {
+            put("ended_by", info.endedBy.name.lowercase())
+            if (info.firstTurnMs == null) putNull("first_turn_ms") else put("first_turn_ms", info.firstTurnMs)
+            if (info.lastTurnMs == null) putNull("last_turn_ms") else put("last_turn_ms", info.lastTurnMs)
+            put("gaps_json", org.json.JSONArray().apply { info.gaps.forEach { put(org.json.JSONObject().put("side", it.side).put("start_ms", it.startMs).put("end_ms", it.endMs)) } }.toString())
+        }, "session_id=?", arrayOf(sessionId))
+    }
+
+    @Synchronized fun addRunEvent(sessionId: String, side: String, event: SkiEvent, receivedMs: Long) {
+        writableDatabase.insertOrThrow("run_events", null, ContentValues().apply {
+            put("session_id", sessionId); put("side", side); put("sequence", event.sequence); put("start_ms", event.startMs)
+            put("duration_ms", event.durationMs); put("peak_roll", event.peakRollDegrees); put("peak_rate", event.peakRateDps)
+            put("pitch", event.pitchDegrees); put("flags", skiEventFlags(event)); put("received_ms", receivedMs)
+        })
+    }
+
+    @Synchronized fun addRunVerdict(sessionId: String, side: String, verdict: CoachVerdict, atMs: Long) {
+        writableDatabase.insertOrThrow("run_verdicts", null, ContentValues().apply {
+            put("session_id", sessionId); put("time_ms", atMs); put("side", side); put("verdict", verdict.verdict.name)
+            put("score", verdict.score); put("tempo", verdict.tempo); put("steadiness", verdict.steadiness); put("depth", verdict.depth)
+            if (verdict.balance == null) putNull("balance") else put("balance", verdict.balance)
+            put("mean_beat", verdict.meanBeatSeconds); put("mean_depth", verdict.meanDepthDegrees)
+            put("outside", if (verdict.outsideEnvelope) 1 else 0)
+        })
+    }
+
+    @Synchronized fun runData(sessionId: String): RunData {
+        val events = readableDatabase.rawQuery("SELECT side,sequence,start_ms,duration_ms,peak_roll,peak_rate,pitch,flags,received_ms FROM run_events WHERE session_id=? ORDER BY received_ms,rowid", arrayOf(sessionId)).use { c ->
+            buildList { while (c.moveToNext()) add(RunEventRow(c.getString(0), c.getInt(1), c.getLong(2), c.getInt(3), c.getFloat(4), c.getFloat(5), c.getFloat(6), c.getInt(7), c.getLong(8))) }
+        }
+        val verdicts = readableDatabase.rawQuery("SELECT time_ms,side,verdict,score,tempo,steadiness,depth,balance,mean_beat,mean_depth,outside FROM run_verdicts WHERE session_id=? ORDER BY time_ms,rowid", arrayOf(sessionId)).use { c ->
+            buildList { while (c.moveToNext()) add(RunVerdictRow(c.getLong(0), c.getString(1), c.getString(2), c.getInt(3), c.getInt(4), c.getInt(5), c.getInt(6),
+                if (c.isNull(7)) null else c.getInt(7), c.getDouble(8), c.getDouble(9), c.getInt(10) != 0)) }
+        }
+        val info = readableDatabase.rawQuery("SELECT target_beat,target_depth,target_label,window_size,coach_boot,mode_before,ended_by,first_turn_ms,last_turn_ms,gaps_json FROM run_info WHERE session_id=?", arrayOf(sessionId)).use { c ->
+            if (c.moveToFirst()) RunInfoRow(c.getDouble(0), c.getDouble(1), c.getString(2), c.getInt(3), c.getString(4), c.getString(5), c.getString(6),
+                if (c.isNull(7)) null else c.getLong(7), if (c.isNull(8)) null else c.getLong(8), c.getString(9)) else null
+        }
+        return RunData(events, verdicts, info)
     }
 
     @Synchronized fun finishSession(id: String, endedAtMs: Long) {
@@ -369,7 +443,7 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
         val sql = """SELECT s.id, s.started_at_ms, s.ended_at_ms, s.video_uri, s.video_name,
             (SELECT COUNT(*) FROM samples WHERE session_id=s.id AND side='L'),
             (SELECT COUNT(*) FROM samples WHERE session_id=s.id AND side='R'),
-            s.title,s.notes,s.left_offset_ms,s.right_offset_ms,s.video_offset_ms,s.equipment,s.calibration_json,s.test_session,s.origin,s.analysis_json
+            s.title,s.notes,s.left_offset_ms,s.right_offset_ms,s.video_offset_ms,s.equipment,s.calibration_json,s.test_session,s.origin,s.analysis_json,s.kind
             FROM sessions s ${if (selection != null) "WHERE $selection" else ""} ORDER BY s.started_at_ms DESC"""
         return readableDatabase.rawQuery(sql, args).use { cursor ->
             buildList {
@@ -383,6 +457,7 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
                     cursor.getInt(14)!=0,
                     cursor.getString(15),
                     cursor.getString(16),
+                    cursor.getString(17),
                 ))
             }
         }
