@@ -85,6 +85,8 @@ class SensorSessionService : Service() {
     private var runIsDemo = false
     private var runStartedMonitoring = false
     private var runTicks = 0
+    @Volatile private var runCaptures: List<SensorCapture> = emptyList()
+    private var runSidesAtStart = setOf<String>()
     private var runListener: ((RunState) -> Unit)? = null
     private val runBoots = object : RunBoots {
         override fun connected(side: String) = clients[side]?.isReady == true
@@ -93,47 +95,63 @@ class SensorSessionService : Service() {
         override fun flashRetained(side: String) = recorderStates[side]?.let { it.hasSession || it.recording } == true
         override fun flashFull(side: String) = side in runFullSides
         // A run sets the mode itself, so it goes straight to the boot and skips the app-side recording guard.
-        override fun setProduction(side: String, production: Boolean) { clients[side]?.command(RecorderCommand.SET_MODE, if (production) 1 else 0) }
+        override fun setProduction(side: String, production: Boolean): Boolean =
+            clients[side]?.command(RecorderCommand.SET_MODE, if (production) 1 else 0) == true
         override fun zero(side: String) {
             zeroTracker.requested(side, System.currentTimeMillis())
             clients[side]?.command(RecorderCommand.ZERO)
         }
-        override fun beginSession(demo: Boolean): Boolean {
+        override fun beginSession(demo: Boolean): String? {
+            if (!demo && activeSessionId != null) return "A recording is already running. Stop it first."
+            stopCoaching()  // a run supersedes any coaching already playing, including a demo, so synthetic turns cannot leak in
             runFullSides.clear()
             runIsDemo = demo
+            runCaptures = emptyList()
             if (demo) {
                 val id = UUID.randomUUID().toString()
-                try { store.createSession(id, System.currentTimeMillis(), false, "synthetic", "run") } catch (error: Exception) { storageError(error); return false }
+                try { store.createSession(id, System.currentTimeMillis(), false, "synthetic", "run") } catch (error: Exception) {
+                    storageError(error); return "Could not save the run on this phone."
+                }
                 runSessionId = id
+                runSidesAtStart = emptySet()
             } else {
                 startRecording(false, "run")
                 runSessionId = activeSessionId
-                if (runSessionId == null) return false
+                if (runSessionId == null) return "Could not start recording. Check the phone's storage and that both boots are connected."
+                runSidesAtStart = RunController.SIDES.filter { clients[it]?.isReady == true && recorderSupported[it] == true }.toSet()
             }
-            if (startCoaching(CoachSettingsStore(this@SensorSessionService).settings, demo) != null) {
+            val problem = startCoaching(CoachSettingsStore(this@SensorSessionService).settings, demo)
+            if (problem != null) {
                 // Coaching could not start (for example the earbuds went away): do not run without it.
                 if (demo) runSessionId?.let { store.finishSession(it, System.currentTimeMillis()) } else stopRecording()
                 runSessionId = null
-                return false
+                return problem
             }
             coachAudio?.playChime(ToneSynth.startChime())
-            return true
+            refreshRunCaptures()
+            return null
         }
         override fun endSession() {
             coachAudio?.playChime(ToneSynth.endChime())
             stopCoaching()
             if (runIsDemo) runSessionId?.let { store.finishSession(it, System.currentTimeMillis()) } else stopRecording()
+            refreshRunCaptures()
         }
-        override fun saveProgress(side: String): Int? =
-            transfers[side]?.let { t -> (t.validator.next * 100L / maxOf(1, t.capture.expected)).toInt().coerceIn(0, 100) }
+        override fun saveProgress(side: String): Int? {
+            val capture = runCaptures.firstOrNull { it.side == side }
+            if (capture != null && (capture.state == "erased" || capture.state == "verified" || capture.state == "unavailable")) return 100
+            return transfers[side]?.let { t -> (t.validator.next * 100L / maxOf(1, t.validator.expected)).toInt().coerceIn(0, 100) }
+        }
+        // Each boot that was recording at the start must have its own capture saved. Reading the captures happens off
+        // the main thread (see refreshRunCaptures), so this never waits on the database.
         override fun flashSaved(): Boolean {
-            val id = runSessionId ?: return false
-            return activeSessionId == null && transfers.isEmpty() && !store.hasPendingRecovery() &&
-                store.captures(id).all { it.state == "erased" || it.state == "unavailable" }
+            if (runSessionId == null || activeSessionId != null || transfers.isNotEmpty()) return false
+            return runSidesAtStart.all { side -> runCaptures.firstOrNull { it.side == side }?.state.let { it == "erased" || it == "unavailable" } }
         }
         override fun flashSaveFailed(): Boolean {
-            val id = runSessionId ?: return false
-            return storageFailed || store.captures(id).any { it.state == "lost" } || addresses.keys.any { (flashRetries[it] ?: 0) >= 3 }
+            if (runSessionId == null) return false
+            return storageFailed || recoveryPaused || runCaptures.any { it.state == "lost" } ||
+                runCaptures.any { it.state != "erased" && it.state != "unavailable" && (flashRetries[it.side] ?: 0) >= 3 }
         }
         override fun earbudsReady() = CoachAudio(this@SensorSessionService, {}, {}).headphonesConnected() ||
             CoachSettingsStore(this@SensorSessionService).settings.allowPhoneSpeaker
@@ -157,7 +175,8 @@ class SensorSessionService : Service() {
             val state = runController.state(now)
             runListener?.invoke(state)
             when (state.phase) {
-                RunPhase.RUNNING, RunPhase.SAVING -> { if (++runTicks % 10 == 0) ensureForeground() }
+                RunPhase.RUNNING -> { if (++runTicks % 10 == 0) { ensureForeground(); refreshRunCaptures() } }
+                RunPhase.SAVING -> { refreshRunCaptures(); if (++runTicks % 10 == 0) ensureForeground() }
                 RunPhase.DONE, RunPhase.READY -> { runFinished(); return }
                 else -> Unit
             }
@@ -210,7 +229,7 @@ class SensorSessionService : Service() {
                     settleForeground()
                 }
                 ACTION_START_RECORDING -> startRecording(intent.getBooleanExtra("test_session",false))
-                ACTION_STOP_RECORDING -> if (runController.state(System.currentTimeMillis()).phase == RunPhase.RUNNING) stopRun() else stopRecording()
+                ACTION_STOP_RECORDING -> if (runController.phase() == RunPhase.RUNNING) stopRun() else stopRecording()
                 ACTION_RECOVER -> recoverFlash()
                 ACTION_PAUSE_RECOVERY -> if (activeSessionId == null) pauseRecovery()
                 ACTION_RESUME_RECORDING -> if (activeSessionId != null) { ensureForeground(); acquireWakeLock() } else settleForeground()
@@ -349,7 +368,7 @@ class SensorSessionService : Service() {
             },
             onReady = { supported ->
                 reconnectAttempts[side] = 0
-                runController.onLink(side, true, System.currentTimeMillis())
+                runController.retryRestore()
                 lastSampleTime[side] = SystemClock.elapsedRealtime()
                 recorderSupported[side] = supported
                 updateInfo(side)
@@ -377,7 +396,6 @@ class SensorSessionService : Service() {
                 listener?.onSkiState(side, SkierFrame.of(side, state))
             },
             onDisconnected = {
-                runController.onLink(side, false, System.currentTimeMillis())
                 latestOrientation.remove(side)
                 listener?.onBootOrientation(side,null)
                 invalidate(side)
@@ -688,7 +706,7 @@ class SensorSessionService : Service() {
 
     // Runs ----------------------------------------------------------------------------------------------
 
-    private fun runPhase(): RunPhase = runController.state(System.currentTimeMillis()).phase
+    private fun runPhase(): RunPhase = runController.phase()
     private fun runActive() = runPhase().let { it == RunPhase.ZEROING || it == RunPhase.RUNNING || it == RunPhase.SAVING }
 
     fun runState(): RunState = runController.state(System.currentTimeMillis())
@@ -714,15 +732,23 @@ class SensorSessionService : Service() {
         return reason
     }
 
+    /** Reads the run's captures on the database thread, so the main thread never waits on the store. */
+    private fun refreshRunCaptures() {
+        val id = runSessionId ?: return
+        io.execute { try { runCaptures = store.captures(id) } catch (_: Exception) { /* keep the last snapshot */ } }
+    }
+
     fun cancelRun() { runController.cancel(); runFinished(); runListener?.invoke(runState()) }
     fun retryZero() { runController.retryZero(System.currentTimeMillis()); runListener?.invoke(runState()) }
     fun stopRun() { runController.stop(System.currentTimeMillis()); runListener?.invoke(runState()) }
+    /** Stop waiting for the boots' data; recovery carries on in the background and the boot modes are left as they are. */
+    fun abandonRunSave() { runController.abandonSave(System.currentTimeMillis()); runListener?.invoke(runState()) }
     fun resetRun() { runController.reset(); runListener?.invoke(runState()) }
     fun setOnSnowMode(production: Boolean) { runController.setOnSnowMode(production); runListener?.invoke(runState()) }
 
     private fun runFinished() {
         if (runStartedMonitoring) { monitoring = false; runStartedMonitoring = false }
-        if (runController.state(System.currentTimeMillis()).phase != RunPhase.RUNNING) { runSessionId = null }
+        if (runController.phase() != RunPhase.RUNNING) { runSessionId = null }
         settleForeground()
     }
 

@@ -50,6 +50,7 @@ class RunActivity : Activity() {
     private var state: RunState? = null
     private var structure = ""
     private var modeLabel = "Unknown"
+    private var notice: String? = null
     private val handler = Handler(Looper.getMainLooper())
     private var timerView: TextView? = null
     private var turnsView: TextView? = null
@@ -169,6 +170,7 @@ class RunActivity : Activity() {
             RunPhase.SAVING -> saving(column, s)
             RunPhase.DONE -> done(column, s)
         }
+        frame.keepScreenOn = s.phase == RunPhase.READY || s.phase == RunPhase.ZEROING   // never while the phone is in a pocket
         frame.removeAllViews()
         frame.addView(ScrollView(this).apply { isFillViewport = true; addView(column) })
     }
@@ -192,12 +194,19 @@ class RunActivity : Activity() {
         }, bottom = 16)
         if (s.message.isNotEmpty()) column.add(t(s.message, Snow.Type.BODY, Snow.INK_SOFT), bottom = 8)
         s.readiness.reason?.let { column.add(t(it, Snow.Type.STRONG), bottom = 8) }
-        val start = Snow.button(this, "Start run") { service?.startRun(false) }.apply {
+        notice?.let { column.add(t(it, Snow.Type.STRONG), bottom = 8) }
+        val start = Snow.button(this, "Start run") { tryStart(false) }.apply {
             minHeight = Snow.dp(this@RunActivity, 64)
             if (!s.readiness.ok) { isEnabled = false; alpha = 0.4f; contentDescription = "Start run, unavailable. ${s.readiness.reason}" }
         }
         column.add(start, bottom = 10)
-        column.add(Snow.button(this, "Try with demo boots", Snow.ButtonKind.QUIET) { service?.startRun(true) })
+        column.add(Snow.button(this, "Try with demo boots", Snow.ButtonKind.QUIET) { tryStart(true) })
+    }
+
+    /** Starts a run and shows the reason on this screen if it could not start. */
+    private fun tryStart(demo: Boolean) {
+        notice = service?.startRun(demo)
+        if (notice != null) { structure = ""; state?.let { apply(it) } }
     }
 
     private fun zeroing(column: LinearLayout, s: RunState) {
@@ -233,7 +242,9 @@ class RunActivity : Activity() {
         progressViews = RunController.SIDES.associateWith { side ->
             t(progressLine(side, s), Snow.Type.STRONG).also { card.add(it, top = if (side == "L") 0 else 10) }
         }
-        column.add(card)
+        column.add(card, bottom = 16)
+        column.add(Snow.button(this, "Finish later", Snow.ButtonKind.QUIET) { service?.abandonRunSave() })
+        column.add(t("Saving carries on in the background; the boots stay in On snow mode until you switch them back.", Snow.Type.CAPTION, Snow.INK_SOFT), top = 8)
     }
 
     private fun done(column: LinearLayout, s: RunState) {

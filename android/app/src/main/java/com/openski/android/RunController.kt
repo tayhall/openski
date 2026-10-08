@@ -13,10 +13,11 @@ interface RunBoots {
     fun flashRetained(side: String): Boolean
     /** The boot's flash filled up during this run. */
     fun flashFull(side: String): Boolean
-    fun setProduction(side: String, production: Boolean)
+    /** Sends the mode to the boot. False if it could not be delivered (the boot is not connected). */
+    fun setProduction(side: String, production: Boolean): Boolean
     fun zero(side: String)
-    /** Starts the phone session (which starts each boot's recorder) and coaching. False if it could not start. */
-    fun beginSession(demo: Boolean): Boolean
+    /** Starts the phone session (which starts each boot's recorder) and coaching. Null if it started, otherwise the reason it could not. */
+    fun beginSession(demo: Boolean): String?
     /** Stops the phone session and coaching; the existing recovery then saves the boots' flash. */
     fun endSession()
     /** Percent of this boot's flash downloaded, or null when nothing is downloading. */
@@ -84,12 +85,14 @@ class RunController(private val boots: RunBoots, private val sink: RunSink, priv
     private val gapStart = mutableMapOf<String, Long>()
     private val gaps = mutableListOf<RunGap>()
     private var summary: RunSummary? = null
+    private var resumedAt = 0L
+    private val pendingRestore = mutableSetOf<String>()
 
     fun readiness(forDemo: Boolean = false): Readiness {
         if (!forDemo) {
             SIDES.firstOrNull { !boots.connected(it) }?.let { return Readiness(false, "Connect your ${name(it)} boot") }
             SIDES.firstOrNull { boots.flashRetained(it) }?.let {
-                return Readiness(false, "The ${name(it)} boot is still holding your last run. Saving it first")
+                return Readiness(false, "The ${name(it)} boot still holds an unsaved recording. Open Geek mode and tap Recover sensor flash")
             }
         }
         if (!boots.earbudsReady()) return Readiness(false, "Connect earbuds, or allow the phone speaker in the coaching settings")
@@ -112,7 +115,9 @@ class RunController(private val boots: RunBoots, private val sink: RunSink, priv
         turns = mutableMapOf("L" to 0, "R" to 0)
         matched = 0; offTarget = 0; unclear = 0
         lastVerdict = null; firstTurnAt = null; lastTurnAt = null
-        gaps.clear(); gapStart.clear(); changed.clear(); summary = null
+        gaps.clear(); gapStart.clear(); changed.clear(); summary = null; resumedAt = 0L
+        // A restore that could not be delivered after an earlier run is still owed: carry it into this run.
+        changed.addAll(pendingRestore); pendingRestore.clear()
         modeBefore = SIDES.associateWith { boots.productionMode(it) }
         if (!demo) {
             for (side in SIDES) {
@@ -146,9 +151,22 @@ class RunController(private val boots: RunBoots, private val sink: RunSink, priv
         if (phase == RunPhase.RUNNING) end(nowMs, RunEnd.MANUAL)
     }
 
+    /** Stops waiting for the boots' data. The recovery carries on in the service; the modes are left as they are. */
+    fun abandonSave(nowMs: Long) {
+        if (phase == RunPhase.SAVING) finish(nowMs, saved = false, message = LATER_MESSAGE)
+    }
+
+    fun phase(): RunPhase = phase
+
+    /** Delivers a mode restore that could not be sent earlier. Call when a boot reconnects. */
+    fun retryRestore() {
+        for (side in pendingRestore.toList()) if (boots.connected(side) && boots.setProduction(side, false)) pendingRestore.remove(side)
+    }
+
     /** Leaves the Done screen. */
     fun reset() {
         if (phase != RunPhase.DONE) return
+        retryRestore()
         phase = RunPhase.READY
         message = ""
         summary = null
@@ -173,12 +191,6 @@ class RunController(private val boots: RunBoots, private val sink: RunSink, priv
         sink.verdict(side, verdict, nowMs)
     }
 
-    fun onLink(side: String, connected: Boolean, nowMs: Long) {
-        if (phase != RunPhase.RUNNING || demo) return
-        if (!connected) gapStart.putIfAbsent(side, nowMs)
-        else gapStart.remove(side)?.let { gaps.add(RunGap(side, it, nowMs)) }
-    }
-
     /** Advances the time-based transitions. Call about twice a second. */
     fun tick(nowMs: Long) {
         when (phase) {
@@ -191,13 +203,16 @@ class RunController(private val boots: RunBoots, private val sink: RunSink, priv
                 }
             }
             RunPhase.RUNNING -> {
+                trackLinks(nowMs)
                 val last = lastTurnAt
                 val limit = if (last == null) FIRST_TURN_MS else QUIET_MS
-                if (nowMs - (last ?: runStartedAt) >= limit) end(nowMs, RunEnd.QUIET)
+                // With no boot connected nothing can be heard, so silence means nothing: the quiet clock restarts when one returns.
+                if (nowMs - maxOf(last ?: runStartedAt, resumedAt) >= limit) end(nowMs, RunEnd.QUIET)
             }
             RunPhase.SAVING -> when {
                 demo -> if (nowMs - savingStartedAt >= DEMO_SAVE_MS) finish(nowMs, saved = true)
-                boots.flashSaveFailed() -> finish(nowMs, saved = false)
+                nowMs - savingStartedAt >= SAVE_TIMEOUT_MS -> finish(nowMs, saved = false, message = LATER_MESSAGE)
+                boots.flashSaveFailed() -> finish(nowMs, saved = false, message = FAILED_MESSAGE)
                 boots.flashSaved() -> finish(nowMs, saved = true)
             }
             else -> Unit
@@ -222,9 +237,20 @@ class RunController(private val boots: RunBoots, private val sink: RunSink, priv
             SIDES.associateWith { boots.connected(it) }, boots.earbudsReady())
     }
 
+    /** Reads who is connected from the boots themselves, so every way a link can drop is noticed and timed. */
+    private fun trackLinks(nowMs: Long) {
+        if (demo) return
+        for (side in SIDES) {
+            if (!boots.connected(side)) gapStart.putIfAbsent(side, nowMs)
+            else gapStart.remove(side)?.let { gaps.add(RunGap(side, it, nowMs)) }
+        }
+        if (SIDES.none { boots.connected(it) }) resumedAt = nowMs
+    }
+
     private fun beginRun(nowMs: Long) {
-        if (!boots.beginSession(demo)) {
-            message = "Could not start recording. Check the boots and try again."
+        val problem = boots.beginSession(demo)
+        if (problem != null) {
+            message = problem
             restoreMode()
             phase = RunPhase.READY
             return
@@ -249,21 +275,18 @@ class RunController(private val boots: RunBoots, private val sink: RunSink, priv
         message = "Run ended. Saving boot data"
     }
 
-    private fun finish(nowMs: Long, saved: Boolean) {
-        if (saved) {
-            restoreMode()
-            message = ""
-        } else {
-            message = "Saving did not finish. The boots keep their data and stay in on-snow mode; open the logbook to retry."
-        }
+    private fun finish(nowMs: Long, saved: Boolean, message: String = "") {
+        if (saved) restoreMode()
+        this.message = message
         summary = RunSummary(endedAt - runStartedAt, endedBy, turns.toMap(), matched, offTarget, unclear,
             !demo && SIDES.any { boots.flashFull(it) }, gaps.sumOf { it.endMs - it.startMs }.div(1000).toInt())
         phase = RunPhase.DONE
     }
 
-    /** Puts back the mode of every boot this run switched to on-snow. */
+    /** Puts back the mode of every boot this run switched to on-snow. A command that cannot be delivered is kept and retried. */
     private fun restoreMode() {
-        changed.forEach { boots.setProduction(it, false) }
+        for (side in changed.toList()) if (boots.setProduction(side, false)) changed.remove(side)
+        pendingRestore.addAll(changed)
         changed.clear()
     }
 
@@ -277,5 +300,9 @@ class RunController(private val boots: RunBoots, private val sink: RunSink, priv
         /** Before the first half-turn the skier is still getting going, so the limit is longer. */
         const val FIRST_TURN_MS = 120_000L
         const val DEMO_SAVE_MS = 6_000L
+        /** Give up waiting for the boots' data after this long; the recovery carries on in the service. */
+        const val SAVE_TIMEOUT_MS = 30 * 60_000L
+        const val FAILED_MESSAGE = "Saving did not finish. The boots keep their data and stay in on-snow mode; open Geek mode and tap Recover sensor flash."
+        const val LATER_MESSAGE = "Saving carries on in the background. Check the logbook, then switch the boots back to Training when it has finished."
     }
 }

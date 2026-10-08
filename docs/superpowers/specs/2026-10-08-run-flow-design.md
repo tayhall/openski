@@ -35,15 +35,17 @@ A run is a recording session with a new purpose. It reuses the existing recordin
 | **Zeroing** | Start sets the boots to on-snow mode, then sends the zero command to both. The screen says "Stand upright. Hold still." and waits until both boots' state frames report zeroed. A state frame already in flight when the command was sent still reports the old zero, and zeroing needs at least a second of stillness, so only a report arriving a second or more after the command counts (`ZeroTracker`). Without a zero the boots emit no half-turns. After 15 s with a boot not zeroed it names the boot and offers Retry and Cancel; Cancel restores the mode. |
 | **Running** | A start chime plays. The session starts, which starts each boot's on-board recording, and coaching (spec 1) begins. Half-turn events and verdicts are stored. |
 | **Ending** | After 20 s with no half-turn from either boot (120 s if no half-turn has happened yet, because the skier is still pocketing the phone and getting going), or on a manual Stop, an end chime plays and the session stops. The reason is recorded: `quiet`, `manual` or `error`. |
-| **Saving** | The existing recovery downloads, checks and erases each boot's flash. Progress per boot is shown. The app can be closed meanwhile. |
+| **Saving** | The existing recovery downloads, checks and erases each boot's flash. Progress per boot is shown. The app can be closed meanwhile. A "Finish later" button, and a 30 minute timeout, leave the recovery running in the background and the boot modes as they are. The run counts as saved only when every boot that was recording at the start has its own capture erased; a boot with no capture is waited for, not assumed done. |
 | **Done** | Once both boots are erased, the boots return to the mode they were in before the run, but only if the run changed it. The summary is shown. |
 
 Mode rules:
 - The Ready screen shows a mode switch, **Training** (Wi-Fi and raw stream on) or **On snow** (Wi-Fi and raw stream off, for battery). It can be flipped by hand at any time outside a run. The switch may be removed at ship.
+- A mode restore that cannot be delivered (the boot is down) is kept and retried when the boot reconnects, or carried into the next run.
 - Starting a run sets On snow automatically and remembers the mode it found. The mode is restored only after the flash is saved (the radio stays quiet during the download). If saving fails, the boots stay as they are and the user is told.
 - The production-mode recording guard from PR #8 keeps blocking drills and test recordings, which need the raw stream, with its message naming the boot and telling the user to switch to training mode. Runs are exempt, because their raw data comes from boot flash.
 
 Failure rules:
+- The quiet clock does not run while no boot is connected (nothing can be heard then), and restarts when one returns. Connection drops are read from the boots each half second, so every way a link can drop is noticed and timed.
 - A boot dropping mid-run does not end the run. A banner names the boot. If it was the coach boot, coaching pauses with a message; the gap is recorded.
 - The boots' flash holds about 10 minutes per boot. A longer run keeps all its half-turn events, but its raw data covers only the first 10 minutes, and the summary says so.
 - If the phone link drops, the boots keep recording to flash, but events and coaching during the gap are lost and flagged.

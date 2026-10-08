@@ -14,7 +14,8 @@ class RunControllerTest {
         val calls = mutableListOf<String>()
         var earbuds = true
         var storage = true
-        var beginOk = true
+        var beginReason: String? = null
+        val refuseMode = mutableSetOf<String>()
         var saved = false
         var failed = false
         override fun connected(side: String) = side in connectedSides
@@ -22,9 +23,14 @@ class RunControllerTest {
         override fun zeroed(side: String) = side in zeroedSides
         override fun flashRetained(side: String) = side in retained
         override fun flashFull(side: String) = side in full
-        override fun setProduction(side: String, production: Boolean) { modes[side] = production; calls.add("mode $side $production") }
+        override fun setProduction(side: String, production: Boolean): Boolean {
+            calls.add("mode $side $production")
+            if (side in refuseMode) return false
+            modes[side] = production
+            return true
+        }
         override fun zero(side: String) { calls.add("zero $side") }
-        override fun beginSession(demo: Boolean): Boolean { if (beginOk) calls.add("begin demo=$demo"); return beginOk }
+        override fun beginSession(demo: Boolean): String? { if (beginReason == null) calls.add("begin demo=$demo"); return beginReason }
         override fun endSession() { calls.add("end") }
         override fun saveProgress(side: String) = progress[side]
         override fun flashSaved() = saved
@@ -74,7 +80,7 @@ class RunControllerTest {
         boots.connectedSides.add("L"); boots.connectedSides.remove("R")
         assertEquals("Connect your right boot", run.readiness().reason)
         boots.connectedSides.add("R"); boots.retained.add("R")
-        assertTrue(run.readiness().reason!!.contains("right boot is still holding your last run"))
+        assertTrue(run.readiness().reason!!.contains("right boot still holds an unsaved recording"))
         boots.retained.clear(); boots.earbuds = false
         assertTrue(run.readiness().reason!!.contains("earbuds"))
         boots.earbuds = true; boots.storage = false
@@ -154,15 +160,15 @@ class RunControllerTest {
         assertEquals(RunPhase.READY, run.state(0).phase)
     }
 
-    @Test fun aSessionThatCannotStartReturnsToReadyAndRestoresTheMode() {
-        boots.beginOk = false
+    @Test fun aSessionThatCannotStartReturnsToReadyWithTheReasonAndRestoresTheMode() {
+        boots.beginReason = "Connect earbuds first"
         run.start(0)
         boots.zeroedSides.addAll(listOf("L", "R"))
         boots.calls.clear()
         run.tick(1000)
         val state = run.state(1000)
         assertEquals(RunPhase.READY, state.phase)
-        assertTrue(state.message.contains("Could not start recording"))
+        assertEquals("Connect earbuds first", state.message)
         assertEquals(listOf("mode L false", "mode R false"), boots.calls.filter { it.startsWith("mode") })
         assertTrue(sink.started.isEmpty())
     }
@@ -216,22 +222,59 @@ class RunControllerTest {
 
     @Test fun aDroppedBootShowsABannerAndDoesNotEndTheRun() {
         val t0 = startAndZero()
-        run.onLink("L", false, t0 + 2000)
+        boots.connectedSides.remove("L")
+        run.tick(t0 + 2000)
         val state = run.state(t0 + 3000)
         assertEquals(RunPhase.RUNNING, state.phase)
         assertEquals("The left boot lost its link. Reconnecting", state.banner)
-        run.onLink("L", true, t0 + 7000)
+        boots.connectedSides.add("L")
+        run.tick(t0 + 7000)
         assertNull(run.state(t0 + 8000).banner)
         run.stop(t0 + 9000)
-        val gap = sink.ended.single().gaps.single()
-        assertEquals(RunGap("L", t0 + 2000, t0 + 7000), gap)
+        assertEquals(RunGap("L", t0 + 2000, t0 + 7000), sink.ended.single().gaps.single())
     }
 
     @Test fun aGapStillOpenAtTheEndIsClosedThere() {
         val t0 = startAndZero()
-        run.onLink("R", false, t0 + 2000)
+        boots.connectedSides.remove("R")
+        run.tick(t0 + 2000)
         run.stop(t0 + 6000)
         assertEquals(RunGap("R", t0 + 2000, t0 + 6000), sink.ended.single().gaps.single())
+    }
+
+    @Test fun aBootAlreadyDownWhenTheRunBeginsIsRecordedAsAGap() {
+        run.start(0)
+        boots.zeroedSides.addAll(listOf("L", "R"))
+        boots.connectedSides.remove("R")      // drops during zeroing, still down when the run begins
+        run.tick(1000)
+        run.tick(1500)
+        boots.connectedSides.add("R")
+        run.tick(4500)
+        run.stop(5000)
+        assertEquals(RunGap("R", 1500, 4500), sink.ended.single().gaps.single())
+    }
+
+    @Test fun bothBootsOutOfRangeDoNotEndTheRunAndTheQuietClockRestartsWhenOneReturns() {
+        val t0 = startAndZero()
+        run.onHalfTurn("L", event(1), t0 + 1000)     // the skier has started, so the 20 s limit applies, not the first-turn grace
+        boots.connectedSides.clear()
+        for (offset in 5000L..55_000L step 10_000L) run.tick(t0 + offset)   // a minute with no link and no turns
+        assertEquals(RunPhase.RUNNING, run.state(t0 + 55_000).phase)
+        boots.connectedSides.add("L")
+        run.tick(t0 + 60_000)
+        run.tick(t0 + 74_999)
+        assertEquals(RunPhase.RUNNING, run.state(t0 + 74_999).phase)
+        run.tick(t0 + 80_000)
+        assertEquals(RunPhase.SAVING, run.state(t0 + 80_000).phase)
+        assertEquals(RunEnd.QUIET, sink.ended.single().endedBy)
+    }
+
+    @Test fun oneBootDownStillEndsOnQuietBecauseTheOtherCouldHaveSeenTurns() {
+        val t0 = startAndZero()
+        boots.connectedSides.remove("L")
+        run.onHalfTurn("R", event(1, side = false), t0 + 1000)
+        run.tick(t0 + 21_000)
+        assertEquals(RunPhase.SAVING, run.state(t0 + 21_000).phase)
     }
 
     // saving and done ---------------------------------------------------------------------------------------
@@ -274,6 +317,69 @@ class RunControllerTest {
         assertEquals(false, boots.modes["R"])
     }
 
+    @Test fun aRestoreThatCannotBeDeliveredIsRetriedWhenTheBootReturns() {
+        val t0 = startAndZero()
+        run.stop(t0 + 1000)
+        boots.refuseMode.add("L")
+        boots.saved = true
+        boots.calls.clear()
+        run.tick(t0 + 2000)
+        assertEquals(RunPhase.DONE, run.state(t0 + 2000).phase)
+        assertEquals(true, boots.modes["L"])          // the command was refused, so L is still on snow
+        assertEquals(false, boots.modes["R"])
+        boots.refuseMode.clear()
+        boots.calls.clear()
+        run.retryRestore()
+        assertEquals(listOf("mode L false"), boots.calls)
+        assertEquals(false, boots.modes["L"])
+        boots.calls.clear()
+        run.retryRestore()                            // nothing left to do
+        assertTrue(boots.calls.isEmpty())
+    }
+
+    @Test fun aRestoreStillPendingWhenTheNextRunStartsIsStillHonouredAfterThatRun() {
+        val t0 = startAndZero()
+        run.stop(t0 + 1000)
+        boots.refuseMode.add("L"); boots.saved = true
+        run.tick(t0 + 2000)
+        boots.refuseMode.clear()
+        run.reset()
+        assertNull(run.start(t0 + 3000))
+        boots.zeroedSides.addAll(listOf("L", "R"))
+        run.tick(t0 + 4000)
+        run.stop(t0 + 5000)
+        boots.saved = true
+        run.tick(t0 + 6000)
+        assertEquals(false, boots.modes["L"])         // back to training, as it was before the first run
+    }
+
+    @Test fun savingCanBeLeftToFinishLaterWithoutTouchingTheModes() {
+        val t0 = startAndZero()
+        run.stop(t0 + 1000)
+        boots.calls.clear()
+        run.abandonSave(t0 + 2000)
+        val state = run.state(t0 + 2000)
+        assertEquals(RunPhase.DONE, state.phase)
+        assertTrue(state.message.contains("carries on in the background"))
+        assertTrue(boots.calls.none { it.startsWith("mode") })
+        assertNotNull(state.summary)
+    }
+
+    @Test fun savingThatNeverFinishesGivesUpAfterThirtyMinutes() {
+        val t0 = startAndZero()
+        run.stop(t0 + 1000)
+        run.tick(t0 + 1000 + RunController.SAVE_TIMEOUT_MS - 1)
+        assertEquals(RunPhase.SAVING, run.state(t0 + 1000 + RunController.SAVE_TIMEOUT_MS - 1).phase)
+        run.tick(t0 + 1000 + RunController.SAVE_TIMEOUT_MS)
+        assertEquals(RunPhase.DONE, run.state(t0 + 1000 + RunController.SAVE_TIMEOUT_MS).phase)
+    }
+
+    @Test fun theCheapPhaseAccessorMatchesTheState() {
+        assertEquals(RunPhase.READY, run.phase())
+        run.start(0)
+        assertEquals(RunPhase.ZEROING, run.phase())
+    }
+
     @Test fun aFailedSaveKeepsTheBootsAsTheyAreAndSaysSo() {
         val t0 = startAndZero()
         run.stop(t0 + 1000)
@@ -289,8 +395,10 @@ class RunControllerTest {
 
     @Test fun theSummaryNotesAFullFlashAndGapSeconds() {
         val t0 = startAndZero()
-        run.onLink("L", false, t0 + 1000)
-        run.onLink("L", true, t0 + 41_000)
+        boots.connectedSides.remove("L")
+        run.tick(t0 + 1000)
+        boots.connectedSides.add("L")
+        run.tick(t0 + 41_000)
         run.stop(t0 + 50_000)
         boots.full.add("R"); boots.saved = true
         run.tick(t0 + 51_000)
