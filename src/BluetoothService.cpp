@@ -11,6 +11,7 @@
 
 #include "AppConfig.h"
 #include "ImuService.h"
+#include "ModeService.h"
 #include "MotionService.h"
 #include "RecorderService.h"
 
@@ -64,6 +65,9 @@ NimBLEServer* server = nullptr;
 NimBLECharacteristic* liveCharacteristic = nullptr;
 NimBLECharacteristic* movementCharacteristic = nullptr;
 uint32_t lastMovementSequence = 0;
+uint32_t lastSkiSequence = 0;
+unsigned long lastHeartbeatMs = 0;
+uint16_t heartbeatSequence = 0;
 NimBLECharacteristic* statusCharacteristic = nullptr;
 NimBLECharacteristic* recorderControlCharacteristic = nullptr;
 NimBLECharacteristic* recorderDataCharacteristic = nullptr;
@@ -160,6 +164,7 @@ void updateStatus() {
 }
 
 void notifyLatestSample() {
+  if (mode::production()) return;  // production: events and the state frame only
   const imu::ImuMonitor& monitor = imu::monitor();
   if (!clientConnected || !monitor.hasSample() || liveCharacteristic == nullptr) return;
 
@@ -186,15 +191,15 @@ void notifyLatestSample() {
 }
 
 // One notification per completed tilt excursion (see docs/ble-protocol.md). Events that
-// finish while no client is connected are not replayed.
-void notifyMovementEvents() {
-  if (movementCharacteristic == nullptr) return;
+// finish while no client is connected are not replayed. Returns true if a frame was sent.
+bool notifyMovementEvents() {
+  if (movementCharacteristic == nullptr) return false;
   const motion::TiltStatus tilt = motion::tiltStatus();
   if (!clientConnected || tilt.count < lastMovementSequence) {
     lastMovementSequence = tilt.count;
-    return;
+    return false;
   }
-  if (tilt.count == lastMovementSequence) return;
+  if (tilt.count == lastMovementSequence) return false;
   motion::Excursion events[16];
   const uint8_t count = motion::recentExcursions(events, 16);
   for (uint8_t i = 0; i < count; ++i) {
@@ -213,9 +218,62 @@ void notifyMovementEvents() {
     movementCharacteristic->setValue(frame, sizeof(frame));
     movementCharacteristic->notify();
     lastMovementSequence = e.sequence;
-    return;  // one per tick; the next follows on the next loop
+    return true;  // one per tick; the next follows on the next loop
   }
   lastMovementSequence = tilt.count;  // the missed events fell out of the history
+  return false;
+}
+
+// One notification per completed ski_v0 half-turn (version 2 frame). Events that finish while
+// no client is connected are not replayed. Returns true if a frame was sent.
+bool notifySkiEvents() {
+  if (movementCharacteristic == nullptr) return false;
+  const motion::SkiStatus ski = motion::skiStatus();
+  if (!clientConnected || ski.count < lastSkiSequence) {
+    lastSkiSequence = ski.count;
+    return false;
+  }
+  if (ski.count == lastSkiSequence) return false;
+  motion::SkiEvent events[16];
+  const uint8_t count = motion::recentSkiEvents(events, 16);
+  for (uint8_t i = 0; i < count; ++i) {
+    if (events[i].sequence <= lastSkiSequence) continue;
+    uint8_t frame[motion::kSkiEventSize];
+    motion::encodeSkiEvent(events[i], frame);
+    movementCharacteristic->setValue(frame, sizeof(frame));
+    movementCharacteristic->notify();
+    lastSkiSequence = events[i].sequence;
+    return true;
+  }
+  lastSkiSequence = ski.count;  // the missed events fell out of the history
+  return false;
+}
+
+// One state frame per second in both modes (version 3 frame). The accumulators reset every
+// second even with no client, so the first frame after a connect covers only the last second.
+bool notifyHeartbeat() {
+  const unsigned long now = millis();
+  if (now - lastHeartbeatMs < 1000UL) return false;
+  lastHeartbeatMs = now;
+  const motion::SkiHeartbeat beat = motion::takeSkiHeartbeat();
+  const bool gap = motion::takeSkiGapSeen();
+  if (!clientConnected || movementCharacteristic == nullptr) return false;
+  const motion::SkiStatus ski = motion::skiStatus();
+  motion::SkiStateFrame state;
+  state.zeroed = ski.zeroed;
+  state.production = mode::production();
+  state.gap = gap;
+  state.sequence = heartbeatSequence++;
+  state.timeMs = static_cast<uint32_t>(esp_timer_get_time()) / 1000U;  // same clock as the live frame
+  state.rollDegrees = ski.rollDegrees;
+  state.pitchDegrees = ski.pitchDegrees;
+  state.vibrationMps2 = beat.vibrationMps2;
+  state.gyroDps = beat.gyroDps;
+  uint8_t frame[motion::kSkiStateSize];
+  motion::encodeSkiState(state, frame);
+  movementCharacteristic->setValue(frame, sizeof(frame));
+  movementCharacteristic->notify();
+  return true;
 }
 
 void notifyRecorderResponse(uint8_t opcode, RecorderResult result) {
@@ -230,7 +288,8 @@ void notifyRecorderResponse(uint8_t opcode, RecorderResult result) {
              (state.hasSession ? 0x04 : 0x00) |
              (state.full ? 0x08 : 0x00) |
              (state.storageError ? 0x10 : 0x00) |
-             (downloadActive ? 0x20 : 0x00);
+             (downloadActive ? 0x20 : 0x00) |
+             (mode::production() ? 0x40 : 0x00);
   putUint32(frame + 4, state.samples);
   putUint32(frame + 8, state.droppedSamples);
   putUint32(frame + 12, state.maxSamples);
@@ -241,6 +300,26 @@ void notifyRecorderResponse(uint8_t opcode, RecorderResult result) {
 void processRecorderCommand(const ControlRequest& request) {
   if (request.length == 0) return;
   const uint8_t opcode = request.bytes[0];
+  // Zero and mode work without flash storage, so they are handled before the storage check.
+  switch (motion::parseMotionCommand(request.bytes, request.length)) {
+    case motion::MotionCommandKind::kZero:
+      motion::zeroMotion();
+      notifyRecorderResponse(opcode, RecorderResult::kOk);
+      return;
+    case motion::MotionCommandKind::kDiagnostics:
+      mode::set(mode::Mode::kDiagnostics);
+      notifyRecorderResponse(opcode, RecorderResult::kOk);
+      return;
+    case motion::MotionCommandKind::kProduction:
+      mode::set(mode::Mode::kProduction);
+      notifyRecorderResponse(opcode, RecorderResult::kOk);
+      return;
+    case motion::MotionCommandKind::kInvalid:
+      notifyRecorderResponse(opcode, RecorderResult::kInvalidCommand);
+      return;
+    case motion::MotionCommandKind::kNone:
+      break;
+  }
   const recorder::Status state = recorder::status();
   if (!state.storageReady) {
     notifyRecorderResponse(opcode, RecorderResult::kUnavailable);
@@ -433,7 +512,9 @@ void tick() {
   processControlRequests();
   if (statusCharacteristic != nullptr) updateStatus();
   notifyLatestSample();
-  notifyMovementEvents();
+  // One frame on the movement characteristic per loop: half-turns first, then tilt events,
+  // then the once-a-second state frame.
+  if (!notifySkiEvents() && !notifyMovementEvents()) notifyHeartbeat();
   notifyNextRecordChunk();
 }
 }  // namespace openski::bluetooth
