@@ -74,3 +74,16 @@ data class SkiState(val sequence: Int, val timeMs: Long, val rollDegrees: Float,
         }
     }
 }
+
+/**
+ * Production mode switches the boot's raw live stream off. A recording or a flash recovery depends
+ * on that stream, so the app refuses the switch while either is active rather than lose samples silently.
+ */
+object ProductionModeRule {
+    fun blockedReason(recording: Boolean, recovering: Boolean, production: Boolean = true): String? = when {
+        !production -> null
+        recording -> "Stop the recording first: production mode turns the raw stream off."
+        recovering -> "Wait for sensor flash recovery to finish first."
+        else -> null
+    }
+}

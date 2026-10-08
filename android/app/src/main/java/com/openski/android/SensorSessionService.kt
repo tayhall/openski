@@ -569,8 +569,14 @@ class SensorSessionService : Service() {
     fun zeroSensor(side: String): Boolean = clients[side]?.command(RecorderCommand.ZERO) == true
 
     /** Production turns the boot's Wi-Fi and raw stream off to save battery; diagnostics turns them back on. */
-    fun setSensorMode(side: String, production: Boolean): Boolean =
-        clients[side]?.command(RecorderCommand.SET_MODE, if (production) 1 else 0) == true
+    fun setSensorMode(side: String, production: Boolean): Boolean {
+        if (ProductionModeRule.blockedReason(activeSessionId != null, transfers.isNotEmpty() || waits.isNotEmpty(), production) != null) return false
+        return clients[side]?.command(RecorderCommand.SET_MODE, if (production) 1 else 0) == true
+    }
+
+    /** Why production mode cannot be entered right now, or null if it can. */
+    fun productionBlockedReason(): String? =
+        ProductionModeRule.blockedReason(activeSessionId != null, transfers.isNotEmpty() || waits.isNotEmpty())
 
     fun calibrateTest(side: String, axis: Int, sign: Int, completed: (String)->Unit) {
         val id=activeSessionId

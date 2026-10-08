@@ -219,6 +219,19 @@ int main() {
     tracker.zero();
     check(!tracker.zeroed(), "zero() discards the old pose");
   }
+  {  // zeroing while the leg is still slowly moving (under the rate limit) must not capture a drifting pose
+    SkiTracker tracker(base.mounting);
+    tracker.zero();
+    for (int i = 0; i < 150; ++i) {  // 1.5 s leaning forward at 0.1 rad/s: 8.6 degrees of travel
+      const float angle = 0.1f*i*0.01f;
+      tracker.update(i*10000U, kG*std::cos(angle), kG*std::sin(angle), 0, 0, 0, -0.1f);
+    }
+    check(!tracker.zeroed(), "a slow lean is not a still pose");
+    const float rest = 0.1f*1.49f;
+    for (int i = 150; i < 300; ++i)  // then genuinely still
+      tracker.update(i*10000U, kG*std::cos(rest), kG*std::sin(rest), 0, 0, 0, 0);
+    check(tracker.zeroed(), "zeroed once actually still");
+  }
   {  // a stance that is not upright on the leg is refused
     SkiTracker tracker(base.mounting);
     tracker.zero();

@@ -113,6 +113,7 @@ class SkiTracker {
   static constexpr float kPullLimit = 0.15f;    // fractional |a| error where the accel pull reaches zero
   static constexpr uint32_t kGapUs = 100000U;
   static constexpr uint32_t kStillUs = 1000000U;
+  static constexpr float kStillCosine = 0.99966f;  // gravity may move at most 1.5 degrees across the still window
   static constexpr uint32_t kMinimumUs = 150000U;
   static constexpr float kDeadbandRadians = 1.5f/57.2957795f;
   static constexpr float kBandRadians = 8.0f/57.2957795f;
@@ -137,7 +138,12 @@ class SkiTracker {
   void trackNeutral(uint32_t t, float rate, float error) {
     if (!zeroing_) return;
     if (rate < 0.12f && error < 0.05f) {
-      if (!stillSince_) { stillSince_ = true; stillSinceUs_ = t; }
+      // Still means slow AND not travelling: a lean at just under the rate limit adds up to 7 degrees in a second.
+      float moved = up_[0]*stillUp_[0] + up_[1]*stillUp_[1] + up_[2]*stillUp_[2];
+      if (!stillSince_ || moved < kStillCosine) {
+        stillSince_ = true; stillSinceUs_ = t;
+        for (int i = 0; i < 3; ++i) stillUp_[i] = up_[i];
+      }
       if (t - stillSinceUs_ >= kStillUs) {
         float leg[3];
         toLeg(up_, leg);
@@ -219,7 +225,7 @@ class SkiTracker {
   uint32_t lastTime_ = 0, stillSinceUs_ = 0, startUs_ = 0, zeroUs_ = 0;
   uint32_t count_ = 0, rejected_ = 0, gaps_ = 0;
   int side_ = 0, lastSign_ = 1;
-  float up_[3]{0, 0, 1}, kx_[3]{}, cosine_ = 1;
+  float up_[3]{0, 0, 1}, stillUp_[3]{0, 0, 1}, kx_[3]{}, cosine_ = 1;
   float roll_ = 0, pitch_ = 0, rollRate_ = 0, peak_ = 0, peakRate_ = 0, pitchAtPeak_ = 0;
   float meanMag_ = kGravity, vibrationSum_ = 0, gyroSum_ = 0;
   uint32_t meterCount_ = 0;

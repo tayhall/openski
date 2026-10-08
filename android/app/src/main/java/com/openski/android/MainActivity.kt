@@ -320,7 +320,9 @@ class MainActivity : Activity() {
             commandBoots("Zero") { service, side -> service.zeroSensor(side) }
         })
         bootCard.addView(SkiUi.button(this, "Production mode (battery)") {
-            commandBoots("Production") { service, side -> service.setSensorMode(side, true) }
+            val blocked = sensorService?.productionBlockedReason()
+            if (blocked != null) skiCommand.text = blocked
+            else commandBoots("Production") { service, side -> service.setSensorMode(side, true) }
         })
         bootCard.addView(SkiUi.button(this, "Diagnostics mode (Wi-Fi + raw)") {
             commandBoots("Diagnostics") { service, side -> service.setSensorMode(side, false) }
