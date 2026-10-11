@@ -61,4 +61,10 @@ Missing intervals over 250 ms invalidate the orientation until detected rest. Ti
 
 Normalised profiles interpolate absolute boot roll at 21 bins from 0–100% of valid candidate intervals, then average separately for each rotation direction. Each direction shows the peak of its mean curve and its phase. These are not the mean of individual peak values. Profiles require calibration coverage and reject gaps over 100 ms; direction comes from the selected turn-axis/sign setting. The timeline still uses experimental gyro onsets, not actual edge changes.
 
-Exports preserve calibration metadata and a boot-roll.csv trace including drift age. Next: validate fixtures and real skiing, improve turn segmentation against labelled video, and establish a snow reference before claiming edge angle. Ski heading versus trajectory, with suitable positioning data, can later support a confidence-based carved/steered/mixed classifier.
+### Heading-rate candidates (experimental, firmware and replay)
+
+Heading-rate lobes are a second candidate set alongside roll-lobe timing. Heading rate is the rotation rate about the vertical, `omega . up`, with `up` taken from the same gravity estimate as the orientation tracker. Each lobe is reported with its start, end, duration, peak rate and heading change in degrees. Neither set is ski turn classification and neither is validated on a boot.
+
+Transfer caveat: the research that motivates this signal (see [research findings](research-findings.md)) used a calf-worn phone at 10 Hz on 10 skiers, not a boot IMU, and reports timing good to about half a second in that setup. Detector defaults are untuned guesses until compared with labelled video.
+
+Exports preserve calibration metadata and a boot-roll.csv trace including drift age. Next: validate fixtures and real skiing, compare roll-lobe candidates against heading-rate candidates on labelled video from both boots, and establish a snow reference before claiming edge angle. Ski heading versus trajectory, with suitable positioning data, can later support a confidence-based carved/steered/mixed classifier.

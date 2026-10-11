@@ -187,3 +187,14 @@ Not for the first proof of concept. The goal is to cut Bluetooth traffic and sav
 - Raw data is still needed to validate algorithms. If the live stream becomes processed-only, raw samples survive only in the ~10 minutes of flash. Keep a raw mode, and move to processed only for algorithms proven on raw data.
 - The estimator would exist in Kotlin and C++. Keep one golden recording that both must reproduce, run in the native test environment, so they cannot drift apart.
 - Changing the live frame needs a new protocol version in [BLE protocol](ble-protocol.md), with the app handling both.
+
+## Research-driven bench tests (owed)
+
+From [research findings](research-findings.md). None has been run on this hardware.
+
+- Allan variance, 1 to 3 hours static.
+- Temperature sweep using the IMU temperature output.
+- Protractor tilt at 0, 15, 30 and 45 degrees, plus a 25 degree off-axis mount.
+- 90 degree gyro scale.
+- Clipping and g-sensitivity.
+- Cold soak.
