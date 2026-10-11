@@ -85,7 +85,7 @@ Run these with video and the SYNC marker. Skis on grass can't carve, so this pha
 1. **Calibration repeatability.** Calibrate ten times per boot, re-standing each time. Spread of the neutral reference should be small.
 2. **Roll accuracy.** Stand the ski edge on wedges of known angle (10°, 20°, 30°). Compare the app's roll with the wedge angle, left and right.
 3. **Cuff cross-talk.** Flex the knees forward with the skis flat and the ankles still, 20° or more of pitch. Roll should stay close to zero.
-4. **Slip check.** Walk and sit with the boots, then compare a neutral stance with the original calibration.
+4. **Slip check.** Walk and sit with the boots, then compare a neutral stance with the original calibration. For a recording of repeated leans, the replay's mount check (`docs/ski-analysis.md`) should stay quiet; rotate the sensor about 15° around the leg part-way through a second recording and it should flag.
 5. **Drills.** Run Slow rolls, Even both ways and Steady rhythm on live boots. Compare detected rolls with the video. Check timing error and missed or extra detections in the Analysis tab.
 6. **Left/right symmetry.** Do deliberately uneven sets and confirm the balance score notices.
 7. **Link quality.** Phone in a jacket pocket for a full 5-minute set; note dropouts and reconnects.

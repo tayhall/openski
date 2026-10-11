@@ -1,0 +1,44 @@
+{
+  "id": "leg-steering",
+  "chip": "DRILL 8  \u00b7  STEERING",
+  "title": "Steering with the legs",
+  "subtitle": "Seen from the front, and what your boots will show",
+  "steps": [
+    "Pick a gentle slope.",
+    "Turn your legs under a calm upper body.",
+    "Keep the skis flat and let them slide."
+  ],
+  "motion": {
+    "cycle_period_s": 3.0,
+    "cycles": 4,
+    "peak_flatness_k": 0.5,
+    "inside_boot_amp": 0.97,
+    "turn_variation": 0.05,
+    "amplitude": 0.32,
+    "knee_rest_deg": 18,
+    "knee_per_tilt_deg": 22,
+    "heading_deg": 36,
+    "track_width_m": 0.2
+  },
+  "callouts": [
+    {
+      "n": 1,
+      "boot": "R",
+      "t_cycles": 0.75,
+      "text": "Small humps: the skis stay close to flat."
+    },
+    {
+      "n": 2,
+      "boot": "mid",
+      "t_cycles": 1.0,
+      "text": "The turn comes from steering, so tilt alone shows very little."
+    },
+    {
+      "n": 3,
+      "boot": "mid",
+      "t_cycles": 2.25,
+      "text": "Boot tilt can't show the steering. The gyro's turning rate may, but that is not validated yet."
+    }
+  ],
+  "footnote": "Illustration of a typical shape, not a target. Tilt is relative, not degrees."
+}

@@ -61,6 +61,18 @@ Missing intervals over 250 ms invalidate the orientation until detected rest. Ti
 
 Normalised profiles interpolate absolute boot roll at 21 bins from 0–100% of valid candidate intervals, then average separately for each rotation direction. Each direction shows the peak of its mean curve and its phase. These are not the mean of individual peak values. Profiles require calibration coverage and reject gaps over 100 ms; direction comes from the selected turn-axis/sign setting. The timeline still uses experimental gyro onsets, not actual edge changes.
 
+### Mount-slip check (experimental, replay only)
+
+`MountSlipMonitor` (Kotlin, ported from the research repo's `MountMonitor`) asks whether the strap or sensor moved after calibration. In the calibrated boot frame it compares, per 4 s window (2 s step), the principal horizontal gyro axis (window mean removed, so a constant bias is not motion) and the mean horizontal specific force with the run's own baseline.
+
+- **Baseline:** the first five windows with turning motion about the forward axis (horizontal gyro RMS of at least 0.1 rad/s and principal axis within 30 degrees of forward), so walking or a lift ride after calibration cannot set it. Without five such windows the check reports "unavailable".
+- **Checked windows:** those with motion whose axis is within 45 degrees of the baseline. Moving windows further away are another activity (walking pitches about the lateral axis) and are counted as skipped. The cost is that a yaw slip over 45 degrees is not flagged either.
+- **Flag:** the axis moved more than 8 degrees, or the mean force moved more than max(0.15 g, twice the baseline spread), in two consecutive checked windows. Persistence keeps a load or terrain transient from flagging, and delays a real flag by one step.
+- **Frame:** only the latest calibration of each boot is used, from its time to the end of the session. Near-rail samples and windows with gaps over 250 ms are excluded.
+- **Output:** one line on the Analysis tab (time is after calibration) and a `mount_slip` object per boot in `analysis-summary.json`, always present, with `available:false` and a reason when there is no calibration or no baseline.
+
+Evidence: the research repo's simulation flagged 8 degrees of yaw slip 6 of 6 (about 9 s after it happened), 25 to 40 degrees within 2 s, but 15 degrees about the forward or lateral axis only 2 to 3 of 6. Our unit tests use synthetic signals too. It is not validated on a boot, it does not measure the slip angle, and the live path and coach do not use it. Treat a flag as "re-calibrate before trusting roll".
+
 ### Heading-rate candidates (experimental, firmware and replay)
 
 Heading-rate lobes are a second candidate set alongside roll-lobe timing. Heading rate is the rotation rate about the vertical, `omega . up`, with `up` taken from the same gravity estimate as the orientation tracker. Each lobe is reported with its start, end, duration, peak rate and heading change in degrees. The rate is smoothed with a 0.25 s time constant, so lobes are confirmed that much later than they happen. On the firmware, `SkiTracker` feeds the tracker from `omega . up_` and sends each lobe as frame version 4 on the movement characteristic (additive; the coach and run flow ignore it); the Android app decodes those frames live and replays the same detector over stored samples. Neither set is ski turn classification and neither is validated on a boot.

@@ -1,0 +1,44 @@
+{
+  "id": "long-turns",
+  "chip": "DRILL 6  \u00b7  LONG TURNS",
+  "title": "Long, round turns",
+  "subtitle": "Seen from the front, and what your boots will show",
+  "steps": [
+    "Pick a wide, gentle slope with room to travel.",
+    "Let each turn run its full arc before you start the next.",
+    "Stay relaxed and smooth: the humps should be wide and even."
+  ],
+  "motion": {
+    "cycle_period_s": 4.6,
+    "cycles": 3,
+    "peak_flatness_k": 1.3,
+    "inside_boot_amp": 0.9,
+    "turn_variation": 0.05,
+    "amplitude": 0.85,
+    "knee_rest_deg": 18,
+    "knee_per_tilt_deg": 30,
+    "heading_deg": 40,
+    "track_width_m": 0.05
+  },
+  "callouts": [
+    {
+      "n": 1,
+      "boot": "R",
+      "t_cycles": 0.75,
+      "text": "Wide humps: the same shape as carving, just slower."
+    },
+    {
+      "n": 2,
+      "boot": "mid",
+      "t_cycles": 1.0,
+      "text": "Long, smooth crossings: no rush at the switch."
+    },
+    {
+      "n": 3,
+      "boot": "mid",
+      "t_cycles": 1.75,
+      "text": "Few turns in the same time: compare with the short-turns video."
+    }
+  ],
+  "footnote": "Illustration of a typical shape, not a target. Tilt is relative, not degrees."
+}
