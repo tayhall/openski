@@ -46,6 +46,18 @@ class BootOrientationTest {
         assertTrue("without learning yaw drifts ($fixedDrift)",fixedDrift>50.0)
         assertTrue("learned $learnedDrift vs fixed $fixedDrift",learnedDrift*5<=fixedDrift)
     }
+    @Test fun learnerSeesTheUnsubtractedGyroSoYawDriftFlattensAtTheFullOffset() {
+        val calibration=BootOrientation.calibrate(rest,"L",0.0,0,1)!!
+        val still=(1..3000).map { i -> point(2000+i*20.0).let { p ->
+            p.copy(sample=p.sample.copy(gyroZ=0.03f)) } }
+        val tracker=BootOrientation.Tracker(calibration)
+        val yaw=still.mapNotNull(tracker::accept)
+        // If the learner saw its own corrected output it would settle near half the offset (0.015 rad/s,
+        // about 26 degrees over 30 s). Converged to the full offset, yaw is flat after about 20 s.
+        val at30=yaw.first { it.timeMs>=32000.0 }.yawDegrees
+        val at60=yaw.last().yawDegrees
+        assertTrue("yaw still moving: $at30 -> $at60",abs(at60-at30)<2.0)
+    }
     @Test fun estimatesPitchAndRelativeYawInTheBootFrame() {
         val calibration=BootOrientation.calibrate(rest,"L",0.0,0,1)!!
         val pitch=(1..100).map { point(2000+it*20.0).let { p -> p.copy(sample=p.sample.copy(gyroY=(PI/6).toFloat(),accelZ=12f)) } }
