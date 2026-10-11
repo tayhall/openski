@@ -208,6 +208,32 @@ int main() {
       check(absf(out[i].pitchDegrees - 15) < 3, "pitch relative to the leaning neutral");
     }
   }
+  {  // Heading turns: alternating rotation about the vertical is found without zeroing the pose.
+    SkiTracker t(Mounting{{0, 1}, {1, 1}, {2, -1}});
+    uint32_t us = 0;
+    for (int i = 0; i < 2000; ++i, us += 10000U) {
+      const float rate = 1.0f*std::sin(2*kPi*i/400.0f);  // 57 deg/s peak, 4 s period
+      t.update(us, kG, 0, 0, rate, 0, 0);
+    }
+    check(!t.zeroed(), "heading does not need the neutral pose");
+    check(t.headingCount() >= 3, "heading turns found from vertical rotation");
+    HeadingTurn turns[16];
+    const uint8_t n = t.recentHeading(turns, 16);
+    check(n >= 3 && turns[1].positive != turns[0].positive, "heading turn signs alternate");
+  }
+  {  // An impact-gated sample is marked on the open segment and does not corrupt the rate.
+    SkiTracker t(Mounting{{0, 1}, {1, 1}, {2, -1}});
+    uint32_t us = 0;
+    for (int i = 0; i < 1200; ++i, us += 10000U) {
+      const float scale = (i == 300) ? 4.0f : 1.0f;  // 4 g spike trips the impact gate
+      t.update(us, kG*scale, 0, 0, 1.0f*std::sin(2*kPi*i/400.0f), 0, 0);
+    }
+    HeadingTurn turns[16];
+    const uint8_t n = t.recentHeading(turns, 16);
+    bool marked = false;
+    for (uint8_t i = 0; i < n; ++i) marked |= turns[i].skippedSamples;
+    check(marked, "impact skip is recorded on the heading turn");
+  }
   {  // no events until the pose is zeroed, and a new zero() discards the old one
     SkiTracker tracker(base.mounting);
     check(!tracker.zeroed(), "not zeroed at start");
