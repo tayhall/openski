@@ -54,6 +54,28 @@ int main() {
     encodeSkiState(s, out);
     check(out[1] == 0 && out[12] == 0 && out[13] == 0 && out[14] == 0 && out[15] == 0, "no wrap on negatives");
   }
+  {  // The same bytes are decoded by HeadingTurnProtocolTest.kt.
+    HeadingTurn h;
+    h.sequence = 513; h.startUs = 4294966000U; h.endUs = 4294966000U + 1830000U;
+    h.positive = false; h.skippedSamples = true; h.nearRail = false;
+    h.peakRateDps = -61.5f; h.changeDegrees = -78.25f;
+    uint8_t out[kHeadingTurnSize];
+    encodeHeadingTurn(h, out);
+    const uint8_t golden[kHeadingTurnSize] = {0x04, 0x02, 0x01, 0x02, 0x36, 0x89, 0x41, 0x00,
+                                              0x26, 0x07, 0x99, 0xfd, 0x6f, 0xe1, 0x00, 0x00};
+    check(std::memcmp(out, golden, kHeadingTurnSize) == 0, "heading frame matches the golden bytes");
+  }
+  {  // Saturation clamps instead of wrapping.
+    HeadingTurn h;
+    h.sequence = 70000; h.startUs = 0; h.endUs = 90000000U; h.positive = true; h.nearRail = true;
+    h.peakRateDps = 9000; h.changeDegrees = 9000;
+    uint8_t out[kHeadingTurnSize];
+    encodeHeadingTurn(h, out);
+    check(out[1] == 0x05, "flags positive + near rail");
+    check(out[8] == 0xff && out[9] == 0xff, "duration saturates");
+    check(out[10] == 0xff && out[11] == 0x7f, "peak saturates");
+    check(out[12] == 0xff && out[13] == 0x7f, "change saturates");
+  }
   {  // Zero and mode commands: exact lengths and arguments only; other opcodes belong to the recorder.
     const uint8_t zero[] = {0x07}, zeroLong[] = {0x07, 0x00};
     const uint8_t diagnostics[] = {0x08, 0x00}, production[] = {0x08, 0x01};

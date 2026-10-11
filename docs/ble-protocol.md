@@ -62,7 +62,7 @@ One notification is sent per excursion, at most one per firmware loop. A client 
 
 ### Frame versions on this characteristic
 
-The first byte selects the frame. Version 1 is the `tilt_v1` event above. Clients must ignore versions they do not know. One frame is sent per firmware loop at most, and the last-sent sequence is tracked per type, so one type never hides another.
+The first byte selects the frame. Version 1 is the `tilt_v1` event above, version 2 the `ski_v0` half-turn, version 3 the `ski_v0` state and version 4 the heading turn. Clients must ignore versions they do not know, so a client built before version 4 skips it. One frame is sent per firmware loop at most, and the last-sent sequence is tracked per type, so one type never hides another.
 
 ### `ski_v0` half-turn (version 2, 18 bytes, experimental)
 
@@ -81,6 +81,23 @@ Sent when a half-turn completes: roll leaves a ±8° band around the zeroed pose
 | 16 | 2 | reserved | `0` |
 
 The envelope flag means peak roll above 60°, rate above 300 °/s, duration outside 0.3 to 4 s, or pitch outside −15° to +45°. It is a plausibility check, not a quality score.
+
+### `ski_v0` heading turn (version 4, 16 bytes, experimental)
+
+Sent when a lobe of the causal heading rate (rotation about the world vertical) completes. It is a heading-rate lobe, not a turn classification: nothing here says the skier made a ski turn.
+
+| Offset | Size | Field | Encoding |
+| --- | ---: | --- | --- |
+| 0 | 1 | version | `4` |
+| 1 | 1 | flags | bit 0 side `+` (positive heading rate), bit 1 samples were skipped (impact gate) during the lobe, bit 2 the rate came near the gyro range limit, bit 3 reserved `0` (a sample gap abandons the lobe, so there is no gap bit) |
+| 2 | 2 | sequence | unsigned, heading-turn count modulo 65536 |
+| 4 | 4 | start time | unsigned milliseconds, the same clock as the live frame |
+| 8 | 2 | duration | unsigned milliseconds, saturating at 65535 |
+| 10 | 2 | peak rate | signed, value / 10 gives degrees per second, saturating at ±32767 |
+| 12 | 2 | heading change | signed, value / 100 gives degrees, saturating at ±32767 |
+| 14 | 2 | reserved | `0` |
+
+Positive means a right-handed rotation about world-up, which is counter-clockwise seen from above (a left turn). The detector smooths the rate causally, so start and end are shifted back by the 0.25 s smoothing delay to line up with the motion; the frame itself is still sent only after the lobe ends. Heading change is the signed integral of the de-trended rate over the lobe.
 
 ### `ski_v0` state (version 3, 16 bytes, experimental)
 

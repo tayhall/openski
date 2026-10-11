@@ -2,6 +2,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include "HeadingTracker.h"
 #include "SkiTracker.h"
 
 // Wire encoders for the ski_v0 frames on the movement characteristic (docs/ble-protocol.md).
@@ -11,6 +12,8 @@ constexpr uint8_t kSkiEventVersion = 2;
 constexpr uint8_t kSkiStateVersion = 3;
 constexpr size_t kSkiEventSize = 18;
 constexpr size_t kSkiStateSize = 16;
+constexpr uint8_t kHeadingTurnVersion = 4;
+constexpr size_t kHeadingTurnSize = 16;
 
 namespace frame {
 inline void put16(uint8_t* out, uint16_t value) {
@@ -44,6 +47,20 @@ inline void encodeSkiEvent(const SkiEvent& e, uint8_t* out) {
   frame::put16(out + 10, static_cast<uint16_t>(frame::signed16(e.peakRollDegrees*100.0f)));
   frame::put16(out + 12, frame::unsigned16(e.peakRateDps*10.0f));
   frame::put16(out + 14, static_cast<uint16_t>(frame::signed16(e.pitchDegrees*100.0f)));
+}
+
+// 16 bytes, one per completed heading-rate lobe (experimental). Bit 3 of the flags is reserved:
+// a sample gap abandons the segment, so no gap bit exists.
+inline void encodeHeadingTurn(const HeadingTurn& h, uint8_t* out) {
+  for (size_t i = 0; i < kHeadingTurnSize; ++i) out[i] = 0;
+  const uint32_t durationMs = (h.endUs - h.startUs)/1000U;
+  out[0] = kHeadingTurnVersion;
+  out[1] = (h.positive ? 0x01 : 0) | (h.skippedSamples ? 0x02 : 0) | (h.nearRail ? 0x04 : 0);
+  frame::put16(out + 2, static_cast<uint16_t>(h.sequence & 0xffff));
+  frame::put32(out + 4, h.startUs/1000U);
+  frame::put16(out + 8, durationMs > 65535U ? 65535 : static_cast<uint16_t>(durationMs));
+  frame::put16(out + 10, static_cast<uint16_t>(frame::signed16(h.peakRateDps*10.0f)));
+  frame::put16(out + 12, static_cast<uint16_t>(frame::signed16(h.changeDegrees*100.0f)));
 }
 
 struct SkiStateFrame {
