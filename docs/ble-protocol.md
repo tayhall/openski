@@ -153,5 +153,7 @@ The two sensors keep independent sessions and counters. The Android app should s
 
 ### Compatibility
 
-This is a breaking change for live streaming in both directions: an app built before live frame version 2 does not accept 20-byte frames or recorder protocol version 3, and a new app does not accept version 2 recorder responses from old firmware for recording or download. Neither pairing is supported; both sensors and the app should be updated together. Sessions already stored on the phone from version 2 firmware replay unchanged. The app fails closed on versions: a frame or response with a version it does not know is rejected rather than guessed at.
+This is a breaking change for live streaming in both directions, but only one pairing is unsupported. The new app still decodes old firmware: recorder status versions 2 and 3, `D0` download chunks and the 19-byte live frame v1 are all accepted. New firmware with an old app is not supported: an app built before live frame version 2 does not accept 20-byte frames or recorder protocol version 3, ignores frame versions it does not know, and cannot decode live frame v2 or marker `D1`. Update the app before or together with the sensors. Sessions already stored on the phone from version 2 firmware replay unchanged. The app fails closed on versions: a frame or response with a version it does not know is rejected rather than guessed at.
+
+**Retained recordings.** Download and erase any retained recording before flashing recorder-v3 firmware; a recording made by older firmware that is downloaded afterwards has its timestamps' low three bits read as quality flags. Version 3 firmware always sends marker `D1`, and the stored flash file carries no format marker.
 
