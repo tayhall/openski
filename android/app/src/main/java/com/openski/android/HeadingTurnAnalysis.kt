@@ -1,0 +1,43 @@
+package com.openski.android
+
+data class HeadingTurnSummary(val count: Int, val medianDurationMs: Double?, val cadencePerMinute: Double?)
+
+/**
+ * Heading rate is omega . up, so a positive rate is a right-handed rotation about world-up, which is
+ * counter-clockwise seen from above, a left turn. This does not depend on how the sensor is mounted,
+ * unlike the per-boot roll polarity (positive_left).
+ */
+object HeadingDirection {
+    fun label(positive: Boolean): String = if (positive) "LEFT" else "RIGHT"
+}
+
+/**
+ * Replays the heading-rate detector over orientation output. Experimental turn candidates, not
+ * ski turn classification. Rolls must be for one side.
+ */
+object HeadingTurnAnalysis {
+    fun detect(rolls: List<BootRoll>): List<HeadingTurn> {
+        val detector = HeadingTurnDetector()
+        val turns = ArrayList<HeadingTurn>()
+        var segment: Int? = null
+        // BootOrientation output is already time-ordered; only sort when it is not (merged calibrations).
+        val ordered = if (rolls.zipWithNext().all { (a, b) -> a.timeMs <= b.timeMs }) rolls else rolls.sortedBy { it.timeMs }
+        ordered.forEach { r ->
+            if (segment != null && r.segment != segment) detector.breakSegment()
+            segment = r.segment
+            if (r.gated) { detector.skip(); return@forEach }
+            val flags = if (r.quality and SensorSample.QUALITY_RAIL_MASK != 0) HeadingTurnDetector.FLAG_NEAR_RAIL else 0
+            detector.accept(r.timeMs, r.headingRateRadps, flags)?.let(turns::add)
+        }
+        return turns
+    }
+
+    fun summarise(turns: List<HeadingTurn>): HeadingTurnSummary {
+        if (turns.isEmpty()) return HeadingTurnSummary(0, null, null)
+        val durations = turns.map { it.endMs - it.startMs }.sorted()
+        val median = (durations[(durations.size - 1) / 2] + durations[durations.size / 2]) / 2
+        val span = turns.last().startMs - turns.first().startMs
+        val cadence = if (turns.size >= 2 && span > 0) (turns.size - 1) * 60_000.0 / span else null
+        return HeadingTurnSummary(turns.size, median, cadence)
+    }
+}

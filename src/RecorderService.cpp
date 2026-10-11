@@ -1,5 +1,7 @@
 #include "RecorderService.h"
 
+#include "RecordFlags.h"
+
 #include <Arduino.h>
 #include <FS.h>
 #include <SPIFFS.h>
@@ -38,6 +40,9 @@ volatile uint32_t droppedSampleCount = 0;
 volatile uint32_t maxSampleCount = 0;
 volatile uint32_t pendingSampleCount = 0;
 uint32_t lastSeenMonitorCount = 0;
+// Set when a record could not be queued; the next record that is queued carries the
+// "dropped before" flag (a flag set on the dropped record would be lost with it).
+bool droppedBeforeNext = false;
 
 void putUint16(uint8_t* out, uint16_t value) {
   out[0] = static_cast<uint8_t>(value & 0xff);
@@ -59,7 +64,10 @@ int16_t quantize(float value, float scale) {
 }
 
 void encodeRecord(const imu::Sample& sample, QueuedRecord& record) {
-  putUint32(record.bytes, sample.timestampUs);
+  uint8_t flags = imu::recordFlagsFromQuality(sample.qualityFlags);
+  if (droppedBeforeNext) flags |= imu::kRecordDroppedBefore;
+  droppedBeforeNext = false;
+  putUint32(record.bytes, imu::packRecordTimestamp(sample.timestampUs, flags));
   putUint16(record.bytes + 4, static_cast<uint16_t>(quantize(sample.accelMps2.x, 100.0f)));
   putUint16(record.bytes + 6, static_cast<uint16_t>(quantize(sample.accelMps2.y, 100.0f)));
   putUint16(record.bytes + 8, static_cast<uint16_t>(quantize(sample.accelMps2.z, 100.0f)));
@@ -201,6 +209,7 @@ void tick(const imu::ImuMonitor& monitor) {
     sessionExists = sampleCount > 0;
     ++droppedSampleCount;
     portEXIT_CRITICAL(&stateMux);
+    droppedBeforeNext = true;
     return;
   }
 }
@@ -237,6 +246,7 @@ bool start() {
   sessionExists = false;
   recording = true;
   portEXIT_CRITICAL(&stateMux);
+  droppedBeforeNext = false;
   Serial.println("Recorder started");
   return true;
 }

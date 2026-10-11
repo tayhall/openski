@@ -33,6 +33,59 @@ class BootOrientationTest {
         val estimated=BootOrientation.estimate(biased+moving+recovery,calibration)
         assertTrue(estimated.any { it.timeMs>=8000 })
     }
+    @Test fun gyroNearRailSampleRestartsTheRestTimerSoCorrectionIsDelayed() {
+        val calibration=BootOrientation.calibrate(rest,"L",0.0,0,1)!!
+        // 0.2 rad of gyro-only roll while the accelerometer still reports level, then stillness.
+        val turn=(1..20).map { point(2000+it*20.0,0.5f) }
+        fun still(railIndex: Int?)=(1..160).map { i ->
+            val p=point(2400+i*20.0)
+            if(i==railIndex) p.copy(sample=p.sample.copy(quality=2)) else p
+        }
+        fun rollAt(stream: List<TimelinePoint>,t: Double)=
+            BootOrientation.Tracker(calibration).let { tr -> stream.mapNotNull(tr::accept) }.first { it.timeMs>=t }.degrees
+        val plain=rest+turn+still(null)
+        val railed=rest+turn+still(50)
+        val integrated=Math.toDegrees(0.2)
+        // Sample 110 (t=4600): 2 s of rest has passed without the flag, 1.2 s since it with the flag.
+        assertEquals(0.0,rollAt(plain,4600.0),1e-6)
+        assertEquals(integrated,rollAt(railed,4600.0),0.05)
+        // By sample 160 the restarted timer has also expired and the correction is applied.
+        assertEquals(0.0,rollAt(railed,5600.0),1e-6)
+    }
+    @Test fun accelNearRailSampleAlsoRestartsTheRestTimer() {
+        val calibration=BootOrientation.calibrate(rest,"L",0.0,0,1)!!
+        val turn=(1..20).map { point(2000+it*20.0,0.5f) }
+        val still=(1..130).map { i -> point(2400+i*20.0).let { p ->
+            if(i==60) p.copy(sample=p.sample.copy(quality=1)) else p } }
+        val tr=BootOrientation.Tracker(calibration)
+        val roll=(rest+turn+still).mapNotNull(tr::accept).first { it.timeMs>=2400+110*20.0 }
+        assertEquals(Math.toDegrees(0.2),roll.degrees,0.05)
+    }
+    @Test fun learnedRestBiasShrinksDriftFromAnOffsetThatAppearedAfterCalibration() {
+        val calibration=BootOrientation.calibrate(rest,"L",0.0,0,1)!!
+        // Offset on all three axes (norm 0.052, still "stationary" to the tracker) that was not present at
+        // calibration. Gravity re-alignment pins roll and pitch, so the visible drift is heading (yaw).
+        val still=(1..3000).map { i -> point(2000+i*20.0).let { p ->
+            p.copy(sample=p.sample.copy(gyroX=0.03f,gyroY=0.03f,gyroZ=0.03f)) } }
+        val learned=BootOrientation.Tracker(calibration).let { t -> still.mapNotNull(t::accept) }
+        val fixed=BootOrientation.Tracker(calibration,learnRestBias=false).let { t -> still.mapNotNull(t::accept) }
+        val learnedDrift=abs(learned.last().yawDegrees)
+        val fixedDrift=abs(fixed.last().yawDegrees)
+        assertTrue("without learning yaw drifts ($fixedDrift)",fixedDrift>50.0)
+        assertTrue("learned $learnedDrift vs fixed $fixedDrift",learnedDrift*5<=fixedDrift)
+    }
+    @Test fun learnerSeesTheUnsubtractedGyroSoYawDriftFlattensAtTheFullOffset() {
+        val calibration=BootOrientation.calibrate(rest,"L",0.0,0,1)!!
+        val still=(1..3000).map { i -> point(2000+i*20.0).let { p ->
+            p.copy(sample=p.sample.copy(gyroZ=0.03f)) } }
+        val tracker=BootOrientation.Tracker(calibration)
+        val yaw=still.mapNotNull(tracker::accept)
+        // If the learner saw its own corrected output it would settle near half the offset (0.015 rad/s,
+        // about 26 degrees over 30 s). Converged to the full offset, yaw is flat after about 20 s.
+        val at30=yaw.first { it.timeMs>=32000.0 }.yawDegrees
+        val at60=yaw.last().yawDegrees
+        assertTrue("yaw still moving: $at30 -> $at60",abs(at60-at30)<2.0)
+    }
     @Test fun estimatesPitchAndRelativeYawInTheBootFrame() {
         val calibration=BootOrientation.calibrate(rest,"L",0.0,0,1)!!
         val pitch=(1..100).map { point(2000+it*20.0).let { p -> p.copy(sample=p.sample.copy(gyroY=(PI/6).toFloat(),accelZ=12f)) } }

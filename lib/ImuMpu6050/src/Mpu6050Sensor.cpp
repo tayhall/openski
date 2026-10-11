@@ -1,4 +1,5 @@
 #include "Mpu6050Sensor.h"
+#include "Mpu6050Profile.h"
 
 #include <Arduino.h>
 #include <math.h>
@@ -18,8 +19,8 @@ constexpr uint8_t kWhoAmIValue = 0x68;
 constexpr uint8_t kDataReadyMask = 0x01;
 
 constexpr float kStandardGravity = 9.80665f;
-constexpr float kAccelCountsPerG = 4096.0f;  // +/-8 g
-constexpr float kGyroCountsPerDegree = 32.8f; // +/-1000 degrees/second
+constexpr float kAccelCountsPerG = mpuProfile::kAccelCountsPerG;
+constexpr float kGyroCountsPerDegree = mpuProfile::kGyroCountsPerDegree;
 constexpr float kDegreesToRadians = 0.01745329252f;
 constexpr float kTemperatureCountsPerC = 340.0f;
 constexpr float kTemperatureOffsetC = 36.53f;
@@ -65,16 +66,23 @@ bool Mpu6050Sensor::begin() {
   uint8_t identity = 0;
   if (!readRegister(kRegWhoAmI, identity) || identity != kWhoAmIValue) return false;
 
-  // DLPF setting 3 gives a 1 kHz internal sample base and about 42 Hz gyro
-  // bandwidth. Divider 9 configures a 100 Hz output data rate.
-  if (!writeRegister(kRegConfig, 0x03) ||
+  // Both profiles use a 1 kHz internal sample base; divider 9 requests 100 Hz.
+  // Bandwidth and delay still require bench validation on the actual module.
+  if (!writeRegister(kRegConfig, mpuProfile::kDlpfConfig) ||
       !writeRegister(kRegSampleRateDivider, 9) ||
       !writeRegister(kRegGyroConfig, 0x10) ||  // +/-1000 degrees/second
-      !writeRegister(kRegAccelConfig, 0x10) || // +/-8 g
+      !writeRegister(kRegAccelConfig, mpuProfile::kAccelConfig) ||
       !writeRegister(kRegDataReadyInterrupt, 0x01)) {
     return false;
   }
 
+  // Refuse to report ready if the acquisition registers did not stick.
+  uint8_t value = 0;
+  if (!readRegister(kRegConfig, value) || value != mpuProfile::kDlpfConfig ||
+      !readRegister(kRegSampleRateDivider, value) || value != 9 ||
+      !readRegister(kRegGyroConfig, value) || value != 0x10 ||
+      !readRegister(kRegAccelConfig, value) || value != mpuProfile::kAccelConfig)
+    return false;
   initialized_ = true;
   return true;
 }
@@ -98,6 +106,13 @@ ReadResult Mpu6050Sensor::read(Sample& out) {
   const int16_t gyroZ = toSignedWord(data[12], data[13]);
 
   Sample sample{};
+  // Near-rail diagnostic (within 8 counts); not proof of absence of clipping
+  // between reads. Preserve the measured channels unchanged.
+  const auto nearRail = [](int16_t v) { return v >= 32760 || v <= -32760; };
+  if (nearRail(accelX) || nearRail(accelY) || nearRail(accelZ))
+    sample.qualityFlags |= kAccelNearRail;
+  if (nearRail(gyroX) || nearRail(gyroY) || nearRail(gyroZ))
+    sample.qualityFlags |= kGyroNearRail;
   sample.timestampUs = micros();
   sample.accelMps2 = {
       accelX / kAccelCountsPerG * kStandardGravity,

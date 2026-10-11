@@ -3,6 +3,7 @@ package com.openski.android
 import android.Manifest
 import android.animation.ValueAnimator
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -28,7 +29,7 @@ import java.util.concurrent.Executors
  * Runs on demo boots, or on a live boot through [SensorSessionService] (saved as a test session in the logbook).
  */
 class DrillActivity : Activity(), SensorSessionService.Listener {
-    private enum class Phase { INTRO, CONNECTING, CALIBRATE, STARTING, HOLDING, SETTLING, RUNNING, DONE }
+    private enum class Phase { INTRO, CONNECTING, MOUNTING, CALIBRATE, STARTING, HOLDING, SETTLING, RUNNING, DONE }
 
     private lateinit var store: ProgressStore
     private lateinit var drill: Drill
@@ -49,6 +50,7 @@ class DrillActivity : Activity(), SensorSessionService.Listener {
     private var holdUntil = 0L
     private var calibrationRequested = false
     private var runStartedAt = 0L
+    private var mountingDialog: AlertDialog? = null
 
     private var statusView: TextView? = null
     private var messageView: TextView? = null
@@ -81,6 +83,7 @@ class DrillActivity : Activity(), SensorSessionService.Listener {
     override fun onDestroy() {
         animator?.cancel()
         handler.removeCallbacksAndMessages(null)
+        mountingDialog?.dismiss()
         if (ownsRecording && phase != Phase.DONE) stopRecording()
         if (bound) {
             service?.setListener(null)
@@ -223,7 +226,17 @@ class DrillActivity : Activity(), SensorSessionService.Listener {
     private fun chooseBoot(boot: String) {
         side = boot
         recorder = LiveDrillRecorder(drill, boot)
-        if (store.mounting(boot) == null) MountingPicker.show(this, store, boot) { calibrateScreen() } else calibrateScreen()
+        if (store.mounting(boot) == null) {
+            // Stop connection polling from opening another picker on every tick.
+            phase = Phase.MOUNTING
+            mountingDialog = MountingPicker.show(this, store, boot, onCancel = {
+                mountingDialog = null
+                abandon()
+            }) {
+                mountingDialog = null
+                calibrateScreen()
+            }
+        } else calibrateScreen()
     }
 
     private fun calibrateScreen(message: String? = null) {
@@ -383,6 +396,14 @@ class DrillActivity : Activity(), SensorSessionService.Listener {
                         "$name: " + if (boot in live) "streaming" else (statuses[boot] ?: "looking…")
                     }.ifEmpty { "No boots are paired yet." }
                     if (live.isNotEmpty()) chooseBoot(if ("L" in live) "L" else live.first())
+                }
+                Phase.MOUNTING -> {
+                    // The boot dropped while the picker was open: close it and go back to waiting.
+                    if (side !in liveBoots()) {
+                        mountingDialog?.dismiss()
+                        mountingDialog = null
+                        connect()
+                    }
                 }
                 Phase.HOLDING -> {
                     val remaining = holdUntil - System.currentTimeMillis()

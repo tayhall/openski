@@ -9,7 +9,7 @@ The device retries Wi-Fi every 10 seconds. OTA becomes available after Wi-Fi con
 
 The default board target is `esp32dev` (classic ESP32, 4 MB flash). ESP32-S3 uses `esp32-s3-devkitc-1` (8 MB flash, no PSRAM). The MPU-6050 driver defaults to SDA GPIO21, SCL GPIO22, address 0x68; these values are centralized in `include/AppConfig.h` for board and sensor swaps.
 
-The DevKit session recorder requires the SPIFFS data partition in `partitions/esp32dev-4mb.csv`. A device using its earlier ESPHome partition table needs a one-time USB flash of the application and partition table. OTA updates only replace the application, so they cannot add the filesystem partition.
+The DevKit session recorder requires the SPIFFS data partition in `partitions/esp32dev-4mb.csv`. A device using its earlier ESPHome partition table needs a one-time USB flash of the application and partition table. OTA updates only replace the application, so they cannot add the filesystem partition. An OTA update also keeps the SPIFFS recording. Download and erase any retained recording before flashing recorder-v3 firmware; a recording made by older firmware that is downloaded afterwards has its timestamps' low three bits read as quality flags.
 
 ## ESP32-S3 Super Mini — 4 MB board
 
@@ -20,3 +20,7 @@ MPU-6050 wiring for this target: 3.3 V → VCC, GND → GND, GPIO8 → SDA and G
 The S3 hostname is `ski-s3` to avoid conflicting with the existing `ski` board. OTA uses `esp32-s3-supermini-ota`. BLE still advertises `OpenSki-ski`; distinguish the units by the app's address label. This unit's MAC is `d4:05:92:40:20:f0`.
 
 First USB flash passed esptool hash verification. Wi-Fi/OTA/API came up at 192.168.43.28 (DHCP may change). The API confirmed recorder storage ready, a 1,441,792-byte partition and 57,662-sample capacity. No MPU-6050 was detected on GPIO8/9 at the time of verification, so IMU sampling and BLE sensor delivery remain unverified until wiring is confirmed.
+
+## Rest-driven gyro bias (experimental)
+
+`GET /api/v1/motion` also reports `gyro_bias_radps` (three values, rad/s, sensor frame), `bias_updates` and `bias_refused`. Expect `[0.00000,0.00000,0.00000]` and zero counts at boot; with the board lying still, `bias_updates` should rise about once every 2 s and the three values drift slowly (at most 0.002 rad/s each per second, clamped to 0.15 rad/s). `bias_refused` counts still windows that were refused as not at rest: the window mean was too fast, or any single sample in the window reached 0.12 rad/s.

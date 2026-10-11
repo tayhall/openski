@@ -6,7 +6,7 @@ The conversation's main table contains 15 ideas. Before this work, 3 were partia
 
 | Idea | Status | Current implementation / remaining work |
 |---|---|---|
-| Turn detection | Partial | Gyro candidates plus calibrated dry-lean detection, guided sets, timing and labelled evaluation; real ski turns need validation. |
+| Turn detection | Partial | Gyro candidates, heading-rate candidates (experimental), plus calibrated dry-lean detection, guided sets, timing and labelled evaluation; real ski turns need validation. |
 | Carve detection | Not implemented | No carved/skidded/mixed classifier. |
 | Edge angle | Partial | Neutral/functional boot calibration, live and replayed roll/pitch/relative yaw; snow-relative ski edge angles remain unvalidated. |
 | Symmetry | Partial | Directional mean duration/peak ratios, normalised profiles and cross-boot angle/timing comparisons; no validated technique score. |

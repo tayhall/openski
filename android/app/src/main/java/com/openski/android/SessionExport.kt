@@ -38,7 +38,9 @@ object SessionExport {
                 .put("expected_samples", c.expected).put("dropped_samples", c.dropped).put("error", c.error)) } })
             .put("quality", JSONArray().apply { analysis.quality.forEach { q -> put(JSONObject().put("side", q.side)
                 .put("live_samples", q.liveSamples).put("flash_samples", q.flashSamples)
-                .put("estimated_coverage", q.coverage).put("gaps_over_100ms", q.gaps).put("longest_gap_ms", q.longestGapMs)) } })
+                .put("estimated_coverage", q.coverage).put("gaps_over_100ms", q.gaps).put("longest_gap_ms", q.longestGapMs)
+                .put("rail_samples", q.railSamples).put("rail_percent", q.railPercent)
+                .put("dropped_before_samples", q.droppedBefore)) } })
         val orientation=calibrations.flatMap { BootOrientation.estimate(analysis.timeline.corrected(correction),it) }
         ZipOutputStream(output).use { zip ->
             fun entry(name: String, body: (java.io.Writer) -> Unit) {
@@ -59,12 +61,8 @@ object SessionExport {
                 entry("coach-verdicts.csv") { w -> w.write(RunCsv.verdicts(run.verdicts, session.startedAtMs)) }
             }
             entry("samples.csv") { w ->
-                w.write("side,source,capture_id,record_index,session_elapsed_ms,aligned_time_ms,received_at_ms,sensor_time_ms,sensor_time_us,sequence,ax_mps2,ay_mps2,az_mps2,gx_radps,gy_radps,gz_radps\n")
-                analysis.raw.forEach { p -> val s = p.sample
-                    w.write(listOf(p.side,p.source,p.captureId ?: "",p.recordIndex ?: "",p.timeMs-session.startedAtMs,p.timeMs,
-                        p.receivedAtMs ?: "",s.timestampMs,p.sensorTimeUs ?: "",if (s.sequence < 0) "" else s.sequence,
-                        s.accelX,s.accelY,s.accelZ,s.gyroX,s.gyroY,s.gyroZ).joinToString(",") + "\n")
-                }
+                w.write(SampleCsv.HEADER)
+                analysis.raw.forEach { p -> w.write(SampleCsv.row(p,session.startedAtMs)) }
             }
             entry("events.csv") { w ->
                 w.write("time_ms,message\n")
@@ -84,13 +82,22 @@ object SessionExport {
                 w.write("side,time_ms,battery_percent,battery_observed_at_ms,rssi_dbm,rssi_observed_at_ms\n")
                 data.health.forEach { h -> w.write("${h.side},${h.timeMs},${h.battery ?: ""},${h.batteryAtMs ?: ""},${h.rssi ?: ""},${h.rssiAtMs ?: ""}\n") }
             }
-            val detections=listOf("L","R").associateWith { side -> DrySkiAnalysis.detectTrials(orientation.filter { it.side==side },data.markers) }
+            val rollBySide=orientation.groupBy { it.side }
+            val detections=listOf("L","R").associateWith { side -> DrySkiAnalysis.detectTrials(rollBySide[side].orEmpty(),data.markers) }
             fun positiveLeft(side: String)=settings.optJSONObject(side)?.optBoolean("positive_left",true) ?: true
             entry("detected-movements.csv") { w ->
                 w.write("side,direction,positive_roll,start_ms,end_ms,edged_duration_ms,peak_estimated_boot_roll_deg,detector\n")
                 detections.forEach { (side,detection)->detection.movements.forEach { m ->
                     val direction=if(m.positive==positiveLeft(side)) "LEFT" else "RIGHT"
                     w.write("$side,$direction,${m.positive},${m.startMs},${m.endMs},${m.endMs-m.startMs},${m.peakRoll},experimental_dry_roll\n")
+                } }
+            }
+            val headingTurns=listOf("L","R").associateWith { side -> HeadingTurnAnalysis.detect(rollBySide[side].orEmpty()) }
+            entry("heading-turns.csv") { w ->
+                w.write("side,direction,positive_heading_rate,start_ms,end_ms,duration_ms,peak_heading_rate_dps,heading_change_deg,detector\n")
+                headingTurns.forEach { (side,turns)->turns.forEach { t ->
+                    val direction=HeadingDirection.label(t.positive)
+                    w.write("$side,$direction,${t.positive},${t.startMs},${t.endMs},${t.endMs-t.startMs},${t.peakRateDps},${t.changeDegrees},experimental_heading_rate\n")
                 } }
             }
             val summary=JSONObject().put("data_origin",session.origin)
@@ -106,14 +113,24 @@ object SessionExport {
                     .put("unmatched_detections_in_label_window",evaluation.detections-evaluation.matched)
                     .put("mean_absolute_onset_error_ms",evaluation.meanAbsoluteErrorMs ?: JSONObject.NULL)
                     .put("mean_signed_onset_error_ms",evaluation.meanSignedErrorMs ?: JSONObject.NULL))
+                val heading=HeadingTurnAnalysis.summarise(headingTurns.getValue(side))
+                summary.getJSONObject(side).put("heading_turns",JSONObject().put("count",heading.count)
+                    .put("median_duration_ms",heading.medianDurationMs ?: JSONObject.NULL)
+                    .put("cadence_per_minute",heading.cadencePerMinute ?: JSONObject.NULL))
             }
-            val comparison=BootComparison.analyse(orientation.filter { it.side=="L" },orientation.filter { it.side=="R" },
+            summary.put("heading_detector","Experimental heading-rate turn candidates (rotation about the current vertical), not turn classification. " +
+                "The detector was benchmarked on calf-phone data at 10 Hz; transfer to boot-mounted sensors is unproven. Direction: positive heading rate (counter-clockwise from above) = LEFT, independent of per-boot roll settings.")
+            val comparison=BootComparison.analyse(rollBySide["L"].orEmpty(),rollBySide["R"].orEmpty(),
                 detections.getValue("L"),detections.getValue("R"),positiveLeft("L"),positiveLeft("R"))
             summary.put("boot_comparison",JSONObject().put("angle_pairs",comparison.anglePairs)
                 .put("mean_roll_difference_deg",comparison.meanRollDifferenceDeg ?: JSONObject.NULL)
                 .put("correlation",comparison.correlation ?: JSONObject.NULL).put("movement_pairs",comparison.movementPairs)
                 .put("median_right_minus_left_onset_ms",comparison.medianOnsetLagMs ?: JSONObject.NULL)
                 .put("median_right_minus_left_return_ms",comparison.medianReturnLagMs ?: JSONObject.NULL))
+            summary.put("quality",JSONArray().apply { analysis.quality.forEach { q -> put(JSONObject().put("side",q.side)
+                .put("rail_samples",q.railSamples).put("rail_percent",q.railPercent)
+                .put("rail_note",RAIL_NOTE)
+                .put("dropped_before_samples",q.droppedBefore)) } })
             entry("analysis-summary.json") { it.write(summary.toString(2)) }
         }
     }

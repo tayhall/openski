@@ -1,0 +1,31 @@
+{
+  "recording_id": "replace-with-recording-id",
+  "skier_id": "replace-with-pseudonymous-skier-id",
+  "source": {
+    "source_id": "replace-with-source-id",
+    "url": null,
+    "title": "Replace with recording title",
+    "attribution": null,
+    "published_at": null,
+    "accessed_at": "2026-10-08",
+    "evidence_kind": "video_observation",
+    "permission": {
+      "status": "unknown",
+      "evidence": null,
+      "processing_allowed": null,
+      "derivative_retention_allowed": null,
+      "training_allowed": null
+    }
+  },
+  "context": {
+    "technique": "unknown",
+    "task": null,
+    "camera_view": "unknown",
+    "camera_calibrated": false,
+    "terrain": null,
+    "speed_m_s": null,
+    "label_basis": null
+  },
+  "timing": {"playback_speed": null, "original_timing_confirmed": false},
+  "review": {"single_skier": false, "continuous_shot": false, "image_upright": false}
+}

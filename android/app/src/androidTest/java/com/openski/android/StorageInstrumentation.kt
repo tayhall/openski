@@ -79,6 +79,60 @@ class StorageInstrumentation : Instrumentation() {
                     check(store.getSession("before-runs")!!.let { it.startedAtMs==100000L && it.kind=="session" })
                 }
             } finally { context.deleteDatabase(runMigration) }
+            // Version 9: signal quality. Legacy flash bytes are never masked; a capture marked format 3 loads with flags.
+            val qualityMigration="openski-migration-8-${UUID.randomUUID()}.db"
+            try {
+                val qualityPath=context.getDatabasePath(qualityMigration)
+                qualityPath.parentFile!!.mkdirs()
+                SQLiteDatabase.openOrCreateDatabase(qualityPath,null).use { db ->
+                    db.execSQL("CREATE TABLE sessions(id TEXT PRIMARY KEY,started_at_ms INTEGER NOT NULL,ended_at_ms INTEGER,video_uri TEXT,video_name TEXT)")
+                    db.execSQL("CREATE TABLE samples(id INTEGER PRIMARY KEY AUTOINCREMENT,session_id TEXT NOT NULL,side TEXT NOT NULL,received_at_ms INTEGER NOT NULL,sensor_time_ms INTEGER NOT NULL,sequence INTEGER NOT NULL,ax REAL NOT NULL,ay REAL NOT NULL,az REAL NOT NULL,gx REAL NOT NULL,gy REAL NOT NULL,gz REAL NOT NULL)")
+                    db.version=1
+                }
+                LocalSessionStore(context,qualityMigration).use { it.readableDatabase }
+                // Rebuild captures and samples without the version-9 columns so the next open is a genuine 8 -> 9 upgrade.
+                SQLiteDatabase.openOrCreateDatabase(qualityPath,null).use { db ->
+                    db.execSQL("CREATE TABLE captures_v8 AS SELECT id,session_id,side,address,started_at_ms,state,expected,dropped,error FROM captures")
+                    db.execSQL("DROP TABLE captures")
+                    db.execSQL("ALTER TABLE captures_v8 RENAME TO captures")
+                    db.execSQL("CREATE TABLE samples_v8 AS SELECT id,session_id,side,received_at_ms,sensor_time_ms,sequence,ax,ay,az,gx,gy,gz FROM samples")
+                    db.execSQL("DROP TABLE samples")
+                    db.execSQL("ALTER TABLE samples_v8 RENAME TO samples")
+                    db.execSQL("INSERT INTO sessions(id,started_at_ms,ended_at_ms) VALUES('q8',100000,160000)")
+                    db.execSQL("INSERT INTO samples(session_id,side,received_at_ms,sensor_time_ms,sequence,ax,ay,az,gx,gy,gz) VALUES('q8','L',100000,10,1,0,0,9.81,0,0,0)")
+                    db.execSQL("INSERT INTO captures VALUES('legacy','q8','L','AA:01',100000,'verified',1,0,'')")
+                    val legacy=java.nio.ByteBuffer.allocate(16).order(java.nio.ByteOrder.LITTLE_ENDIAN).putInt(0x0000_0105).array()
+                    db.execSQL("INSERT INTO flash_samples VALUES('legacy',0,?)",arrayOf<Any>(legacy))
+                    db.version=8
+                }
+                LocalSessionStore(context,qualityMigration).use { store ->
+                    store.readableDatabase.rawQuery("PRAGMA table_info(captures)",null).use { c ->
+                        var found=false
+                        while(c.moveToNext()) if(c.getString(1)=="record_format") { found=true; check(c.getString(4)=="2" && c.getInt(3)==1) }
+                        check(found) { "captures.record_format missing" }
+                    }
+                    store.readableDatabase.rawQuery("PRAGMA table_info(samples)",null).use { c ->
+                        var found=false
+                        while(c.moveToNext()) if(c.getString(1)=="quality") { found=true; check(c.getString(4)=="0" && c.getInt(3)==1) }
+                        check(found) { "samples.quality missing" }
+                    }
+                    val old=store.loadData("q8")!!
+                    check(old.live.single().sample.quality==0)
+                    check(old.captures.single().recordFormat==2)
+                    old.flash.single().record.let { check(it.timestampUs==0x105L && it.sample.quality==0) { "Legacy record was masked" } }
+                    store.saveSamples("q8",listOf(RecordedSample("R",100500,SensorSample(2,20,0f,0f,9.81f,0f,0f,0f,9))))
+                    check(store.loadData("q8")!!.live.last().sample.quality==9) { "Live quality not stored" }
+                    // A failed validation must keep the old format; a successful one commits the staged format with the data.
+                    store.beginDownload("legacy")
+                    store.saveDownload("legacy",FlashChunk(0,listOf(FlashRecord.decode(java.nio.ByteBuffer.allocate(16).order(java.nio.ByteOrder.LITTLE_ENDIAN).putInt(0x0000_0105).array())!!),withFlags=true))
+                    check(!store.validateDownload("legacy",2,0,3)) { "Validated incomplete flagged copy" }
+                    check(store.loadData("q8")!!.captures.single().recordFormat==2) { "Failed validation changed record format" }
+                    check(store.validateDownload("legacy",1,0,3))
+                    val flagged=store.loadData("q8")!!
+                    check(flagged.captures.single().recordFormat==3)
+                    flagged.flash.single().record.let { check(it.timestampUs==0x100L && it.sample.quality==17) { "Flagged record not decoded" } }
+                }
+            } finally { context.deleteDatabase(qualityMigration) }
             val path=context.getDatabasePath(name)
             path.parentFile!!.mkdirs()
             SQLiteDatabase.openOrCreateDatabase(path,null).use { db ->
@@ -108,13 +162,14 @@ class StorageInstrumentation : Instrumentation() {
                 val records=(0..2).map { FlashRecord.decode(java.nio.ByteBuffer.allocate(16).order(java.nio.ByteOrder.LITTLE_ENDIAN).putInt(it*10000).array())!! }
                 store.beginDownload(capture.id)
                 store.saveDownload(capture.id,FlashChunk(0,records.take(2)))
-                check(!store.validateDownload(capture.id,3,0)) { "Validated incomplete copy" }
+                check(!store.validateDownload(capture.id,3,0,3)) { "Validated incomplete copy" }
                 store.saveDownload(capture.id,FlashChunk(2,records.takeLast(1)))
-                check(store.validateDownload(capture.id,3,1))
+                check(store.validateDownload(capture.id,3,1,2))
                 check(store.loadData("old")!!.flash.size==3)
                 store.beginDownload(capture.id)
                 store.saveDownload(capture.id,FlashChunk(0,records.take(1)))
-                check(!store.validateDownload(capture.id,3,0))
+                check(!store.validateDownload(capture.id,3,0,3))
+                check(store.captures("old").single().recordFormat==2) { "Failed replacement changed record format" }
                 check(store.loadData("old")!!.flash.size==3) { "Failed replacement destroyed verified copy" }
                 store.event("old","Test, \"quoted\" event")
                 val output=ByteArrayOutputStream()
@@ -185,6 +240,7 @@ class StorageInstrumentation : Instrumentation() {
                 check(store.deleteSession(demoId))
             }
             context.deleteDatabase(name)
+            DrillMountingRegression.run(this)
             finish(Activity.RESULT_OK,Bundle().apply { putString("stream","PASS: v1–v6 migration, demo creation, saved review settings, calibration, test labels, health, session edits, staged recovery validation, retained copy, ZIP export and protected deletion\n") })
         } catch(error: Throwable) {
             targetContext.deleteDatabase(name)

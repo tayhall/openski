@@ -1,0 +1,75 @@
+{
+  "schema_version": "0.1.0",
+  "review_date": "2026-10-08",
+  "method": "human_selected_pixel_markers_not_mediapipe_or_anatomical_landmarks",
+  "coordinate_system": "Screenshot pixels; x right, y down; no camera/slope calibration.",
+  "point_offsets": "Each marker independently perturbed by -radius, 0, +radius on both axes; this is sensitivity analysis, not an accuracy or confidence interval.",
+  "media_retention": "Temporary public-player viewing images deleted after inspection; only original annotations retained.",
+  "review_limits": "Four paused frames from two sources visually inspected. A third-source playback attempt failed and yielded no measurements. Source speed unverified; no physical duration inferred.",
+  "samples": [
+    {
+      "sample_id": "PV01",
+      "source_id": "V05",
+      "source_url": "https://www.youtube.com/watch?v=S4M9AVh4YPU&t=8s",
+      "player_locator_s": 8.322631,
+      "image_size_px": [421, 748],
+      "context": "Exaggerated in-rigger carving drill, close frontal-oblique moving camera; not normal-turn reference.",
+      "radius_px": 12,
+      "markers_px": {
+        "shoulder_midpoint_proxy": [254, 345],
+        "pelvis_midpoint_proxy": [230, 395],
+        "extended_leg_proximal_proxy": [215, 400],
+        "extended_leg_knee_proxy": [155, 447],
+        "extended_leg_boot_proxy": [100, 482],
+        "bent_leg_proximal_proxy": [234, 399],
+        "bent_leg_knee_proxy": [270, 410],
+        "bent_leg_boot_proxy": [241, 470]
+      },
+      "metrics": [
+        {"metric_id": "torso_axis_image_deg", "formula": "inclination", "markers": ["pelvis_midpoint_proxy", "shoulder_midpoint_proxy"]},
+        {"metric_id": "extended_leg_axis_image_deg", "formula": "inclination", "markers": ["extended_leg_boot_proxy", "extended_leg_proximal_proxy"]},
+        {"metric_id": "extended_knee_bend_proxy_image_deg", "formula": "bend", "markers": ["extended_leg_proximal_proxy", "extended_leg_knee_proxy", "extended_leg_boot_proxy"]},
+        {"metric_id": "bent_knee_bend_proxy_image_deg", "formula": "bend", "markers": ["bent_leg_proximal_proxy", "bent_leg_knee_proxy", "bent_leg_boot_proxy"]}
+      ],
+      "limitations": ["Hip region obscured by clothing; proximal markers inferred.", "Boot marker is not a visible anatomical ankle centre.", "Wide-angle lens, foreshortening and camera roll are uncorrected.", "Large sensitivity to marker placement, particularly on the bent leg.", "Adjacent inspected frame at 9.136082 s was not annotated and is not an independent example."]
+    },
+    {
+      "sample_id": "PV02",
+      "source_id": "V08",
+      "source_url": "https://www.youtube.com/watch?v=M8BnlV-Pdcw&t=9s",
+      "player_locator_s": 9.722085,
+      "image_size_px": [1065, 599],
+      "context": "Basic parallel assessment candidate, frontal-oblique panning view; source rating is task-specific.",
+      "radius_px": 8,
+      "markers_px": {
+        "shoulder_midpoint_proxy": [486, 271],
+        "pelvis_midpoint_proxy": [502, 320],
+        "boot_midpoint_proxy": [546, 378]
+      },
+      "metrics": [
+        {"metric_id": "torso_axis_image_deg", "formula": "inclination", "markers": ["pelvis_midpoint_proxy", "shoulder_midpoint_proxy"]},
+        {"metric_id": "pelvis_to_boots_axis_image_deg", "formula": "inclination", "markers": ["boot_midpoint_proxy", "pelvis_midpoint_proxy"]}
+      ],
+      "limitations": ["Small skier and loose clothing limit marker placement.", "Pelvis-to-boots axis combines two legs; not a measured lower-leg or ski-edge angle.", "Image vertical is not gravity or snow normal."]
+    },
+    {
+      "sample_id": "PV03",
+      "source_id": "V08",
+      "source_url": "https://www.youtube.com/watch?v=M8BnlV-Pdcw&t=10s",
+      "player_locator_s": 10.551830,
+      "image_size_px": [1065, 599],
+      "context": "A later position of the same basic-parallel candidate; not an independent skier or turn population.",
+      "radius_px": 8,
+      "markers_px": {
+        "shoulder_midpoint_proxy": [654, 245],
+        "pelvis_midpoint_proxy": [662, 292],
+        "boot_midpoint_proxy": [692, 361]
+      },
+      "metrics": [
+        {"metric_id": "torso_axis_image_deg", "formula": "inclination", "markers": ["pelvis_midpoint_proxy", "shoulder_midpoint_proxy"]},
+        {"metric_id": "pelvis_to_boots_axis_image_deg", "formula": "inclination", "markers": ["boot_midpoint_proxy", "pelvis_midpoint_proxy"]}
+      ],
+      "limitations": ["Same camera and skier as PV02; observations are dependent.", "Projection changes during panning and skier rotation.", "No physical movement duration calculated from the player timestamps."]
+    }
+  ]
+}

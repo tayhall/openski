@@ -7,6 +7,8 @@
 #include <esp_timer.h>
 
 namespace openski::motion {
+static_assert(SkiTracker::kRailQualityMask == imu::kRailQualityMask,
+              "SkiTracker rail mask must match imu::SampleQuality");
 namespace {
 Status result;
 uint32_t lastTimestamp = 0;
@@ -17,6 +19,7 @@ bool referenceReady = false;
 Event history[16]{};
 GestureTracker gestures;
 TiltTracker tilt;
+RestBias rest;
 SkiTracker ski{Mounting{{config::kMountUpAxis, config::kMountUpSign},
                         {config::kMountForwardAxis, config::kMountForwardSign},
                         {config::kMountLateralAxis, config::kMountLateralSign}}};
@@ -37,10 +40,13 @@ void tick() {
   const imu::Vec3 g{sample.gyroRadps.x-cal::kGyroBiasRadps[0],
                     sample.gyroRadps.y-cal::kGyroBiasRadps[1],
                     sample.gyroRadps.z-cal::kGyroBiasRadps[2]};
-  gestures.update(sample.timestampUs, g.x, g.y, g.z);
-  tilt.update(sample.timestampUs, a.x, a.y, a.z, g.x, g.y, g.z);
-  ski.update(sample.timestampUs, a.x, a.y, a.z, g.x, g.y, g.z);
-  const float speed = sqrtf(g.x*g.x + g.y*g.y + g.z*g.z);
+  // The rest estimator sees the statically corrected gyro, never its own output (no feedback loop).
+  rest.update(sample.timestampUs, a.x, a.y, a.z, g.x, g.y, g.z);
+  const imu::Vec3 gc{g.x-rest.bias(0), g.y-rest.bias(1), g.z-rest.bias(2)};
+  gestures.update(sample.timestampUs, gc.x, gc.y, gc.z);
+  tilt.update(sample.timestampUs, a.x, a.y, a.z, gc.x, gc.y, gc.z);
+  ski.update(sample.timestampUs, a.x, a.y, a.z, gc.x, gc.y, gc.z, sample.qualityFlags);
+  const float speed = sqrtf(gc.x*gc.x + gc.y*gc.y + gc.z*gc.z);
   const float magnitude = sqrtf(a.x*a.x + a.y*a.y + a.z*a.z);
   if (!referenceReady) { restReference = a; referenceReady = true; }
   const float dx = a.x-restReference.x, dy = a.y-restReference.y, dz = a.z-restReference.z;
@@ -52,7 +58,7 @@ void tick() {
   restReference.z += 0.05f*dz;
   result.angularSpeedRadps = speed;
   result.accelerationMagnitudeMps2 = magnitude;
-  const float axes[] = {g.x, g.y, g.z};
+  const float axes[] = {gc.x, gc.y, gc.z};
   int dominant = 0;
   for (int i = 1; i < 3; ++i) if (fabsf(axes[i]) > fabsf(axes[dominant])) dominant = i;
   float otherSquared = 0;
@@ -119,11 +125,18 @@ SkiStatus skiStatus() {
   snapshot.count = ski.count();
   snapshot.rejected = ski.rejected();
   snapshot.gaps = ski.gaps();
+  snapshot.headingCount = ski.headingCount();
+  snapshot.headingRejected = ski.headingRejected();
   return snapshot;
 }
 uint8_t recentSkiEvents(SkiEvent* output, uint8_t capacity) { return ski.recent(output, capacity); }
+uint32_t headingCount() { return ski.headingCount(); }
+uint8_t recentHeadingTurns(HeadingTurn* output, uint8_t capacity) { return ski.recentHeading(output, capacity); }
 SkiHeartbeat takeSkiHeartbeat() { return ski.takeHeartbeat(); }
 bool takeSkiGapSeen() { return ski.takeGapSeen(); }
+void gyroBias(float out[3]) { for (int i = 0; i < 3; ++i) out[i] = rest.bias(i); }
+uint32_t biasUpdates() { return rest.updates(); }
+uint32_t biasRefused() { return rest.refused(); }
 void zeroMotion() { tilt.zero(); ski.zero(); }
 
 Status status() {

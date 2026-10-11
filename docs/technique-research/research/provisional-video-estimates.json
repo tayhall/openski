@@ -1,0 +1,251 @@
+{
+  "schema_version": "0.1.0",
+  "dataset_kind": "provisional_manual_image_estimates_not_technique_norms",
+  "annotations_document": "manual-angle-annotations.json",
+  "source_registry": "source-catalogue.csv",
+  "anatomical_joint_angles_measured": false,
+  "true_edge_angles_measured": false,
+  "physical_turn_durations_measured": false,
+  "estimates": [
+    {
+      "estimate_id": "PV01-torso_axis_image_deg",
+      "sample_id": "PV01",
+      "source_id": "V05",
+      "source_url": "https://www.youtube.com/watch?v=S4M9AVh4YPU&t=8s",
+      "player_locator_s": 8.322631,
+      "metric_id": "torso_axis_image_deg",
+      "unit": "deg",
+      "estimate_rounded_5_deg": 25,
+      "marker_sensitivity_grid_rounded_outward_5_deg": [
+        0,
+        65
+      ],
+      "sensitivity_is_total_error_bound": false,
+      "confidence_probability": null,
+      "evidence_basis": "manual_2d_marker_estimate",
+      "angle_reference": "image_vertical",
+      "context": "Exaggerated in-rigger carving drill, close frontal-oblique moving camera; not normal-turn reference.",
+      "limitations": [
+        "Hip region obscured by clothing; proximal markers inferred.",
+        "Boot marker is not a visible anatomical ankle centre.",
+        "Wide-angle lens, foreshortening and camera roll are uncorrected.",
+        "Large sensitivity to marker placement, particularly on the bent leg.",
+        "Adjacent inspected frame at 9.136082 s was not annotated and is not an independent example.",
+        "Marker sensitivity excludes projection/model error; not a statistical interval."
+      ],
+      "permitted_use": "research_visual_proxy_only",
+      "validated_for_openski": false,
+      "coaching_threshold": false,
+      "boot_imu_transfer": "not_directly_measurable"
+    },
+    {
+      "estimate_id": "PV01-extended_leg_axis_image_deg",
+      "sample_id": "PV01",
+      "source_id": "V05",
+      "source_url": "https://www.youtube.com/watch?v=S4M9AVh4YPU&t=8s",
+      "player_locator_s": 8.322631,
+      "metric_id": "extended_leg_axis_image_deg",
+      "unit": "deg",
+      "estimate_rounded_5_deg": 55,
+      "marker_sensitivity_grid_rounded_outward_5_deg": [
+        40,
+        70
+      ],
+      "sensitivity_is_total_error_bound": false,
+      "confidence_probability": null,
+      "evidence_basis": "manual_2d_marker_estimate",
+      "angle_reference": "image_vertical",
+      "context": "Exaggerated in-rigger carving drill, close frontal-oblique moving camera; not normal-turn reference.",
+      "limitations": [
+        "Hip region obscured by clothing; proximal markers inferred.",
+        "Boot marker is not a visible anatomical ankle centre.",
+        "Wide-angle lens, foreshortening and camera roll are uncorrected.",
+        "Large sensitivity to marker placement, particularly on the bent leg.",
+        "Adjacent inspected frame at 9.136082 s was not annotated and is not an independent example.",
+        "Marker sensitivity excludes projection/model error; not a statistical interval."
+      ],
+      "permitted_use": "research_visual_proxy_only",
+      "validated_for_openski": false,
+      "coaching_threshold": false,
+      "boot_imu_transfer": "not_directly_measurable"
+    },
+    {
+      "estimate_id": "PV01-extended_knee_bend_proxy_image_deg",
+      "sample_id": "PV01",
+      "source_id": "V05",
+      "source_url": "https://www.youtube.com/watch?v=S4M9AVh4YPU&t=8s",
+      "player_locator_s": 8.322631,
+      "metric_id": "extended_knee_bend_proxy_image_deg",
+      "unit": "deg",
+      "estimate_rounded_5_deg": 5,
+      "marker_sensitivity_grid_rounded_outward_5_deg": [
+        0,
+        60
+      ],
+      "sensitivity_is_total_error_bound": false,
+      "confidence_probability": null,
+      "evidence_basis": "manual_2d_marker_estimate",
+      "angle_reference": "180_minus_proxy_included_angle",
+      "context": "Exaggerated in-rigger carving drill, close frontal-oblique moving camera; not normal-turn reference.",
+      "limitations": [
+        "Hip region obscured by clothing; proximal markers inferred.",
+        "Boot marker is not a visible anatomical ankle centre.",
+        "Wide-angle lens, foreshortening and camera roll are uncorrected.",
+        "Large sensitivity to marker placement, particularly on the bent leg.",
+        "Adjacent inspected frame at 9.136082 s was not annotated and is not an independent example.",
+        "Marker sensitivity excludes projection/model error; not a statistical interval."
+      ],
+      "permitted_use": "research_visual_proxy_only",
+      "validated_for_openski": false,
+      "coaching_threshold": false,
+      "boot_imu_transfer": "not_directly_measurable"
+    },
+    {
+      "estimate_id": "PV01-bent_knee_bend_proxy_image_deg",
+      "sample_id": "PV01",
+      "source_id": "V05",
+      "source_url": "https://www.youtube.com/watch?v=S4M9AVh4YPU&t=8s",
+      "player_locator_s": 8.322631,
+      "metric_id": "bent_knee_bend_proxy_image_deg",
+      "unit": "deg",
+      "estimate_rounded_5_deg": 100,
+      "marker_sensitivity_grid_rounded_outward_5_deg": [
+        20,
+        165
+      ],
+      "sensitivity_is_total_error_bound": false,
+      "confidence_probability": null,
+      "evidence_basis": "manual_2d_marker_estimate",
+      "angle_reference": "180_minus_proxy_included_angle",
+      "context": "Exaggerated in-rigger carving drill, close frontal-oblique moving camera; not normal-turn reference.",
+      "limitations": [
+        "Hip region obscured by clothing; proximal markers inferred.",
+        "Boot marker is not a visible anatomical ankle centre.",
+        "Wide-angle lens, foreshortening and camera roll are uncorrected.",
+        "Large sensitivity to marker placement, particularly on the bent leg.",
+        "Adjacent inspected frame at 9.136082 s was not annotated and is not an independent example.",
+        "Marker sensitivity excludes projection/model error; not a statistical interval."
+      ],
+      "permitted_use": "research_visual_proxy_only",
+      "validated_for_openski": false,
+      "coaching_threshold": false,
+      "boot_imu_transfer": "not_directly_measurable"
+    },
+    {
+      "estimate_id": "PV02-torso_axis_image_deg",
+      "sample_id": "PV02",
+      "source_id": "V08",
+      "source_url": "https://www.youtube.com/watch?v=M8BnlV-Pdcw&t=9s",
+      "player_locator_s": 9.722085,
+      "metric_id": "torso_axis_image_deg",
+      "unit": "deg",
+      "estimate_rounded_5_deg": -20,
+      "marker_sensitivity_grid_rounded_outward_5_deg": [
+        -45,
+        0
+      ],
+      "sensitivity_is_total_error_bound": false,
+      "confidence_probability": null,
+      "evidence_basis": "manual_2d_marker_estimate",
+      "angle_reference": "image_vertical",
+      "context": "Basic parallel assessment candidate, frontal-oblique panning view; source rating is task-specific.",
+      "limitations": [
+        "Small skier and loose clothing limit marker placement.",
+        "Pelvis-to-boots axis combines two legs; not a measured lower-leg or ski-edge angle.",
+        "Image vertical is not gravity or snow normal.",
+        "Marker sensitivity excludes projection/model error; not a statistical interval."
+      ],
+      "permitted_use": "research_visual_proxy_only",
+      "validated_for_openski": false,
+      "coaching_threshold": false,
+      "boot_imu_transfer": "not_directly_measurable"
+    },
+    {
+      "estimate_id": "PV02-pelvis_to_boots_axis_image_deg",
+      "sample_id": "PV02",
+      "source_id": "V08",
+      "source_url": "https://www.youtube.com/watch?v=M8BnlV-Pdcw&t=9s",
+      "player_locator_s": 9.722085,
+      "metric_id": "pelvis_to_boots_axis_image_deg",
+      "unit": "deg",
+      "estimate_rounded_5_deg": -35,
+      "marker_sensitivity_grid_rounded_outward_5_deg": [
+        -60,
+        -20
+      ],
+      "sensitivity_is_total_error_bound": false,
+      "confidence_probability": null,
+      "evidence_basis": "manual_2d_marker_estimate",
+      "angle_reference": "image_vertical",
+      "context": "Basic parallel assessment candidate, frontal-oblique panning view; source rating is task-specific.",
+      "limitations": [
+        "Small skier and loose clothing limit marker placement.",
+        "Pelvis-to-boots axis combines two legs; not a measured lower-leg or ski-edge angle.",
+        "Image vertical is not gravity or snow normal.",
+        "Marker sensitivity excludes projection/model error; not a statistical interval."
+      ],
+      "permitted_use": "research_visual_proxy_only",
+      "validated_for_openski": false,
+      "coaching_threshold": false,
+      "boot_imu_transfer": "not_directly_measurable"
+    },
+    {
+      "estimate_id": "PV03-torso_axis_image_deg",
+      "sample_id": "PV03",
+      "source_id": "V08",
+      "source_url": "https://www.youtube.com/watch?v=M8BnlV-Pdcw&t=10s",
+      "player_locator_s": 10.55183,
+      "metric_id": "torso_axis_image_deg",
+      "unit": "deg",
+      "estimate_rounded_5_deg": -10,
+      "marker_sensitivity_grid_rounded_outward_5_deg": [
+        -40,
+        15
+      ],
+      "sensitivity_is_total_error_bound": false,
+      "confidence_probability": null,
+      "evidence_basis": "manual_2d_marker_estimate",
+      "angle_reference": "image_vertical",
+      "context": "A later position of the same basic-parallel candidate; not an independent skier or turn population.",
+      "limitations": [
+        "Same camera and skier as PV02; observations are dependent.",
+        "Projection changes during panning and skier rotation.",
+        "No physical movement duration calculated from the player timestamps.",
+        "Marker sensitivity excludes projection/model error; not a statistical interval."
+      ],
+      "permitted_use": "research_visual_proxy_only",
+      "validated_for_openski": false,
+      "coaching_threshold": false,
+      "boot_imu_transfer": "not_directly_measurable"
+    },
+    {
+      "estimate_id": "PV03-pelvis_to_boots_axis_image_deg",
+      "sample_id": "PV03",
+      "source_id": "V08",
+      "source_url": "https://www.youtube.com/watch?v=M8BnlV-Pdcw&t=10s",
+      "player_locator_s": 10.55183,
+      "metric_id": "pelvis_to_boots_axis_image_deg",
+      "unit": "deg",
+      "estimate_rounded_5_deg": -25,
+      "marker_sensitivity_grid_rounded_outward_5_deg": [
+        -45,
+        -5
+      ],
+      "sensitivity_is_total_error_bound": false,
+      "confidence_probability": null,
+      "evidence_basis": "manual_2d_marker_estimate",
+      "angle_reference": "image_vertical",
+      "context": "A later position of the same basic-parallel candidate; not an independent skier or turn population.",
+      "limitations": [
+        "Same camera and skier as PV02; observations are dependent.",
+        "Projection changes during panning and skier rotation.",
+        "No physical movement duration calculated from the player timestamps.",
+        "Marker sensitivity excludes projection/model error; not a statistical interval."
+      ],
+      "permitted_use": "research_visual_proxy_only",
+      "validated_for_openski": false,
+      "coaching_threshold": false,
+      "boot_imu_transfer": "not_directly_measurable"
+    }
+  ]
+}

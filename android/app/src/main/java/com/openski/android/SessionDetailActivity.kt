@@ -147,7 +147,9 @@ class SessionDetailActivity : Activity() {
         page.addView(button("Edit name, notes and alignment") { edit(loaded) })
         page=card(detailsPage)
         page.addView(text("Recording quality",18f))
-        result.quality.forEach { q -> page.addView(text("${if(q.side=="L") "Left" else "Right"}: ${q.liveSamples} live · ${q.flashSamples} validated flash samples\nEstimated coverage ${number(q.coverage*100)}% · ${q.gaps} gaps over 0.1s · longest ${number(q.longestGapMs/1000)}s\nSensor-reported dropped samples: ${q.dropped}")) }
+        result.quality.forEach { q -> page.addView(text("${if(q.side=="L") "Left" else "Right"}: ${q.liveSamples} live · ${q.flashSamples} validated flash samples\nEstimated coverage ${number(q.coverage*100)}% · ${q.gaps} gaps over 0.1s · longest ${number(q.longestGapMs/1000)}s\nSensor-reported dropped samples: ${q.dropped}" +
+                (if(q.droppedBefore>0) " · ${q.droppedBefore} flash records follow a drop" else "") +
+                (if(q.railSamples>0) "\nNear full scale on ${number(q.railPercent)}% of samples ($RAIL_NOTE)" else ""))) }
         loaded.captures.forEach { c -> page.addView(text("${c.side} backup: ${c.state} · ${c.expected} records" + if(c.error.isBlank()) "" else "\n${c.error}")) }
         page.addView(text(result.alignment))
         if (loaded.events.isNotEmpty()) page.addView(button("Recording events (${loaded.events.size})") {
@@ -253,10 +255,12 @@ class SessionDetailActivity : Activity() {
         fun candidates() {
             val found=SessionAnalysis.candidates(result.timeline,reviewSide,axis)
             val timing=SessionAnalysis.timing(result.timeline,reviewSide,axis)
-            val dry=DrySkiAnalysis.detectTrials(bootRoll.filter { it.side==reviewSide },loaded.markers)
+            val reviewRoll=bootRoll.filter { it.side==reviewSide }
+            val dry=DrySkiAnalysis.detectTrials(reviewRoll,loaded.markers)
             reviewedMovements=dry.movements
+            val headingSummary=HeadingTurnAnalysis.summarise(HeadingTurnAnalysis.detect(reviewRoll))
             val profileIntervals=if(session.testSession) dry.movements.map { CandidateInterval(it.startMs,it.endMs,it.positive) } else timing.intervals
-            val profiles=BootOrientation.profiles(bootRoll.filter { it.side==reviewSide },profileIntervals)
+            val profiles=BootOrientation.profiles(reviewRoll,profileIntervals)
             val ranges=DrySkiAnalysis.trialRanges(loaded.markers,(session.endedAtMs ?: System.currentTimeMillis()).toDouble())
             val trialLabels=loaded.markers.filter { m -> ranges.any { (start,end)->m.timeMs>=start && m.timeMs<end } }
             val evaluation=DrySkiAnalysis.evaluate(trialLabels,dry,reviewSide,positiveLeft)
@@ -272,6 +276,7 @@ class SessionDetailActivity : Activity() {
                 "${comparison.movementPairs} paired lean movements · median right-minus-left onset lag ${comparison.medianOnsetLagMs?.let { "${number(it)} ms" } ?: "—"}\n" +
                 "Median right-minus-left neutral return lag ${comparison.medianReturnLagMs?.let { "${number(it)} ms" } ?: "—"}"
             dryLabel.text="${dry.movements.size} completed lean movements · ${dry.transitions.size} returns through neutral\n" +
+                "Heading-rate candidates (experimental): ${headingSummary.count} turns, median ${headingSummary.medianDurationMs?.let { String.format(Locale.US,"%.1f",it/1000) } ?: "—"} s; roll-lobe candidates: ${dry.movements.size}\n" +
                 "Entry ≥8° · neutral ≤3° · minimum 0.3s · thresholds are test settings\n" +
                 (balance?.let { b ->
                     val left=if(positiveLeft) b.positiveDurationMs else b.negativeDurationMs

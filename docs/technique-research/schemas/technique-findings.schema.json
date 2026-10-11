@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OpenSki qualitative technique findings",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "dataset_kind", "source_registry", "findings"],
+  "properties": {
+    "schema_version": {"const": "0.1.0"},
+    "dataset_kind": {"const": "qualitative_findings_not_reference_measurements"},
+    "source_registry": {"type": "string"},
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["finding_id", "source_id", "source_url", "review_date", "topic", "context", "source_segment", "evidence_basis", "visual_observation", "coaching_guidance", "research_interpretation", "movement_sequence", "sensor_connection", "quality", "numerical_measurements"],
+        "properties": {
+          "finding_id": {"type": "string", "minLength": 1},
+          "source_id": {"type": "string", "minLength": 1},
+          "source_url": {"type": "string", "format": "uri"},
+          "review_date": {"type": "string", "format": "date"},
+          "topic": {"type": "string", "minLength": 1},
+          "context": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+          "source_segment": {
+            "type": "object", "additionalProperties": false,
+            "required": ["start_s", "end_s", "locator_precision", "source_capture_speed_verified"],
+            "properties": {
+              "start_s": {"type": ["number", "null"], "minimum": 0},
+              "end_s": {"type": ["number", "null"], "minimum": 0},
+              "locator_precision": {"enum": ["approximate_player_location", "description_only"]},
+              "source_capture_speed_verified": {"const": false}
+            }
+          },
+          "evidence_basis": {
+            "type": "array", "minItems": 1, "uniqueItems": true,
+            "items": {"enum": ["playback_frames", "sampled_previews", "creator_description", "visible_written_annotation", "automatic_on_screen_captions"]}
+          },
+          "visual_observation": {"type": ["string", "null"]},
+          "coaching_guidance": {"type": ["string", "null"]},
+          "research_interpretation": {"type": "string"},
+          "movement_sequence": {
+            "type": "array",
+            "items": {
+              "type": "object", "additionalProperties": false,
+              "required": ["earlier", "relation", "later", "basis"],
+              "properties": {
+                "earlier": {"type": "string"},
+                "relation": {"enum": ["before", "overlaps", "alternates_with", "order_unresolved"]},
+                "later": {"type": "string"},
+                "basis": {"enum": ["visually_observed", "coaching_guidance", "hypothesis"]}
+              }
+            }
+          },
+          "sensor_connection": {
+            "type": "object", "additionalProperties": false,
+            "required": ["status", "single_boot", "dual_boot", "pressure_insoles", "validation_needed"],
+            "properties": {
+              "status": {"enum": ["candidate_proxy", "not_directly_measurable", "methodological_constraint"]},
+              "single_boot": {"type": "string"},
+              "dual_boot": {"type": "string"},
+              "pressure_insoles": {"type": "string"},
+              "validation_needed": {"type": "array", "minItems": 1, "items": {"type": "string"}}
+            }
+          },
+          "quality": {
+            "type": "object", "additionalProperties": false,
+            "required": ["review_scope", "camera_view", "confidence_probability", "limitations", "validated_for_openski", "spoken_audio_reviewed"],
+            "properties": {
+              "review_scope": {"enum": ["selected_playback", "selected_previews", "description_only"]},
+              "camera_view": {"type": "string"},
+              "confidence_probability": {"type": "null"},
+              "limitations": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+              "validated_for_openski": {"const": false},
+              "spoken_audio_reviewed": {"const": false}
+            }
+          },
+          "numerical_measurements": {"const": []}
+        }
+      }
+    }
+  }
+}

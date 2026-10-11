@@ -21,6 +21,7 @@ class SensorSessionService : Service() {
         fun onMovementEvent(side: String, event: MovementEvent) {}
         fun onSkiEvent(side: String, event: SkiEvent) {}
         fun onSkiState(side: String, state: SkiState) {}
+        fun onHeadingTurn(side: String, turn: HeadingTurnFrame) {}
     }
     inner class LocalBinder : Binder() { val service: SensorSessionService get() = this@SensorSessionService }
     private val binder = LocalBinder()
@@ -397,6 +398,7 @@ class SensorSessionService : Service() {
                 zeroTracker.frame(side, state.zeroed, System.currentTimeMillis())
                 listener?.onSkiState(side, SkierFrame.of(side, state))
             },
+            onHeadingTurn = { turn -> listener?.onHeadingTurn(side, turn) },
             onDisconnected = {
                 latestOrientation.remove(side)
                 listener?.onBootOrientation(side,null)
@@ -454,7 +456,7 @@ class SensorSessionService : Service() {
             // All chunk writes have already been queued on this same executor.
             io.execute {
                 try {
-                    val verified = store.validateDownload(transfer.capture.id, status.samples, status.dropped)
+                    val verified = store.validateDownload(transfer.capture.id, status.samples, status.dropped, transfer.validator.recordFormat)
                     mainHandler.post {
                         if (destroyed || generations[side] != transfer.generation || transfers[side] !== transfer) return@post
                         transfers.remove(side)
@@ -607,7 +609,10 @@ class SensorSessionService : Service() {
         }
         armTransferTimeout(side)
         io.execute {
-            try { store.saveDownload(transfer.capture.id, chunk) }
+            try {
+                // The record format travels with the transfer and is committed by validateDownload.
+                store.saveDownload(transfer.capture.id, chunk)
+            }
             catch (error: Exception) { mainHandler.post { if (!destroyed) storageError(error) } }
         }
         if (transfer.validator.next % 500 < chunk.records.size || transfer.validator.next == transfer.validator.expected) {

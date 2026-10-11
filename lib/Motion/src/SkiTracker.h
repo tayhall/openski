@@ -1,6 +1,7 @@
 #pragma once
 #include <cmath>
 #include <cstdint>
+#include "HeadingTracker.h"
 
 namespace openski::motion {
 // A sensor axis (0=x, 1=y, 2=z) and the sign that makes it point the stated way on the leg.
@@ -30,10 +31,13 @@ class SkiTracker {
  public:
   static constexpr float kGravity = 9.80665f;
   static constexpr float kDegrees = 57.2957795f;
+  // Accelerometer and gyro near-rail bits of the sample quality byte (imu::kRailQualityMask).
+  static constexpr uint8_t kRailQualityMask = 0x03;
 
   explicit SkiTracker(Mounting mounting) : map_(mounting) {}
 
-  void update(uint32_t t, float ax, float ay, float az, float gx, float gy, float gz) {
+  void update(uint32_t t, float ax, float ay, float az, float gx, float gy, float gz,
+              uint8_t quality = 0) {
     const float mag = std::sqrt(ax*ax + ay*ay + az*az);
     const float rate = std::sqrt(gx*gx + gy*gy + gz*gz);
     meter(mag, rate, t);
@@ -41,6 +45,7 @@ class SkiTracker {
     // Hold the state through them rather than integrate garbage.
     if (mag > kImpactG*kGravity || mag < kFreeFallG*kGravity || rate > kMaxRateRadps) {
       skipped_ = true;
+      heading_.skip();
       return;
     }
     const float a[3] = {ax/mag, ay/mag, az/mag};
@@ -50,6 +55,7 @@ class SkiTracker {
     lastTime_ = t;
     if (delta > kGapUs) {  // sample loss: the gyro bridge is no longer trustworthy
       ++gaps_; gapSeen_ = true;
+      heading_.breakSegment();
       abandon();
       seed(t, a);
       return;
@@ -69,6 +75,11 @@ class SkiTracker {
     }
     normalise(next);
     for (int i = 0; i < 3; ++i) up_[i] = next[i];
+    // Heading rate is the gyro component along world-up; positive is right-handed rotation about
+    // world-up. It needs no neutral pose, so it runs before zero().
+    uint8_t headingFlags = 0;
+    if (quality & kRailQualityMask) headingFlags |= HeadingTracker::kNearRail;
+    heading_.update(t, gx*up_[0] + gy*up_[1] + gz*up_[2], headingFlags);
     if (!neutralReady_) { trackNeutral(t, rate, error); return; }
     measure(dt);
     runSegment(t);
@@ -95,6 +106,10 @@ class SkiTracker {
     for (uint8_t i = 0; i < copied; ++i) output[i] = history_[(count_ - copied + i) % 16];
     return copied;
   }
+  // Experimental heading turns (rotation about world-up); independent of zero().
+  uint32_t headingCount() const { return heading_.count(); }
+  uint32_t headingRejected() const { return heading_.rejected(); }
+  uint8_t recentHeading(HeadingTurn* output, uint8_t capacity) const { return heading_.recent(output, capacity); }
   // RMS vibration and gyro activity since the last call.
   SkiHeartbeat takeHeartbeat() {
     SkiHeartbeat beat;
@@ -230,5 +245,6 @@ class SkiTracker {
   float meanMag_ = kGravity, vibrationSum_ = 0, gyroSum_ = 0;
   uint32_t meterCount_ = 0;
   SkiEvent history_[16]{};
+  HeadingTracker heading_;
 };
 }  // namespace openski::motion

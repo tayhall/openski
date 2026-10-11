@@ -18,6 +18,8 @@ Each boot sensor keeps one 100 Hz session of about 10 minutes in its flash files
 
 ## Layout
 
+The [technique research integration note](docs/technique-research-integration.md) links the imported 2026-10-08 research snapshot and its sensor logging priorities. Its five candidate metrics are experimental; the evidence does not establish ideal-angle thresholds, performance scores or technique diagnoses.
+
 - `src/`: firmware entry point and services for diagnostics, Wi-Fi, OTA, IMU, BLE, HTTP telemetry, and flash session recording.
 - `include/`: shared interfaces and local configuration template.
 - `lib/`: IMU interface/monitor plus separate chip drivers. Replace the MPU-6050 driver with an LSM6DSOX driver without changing consumers of normalized samples.

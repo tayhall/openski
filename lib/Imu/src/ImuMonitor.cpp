@@ -19,6 +19,22 @@ void ImuMonitor::poll() {
   Sample sample{};
   switch (sensor_->read(sample)) {
     case ReadResult::kSample:
+      if (hasSample()) {
+        // Unsigned subtraction preserves intervals across one micros() wrap.
+        const uint32_t interval = sample.timestampUs - latest_.timestampUs;
+        stats_.lastIntervalUs = interval;
+        if (interval > stats_.maxIntervalUs) stats_.maxIntervalUs = interval;
+        if (sample.timestampUs < latest_.timestampUs) {
+          ++stats_.timestampWraps;
+          sample.qualityFlags |= kTimestampWrap;
+        }
+        if (interval > 20000U) {
+          ++stats_.timestampGaps;
+          sample.qualityFlags |= kTimestampGap;
+        }
+      }
+      if (sample.qualityFlags & kAccelNearRail) ++stats_.accelNearRailSamples;
+      if (sample.qualityFlags & kGyroNearRail) ++stats_.gyroNearRailSamples;
       latest_ = sample;
       ++stats_.samples;
       break;

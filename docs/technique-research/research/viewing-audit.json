@@ -1,0 +1,1861 @@
+{
+  "schema_version": "0.1.0",
+  "review_date": "2026-10-08",
+  "scope": "V07-V30; V01-V06 audit is in earlier viewing notes",
+  "timestamps_are": "player_capture_locators_not_physical_skiing_measurements",
+  "media_retention": "temporary_images_removed_after_inspection",
+  "unavailable_candidate": {
+    "video_id": "jr3lePzscAo",
+    "reason": "No usable player videoDetails obtained; excluded from reviewed count."
+  },
+  "reviews": [
+    {
+      "source_id": "V07",
+      "video_id": "Tmlx2mtBIWU",
+      "preview_sampling": "up_to_25_evenly_spaced_player_previews",
+      "preview_interval_s": 10.0,
+      "playback_excerpts": [
+        {
+          "requested_start_s": 810,
+          "status": "selected_playback_captured",
+          "capture_times_s": [
+            {
+              "before": 810.884997,
+              "after": 811.106336
+            },
+            {
+              "before": 811.768274,
+              "after": 811.982419
+            },
+            {
+              "before": 812.644494,
+              "after": 812.842799
+            },
+            {
+              "before": 813.501507,
+              "after": 813.73839
+            },
+            {
+              "before": 814.401503,
+              "after": 814.603823
+            },
+            {
+              "before": 815.268125,
+              "after": 815.484999
+            },
+            {
+              "before": 816.143282,
+              "after": 816.344813
+            },
+            {
+              "before": 817.006119,
+              "after": 817.234938
+            },
+            {
+              "before": 817.895468,
+              "after": 818.104779
+            },
+            {
+              "before": 818.771064,
+              "after": 818.972148
+            },
+            {
+              "before": 819.644345,
+              "after": 819.864734
+            },
+            {
+              "before": 820.537217,
+              "after": 820.767641
+            },
+            {
+              "before": 821.427772,
+              "after": 821.659096
+            },
+            {
+              "before": 822.334003,
+              "after": 822.579147
+            },
+            {
+              "before": 823.252707,
+              "after": 823.498794
+            }
+          ]
+        }
+      ],
+      "images_visually_inspected": true,
+      "spoken_audio_reviewed": false,
+      "source_speed_verified": false
+    },
+    {
+      "source_id": "V08",
+      "video_id": "M8BnlV-Pdcw",
+      "preview_sampling": "up_to_25_evenly_spaced_player_previews",
+      "preview_interval_s": 1.0,
+      "playback_excerpts": [
+        {
+          "requested_start_s": 6,
+          "status": "selected_playback_captured",
+          "capture_times_s": [
+            {
+              "before": 6.012084,
+              "after": 6.037836
+            },
+            {
+              "before": 6.33419,
+              "after": 6.567052
+            },
+            {
+              "before": 7.233291,
+              "after": 7.494186
+            },
+            {
+              "before": 8.153883,
+              "after": 8.411945
+            },
+            {
+              "before": 9.07772,
+              "after": 9.335167
+            },
+            {
+              "before": 9.997678,
+              "after": 10.235834
+            },
+            {
+              "before": 10.903422,
+              "after": 11.143522
+            },
+            {
+              "before": 11.805943,
+              "after": 12.067283
+            },
+            {
+              "before": 12.734323,
+              "after": 12.999549
+            },
+            {
+              "before": 13.659273,
+              "after": 13.908139
+            },
+            {
+              "before": 14.573319,
+              "after": 14.842382
+            },
+            {
+              "before": 15.509612,
+              "after": 15.777822
+            },
+            {
+              "before": 16.445644,
+              "after": 16.68495
+            },
+            {
+              "before": 17.35161,
+              "after": 17.581153
+            },
+            {
+              "before": 18.241786,
+              "after": 18.501042
+            }
+          ]
+        }
+      ],
+      "images_visually_inspected": true,
+      "spoken_audio_reviewed": false,
+      "source_speed_verified": false
+    },
+    {
+      "source_id": "V09",
+      "video_id": "X8A3yvxH6-s",
+      "preview_sampling": "up_to_25_evenly_spaced_player_previews",
+      "preview_interval_s": 1.0,
+      "playback_excerpts": [
+        {
+          "requested_start_s": 6,
+          "status": "selected_playback_captured",
+          "capture_times_s": [
+            {
+              "before": 6.842419,
+              "after": 7.123434
+            },
+            {
+              "before": 7.791409,
+              "after": 8.051864
+            },
+            {
+              "before": 8.72157,
+              "after": 8.989543
+            },
+            {
+              "before": 9.647978,
+              "after": 9.888763
+            },
+            {
+              "before": 10.549541,
+              "after": 10.787692
+            },
+            {
+              "before": 11.454991,
+              "after": 11.69675
+            },
+            {
+              "before": 12.367531,
+              "after": 12.621723
+            },
+            {
+              "before": 13.282438,
+              "after": 13.54388
+            },
+            {
+              "before": 14.206068,
+              "after": 14.444569
+            },
+            {
+              "before": 15.111645,
+              "after": 15.355823
+            },
+            {
+              "before": 16.012584,
+              "after": 16.272875
+            },
+            {
+              "before": 16.936681,
+              "after": 17.207926
+            },
+            {
+              "before": 17.873121,
+              "after": 18.154952
+            },
+            {
+              "before": 18.826162,
+              "after": 19.09307
+            },
+            {
+              "before": 19.750594,
+              "after": 19.922294
+            }
+          ]
+        }
+      ],
+      "images_visually_inspected": true,
+      "spoken_audio_reviewed": false,
+      "source_speed_verified": false
+    },
+    {
+      "source_id": "V10",
+      "video_id": "QI6coO9t5QU",
+      "preview_sampling": "up_to_25_evenly_spaced_player_previews",
+      "preview_interval_s": 1.0,
+      "playback_excerpts": [
+        {
+          "requested_start_s": 6,
+          "status": "selected_playback_captured",
+          "capture_times_s": [
+            {
+              "before": 6.861568,
+              "after": 7.103778
+            },
+            {
+              "before": 7.766445,
+              "after": 8.030791
+            },
+            {
+              "before": 8.70099,
+              "after": 8.974637
+            },
+            {
+              "before": 9.63371,
+              "after": 9.868199
+            },
+            {
+              "before": 10.532944,
+              "after": 10.75115
+            },
+            {
+              "before": 11.4148,
+              "after": 11.658887
+            },
+            {
+              "before": 12.316634,
+              "after": 12.535317
+            },
+            {
+              "before": 13.194077,
+              "after": 13.430547
+            },
+            {
+              "before": 14.089123,
+              "after": 14.334175
+            },
+            {
+              "before": 14.992604,
+              "after": 15.240763
+            },
+            {
+              "before": 15.901999,
+              "after": 16.159769
+            },
+            {
+              "before": 16.822543,
+              "after": 17.061312
+            },
+            {
+              "before": 17.721037,
+              "after": 17.961584
+            },
+            {
+              "before": 18.625852,
+              "after": 18.869004
+            },
+            {
+              "before": 19.535589,
+              "after": 19.723598
+            }
+          ]
+        }
+      ],
+      "images_visually_inspected": true,
+      "spoken_audio_reviewed": false,
+      "source_speed_verified": false
+    },
+    {
+      "source_id": "V11",
+      "video_id": "WTX21DO7Qsc",
+      "preview_sampling": "up_to_25_evenly_spaced_player_previews",
+      "preview_interval_s": 5.0,
+      "playback_excerpts": [
+        {
+          "requested_start_s": 13,
+          "status": "selected_playback_captured",
+          "capture_times_s": [
+            {
+              "before": 13.885155,
+              "after": 14.120074
+            },
+            {
+              "before": 14.786256,
+              "after": 15.014749
+            },
+            {
+              "before": 15.678151,
+              "after": 15.893857
+            },
+            {
+              "before": 16.567989,
+              "after": 16.805424
+            },
+            {
+              "before": 17.470474,
+              "after": 17.657607
+            },
+            {
+              "before": 18.325512,
+              "after": 18.552466
+            },
+            {
+              "before": 19.210338,
+              "after": 19.460462
+            },
+            {
+              "before": 20.124452,
+              "after": 20.323911
+            },
+            {
+              "before": 20.987633,
+              "after": 21.162047
+            },
+            {
+              "before": 21.832102,
+              "after": 22.051688
+            },
+            {
+              "before": 22.720209,
+              "after": 22.955618
+            },
+            {
+              "before": 23.624245,
+              "after": 23.868123
+            },
+            {
+              "before": 24.529111,
+              "after": 24.786538
+            },
+            {
+              "before": 25.453995,
+              "after": 25.679309
+            },
+            {
+              "before": 26.345607,
+              "after": 26.599292
+            }
+          ]
+        }
+      ],
+      "images_visually_inspected": true,
+      "spoken_audio_reviewed": false,
+      "source_speed_verified": false
+    },
+    {
+      "source_id": "V12",
+      "video_id": "NzyaqhzvrI4",
+      "preview_sampling": "up_to_25_evenly_spaced_player_previews",
+      "preview_interval_s": 10.0,
+      "playback_excerpts": [
+        {
+          "requested_start_s": 300,
+          "status": "selected_playback_captured",
+          "capture_times_s": [
+            {
+              "before": 300.833772,
+              "after": 301.203127
+            },
+            {
+              "before": 301.882568,
+              "after": 302.142913
+            },
+            {
+              "before": 302.810092,
+              "after": 303.069758
+            },
+            {
+              "before": 303.74478,
+              "after": 304.016565
+            },
+            {
+              "before": 304.682607,
+              "after": 304.966855
+            },
+            {
+              "before": 305.632532,
+              "after": 305.952
+            },
+            {
+              "before": 306.625816,
+              "after": 306.903825
+            },
+            {
+              "before": 307.571865,
+              "after": 307.82977
+            },
+            {
+              "before": 308.496665,
+              "after": 308.79064
+            },
+            {
+              "before": 309.453699,
+              "after": 309.703409
+            },
+            {
+              "before": 310.375381,
+              "after": 310.631902
+            },
+            {
+              "before": 311.295022,
+              "after": 311.553913
+            },
+            {
+              "before": 312.221307,
+              "after": 312.481464
+            },
+            {
+              "before": 313.140583,
+              "after": 313.39692
+            },
+            {
+              "before": 314.057232,
+              "after": 314.331426
+            }
+          ]
+        }
+      ],
+      "images_visually_inspected": true,
+      "spoken_audio_reviewed": false,
+      "source_speed_verified": false
+    },
+    {
+      "source_id": "V13",
+      "video_id": "CqW2AnC01kc",
+      "preview_sampling": "up_to_25_evenly_spaced_player_previews",
+      "preview_interval_s": 2.0,
+      "playback_excerpts": [
+        {
+          "requested_start_s": 110,
+          "status": "selected_playback_captured",
+          "capture_times_s": [
+            {
+              "before": 110.945269,
+              "after": 111.164853
+            },
+            {
+              "before": 111.834541,
+              "after": 112.016454
+            },
+            {
+              "before": 112.680175,
+              "after": 112.868063
+            },
+            {
+              "before": 113.533766,
+              "after": 113.698496
+            },
+            {
+              "before": 114.361518,
+              "after": 114.557937
+            },
+            {
+              "before": 115.225521,
+              "after": 115.417535
+            },
+            {
+              "before": 116.085267,
+              "after": 116.254396
+            },
+            {
+              "before": 116.926003,
+              "after": 117.109667
+            },
+            {
+              "before": 117.782436,
+              "after": 117.970554
+            },
+            {
+              "before": 118.642079,
+              "after": 118.813941
+            },
+            {
+              "before": 119.484061,
+              "after": 119.671916
+            },
+            {
+              "before": 120.342349,
+              "after": 120.488622
+            },
+            {
+              "before": 121.148366,
+              "after": 121.331267
+            },
+            {
+              "before": 121.998903,
+              "after": 122.184896
+            },
+            {
+              "before": 122.849988,
+              "after": 123.032916
+            }
+          ]
+        }
+      ],
+      "images_visually_inspected": true,
+      "spoken_audio_reviewed": false,
+      "source_speed_verified": false
+    },
+    {
+      "source_id": "V14",
+      "video_id": "i4s-jOSeAWU",
+      "preview_sampling": "up_to_25_evenly_spaced_player_previews",
+      "preview_interval_s": 2.0,
+      "playback_excerpts": [
+        {
+          "requested_start_s": 55,
+          "status": "selected_playback_captured",
+          "capture_times_s": [
+            {
+              "before": 55.990983,
+              "after": 56.273482
+            },
+            {
+              "before": 56.953013,
+              "after": 57.154639
+            },
+            {
+              "before": 57.82079,
+              "after": 58.034889
+            },
+            {
+              "before": 58.708884,
+              "after": 58.872595
+            },
+            {
+              "before": 59.535157,
+              "after": 59.725107
+            },
+            {
+              "before": 60.4,
+              "after": 60.592558
+            },
+            {
+              "before": 61.259779,
+              "after": 61.45234
+            },
+            {
+              "before": 62.1201,
+              "after": 62.336795
+            },
+            {
+              "before": 62.99801,
+              "after": 63.198215
+            },
+            {
+              "before": 63.872382,
+              "after": 64.089993
+            },
+            {
+              "before": 64.76392,
+              "after": 64.961577
+            },
+            {
+              "before": 65.622588,
+              "after": 65.829705
+            },
+            {
+              "before": 66.497549,
+              "after": 66.680701
+            },
+            {
+              "before": 67.355818,
+              "after": 67.554376
+            },
+            {
+              "before": 68.225546,
+              "after": 68.41065
+            }
+          ]
+        }
+      ],
+      "images_visually_inspected": true,
+      "spoken_audio_reviewed": false,
+      "source_speed_verified": false
+    },
+    {
+      "source_id": "V15",
+      "video_id": "PfJe653v24I",
+      "preview_sampling": "up_to_25_evenly_spaced_player_previews",
+      "preview_interval_s": 5.0,
+      "playback_excerpts": [
+        {
+          "requested_start_s": 179,
+          "status": "selected_playback_captured",
+          "capture_times_s": [
+            {
+              "before": 179.660771,
+              "after": 179.660771
+            },
+            {
+              "before": 179.756814,
+              "after": 180.084095
+            },
+            {
+              "before": 180.748066,
+              "after": 181.022702
+            },
+            {
+              "before": 181.697804,
+              "after": 181.93534
+            },
+            {
+              "before": 182.600045,
+              "after": 182.848147
+            },
+            {
+              "before": 183.522964,
+              "after": 183.795012
+            },
+            {
+              "before": 184.459274,
+              "after": 184.69518
+            },
+            {
+              "before": 185.357061,
+              "after": 185.607684
+            },
+            {
+              "before": 186.273197,
+              "after": 186.548136
+            },
+            {
+              "before": 187.214867,
+              "after": 187.445797
+            },
+            {
+              "before": 188.121219,
+              "after": 188.40724
+            },
+            {
+              "before": 189.079102,
+              "after": 189.484487
+            },
+            {
+              "before": 190.15915,
+              "after": 190.381528
+            },
+            {
+              "before": 191.045411,
+              "after": 191.258085
+            },
+            {
+              "before": 191.919802,
+              "after": 192.132476
+            }
+          ]
+        }
+      ],
+      "images_visually_inspected": true,
+      "spoken_audio_reviewed": false,
+      "source_speed_verified": false
+    },
+    {
+      "source_id": "V16",
+      "video_id": "RIMiiOy2LKA",
+      "preview_sampling": "up_to_25_evenly_spaced_player_previews",
+      "preview_interval_s": 5.0,
+      "playback_excerpts": [
+        {
+          "requested_start_s": 185,
+          "status": "selected_playback_captured",
+          "capture_times_s": [
+            {
+              "before": 185.969614,
+              "after": 186.186095
+            },
+            {
+              "before": 186.859502,
+              "after": 187.06721
+            },
+            {
+              "before": 187.730433,
+              "after": 187.94097
+            },
+            {
+              "before": 188.610198,
+              "after": 188.803986
+            },
+            {
+              "before": 189.470957,
+              "after": 189.668948
+            },
+            {
+              "before": 190.331855,
+              "after": 190.543108
+            },
+            {
+              "before": 191.209363,
+              "after": 191.409754
+            },
+            {
+              "before": 192.083874,
+              "after": 192.293891
+            },
+            {
+              "before": 192.958671,
+              "after": 193.153462
+            },
+            {
+              "before": 193.827842,
+              "after": 194.021485
+            },
+            {
+              "before": 194.687939,
+              "after": 194.941919
+            },
+            {
+              "before": 195.61235,
+              "after": 195.832856
+            },
+            {
+              "before": 196.497842,
+              "after": 196.704896
+            },
+            {
+              "before": 197.376951,
+              "after": 197.609759
+            },
+            {
+              "before": 198.281568,
+              "after": 198.495123
+            }
+          ]
+        }
+      ],
+      "images_visually_inspected": true,
+      "spoken_audio_reviewed": false,
+      "source_speed_verified": false
+    },
+    {
+      "source_id": "V17",
+      "video_id": "NWMVF0KQz2k",
+      "preview_sampling": "up_to_25_evenly_spaced_player_previews",
+      "preview_interval_s": 2.0,
+      "playback_excerpts": [
+        {
+          "requested_start_s": 48,
+          "status": "selected_playback_captured",
+          "capture_times_s": [
+            {
+              "before": 48.863019,
+              "after": 49.036771
+            },
+            {
+              "before": 49.699943,
+              "after": 49.884613
+            },
+            {
+              "before": 50.559474,
+              "after": 50.748167
+            },
+            {
+              "before": 51.410431,
+              "after": 51.59194
+            },
+            {
+              "before": 52.262847,
+              "after": 52.481573
+            },
+            {
+              "before": 53.144762,
+              "after": 53.350358
+            },
+            {
+              "before": 54.016131,
+              "after": 54.185214
+            },
+            {
+              "before": 54.855584,
+              "after": 55.025366
+            },
+            {
+              "before": 55.69704,
+              "after": 55.868185
+            },
+            {
+              "before": 56.541717,
+              "after": 56.710877
+            },
+            {
+              "before": 57.383789,
+              "after": 57.555633
+            },
+            {
+              "before": 58.228282,
+              "after": 58.397541
+            },
+            {
+              "before": 59.073231,
+              "after": 59.235649
+            },
+            {
+              "before": 59.89792,
+              "after": 60.087272
+            },
+            {
+              "before": 60.746122,
+              "after": 60.929479
+            }
+          ]
+        }
+      ],
+      "images_visually_inspected": true,
+      "spoken_audio_reviewed": false,
+      "source_speed_verified": false
+    },
+    {
+      "source_id": "V18",
+      "video_id": "tBU0VJ0vBrs",
+      "preview_sampling": "up_to_25_evenly_spaced_player_previews",
+      "preview_interval_s": 2.0,
+      "playback_excerpts": [
+        {
+          "requested_start_s": 40,
+          "status": "selected_playback_captured",
+          "capture_times_s": [
+            {
+              "before": 40.862336,
+              "after": 41.126112
+            },
+            {
+              "before": 41.793121,
+              "after": 42.04812
+            },
+            {
+              "before": 42.715661,
+              "after": 42.956592
+            },
+            {
+              "before": 43.618686,
+              "after": 43.87007
+            },
+            {
+              "before": 44.541031,
+              "after": 44.769066
+            },
+            {
+              "before": 45.430336,
+              "after": 45.677156
+            },
+            {
+              "before": 46.337449,
+              "after": 46.603889
+            },
+            {
+              "before": 47.267447,
+              "after": 47.508453
+            },
+            {
+              "before": 48.170924,
+              "after": 48.420327
+            },
+            {
+              "before": 49.079472,
+              "after": 49.313609
+            },
+            {
+              "before": 49.982489,
+              "after": 50.238658
+            },
+            {
+              "before": 50.89765,
+              "after": 51.169871
+            },
+            {
+              "before": 51.840775,
+              "after": 52.099179
+            },
+            {
+              "before": 52.769937,
+              "after": 53.033128
+            },
+            {
+              "before": 53.695012,
+              "after": 53.965145
+            }
+          ]
+        }
+      ],
+      "images_visually_inspected": true,
+      "spoken_audio_reviewed": false,
+      "source_speed_verified": false
+    },
+    {
+      "source_id": "V19",
+      "video_id": "nh0YYFXsiUw",
+      "preview_sampling": "up_to_25_evenly_spaced_player_previews",
+      "preview_interval_s": 5.0,
+      "playback_excerpts": [
+        {
+          "requested_start_s": 110,
+          "status": "selected_playback_captured",
+          "capture_times_s": [
+            {
+              "before": 110.90405,
+              "after": 111.191371
+            },
+            {
+              "before": 111.863813,
+              "after": 112.127561
+            },
+            {
+              "before": 112.801421,
+              "after": 113.047105
+            },
+            {
+              "before": 113.721913,
+              "after": 113.984941
+            },
+            {
+              "before": 114.652476,
+              "after": 114.92241
+            },
+            {
+              "before": 115.588715,
+              "after": 115.856577
+            },
+            {
+              "before": 116.526118,
+              "after": 116.780263
+            },
+            {
+              "before": 117.445139,
+              "after": 117.68746
+            },
+            {
+              "before": 118.352052,
+              "after": 118.612005
+            },
+            {
+              "before": 119.273538,
+              "after": 119.549633
+            },
+            {
+              "before": 120.210806,
+              "after": 120.490606
+            },
+            {
+              "before": 121.164777,
+              "after": 121.422388
+            },
+            {
+              "before": 122.086576,
+              "after": 122.341687
+            },
+            {
+              "before": 123.002879,
+              "after": 123.265826
+            },
+            {
+              "before": 123.926198,
+              "after": 124.156419
+            }
+          ]
+        }
+      ],
+      "images_visually_inspected": true,
+      "spoken_audio_reviewed": false,
+      "source_speed_verified": false
+    },
+    {
+      "source_id": "V20",
+      "video_id": "LrmCNarCzIY",
+      "preview_sampling": "up_to_25_evenly_spaced_player_previews",
+      "preview_interval_s": 5.0,
+      "playback_excerpts": [
+        {
+          "requested_start_s": 365,
+          "status": "selected_playback_captured",
+          "capture_times_s": [
+            {
+              "before": 365.865435,
+              "after": 366.064981
+            },
+            {
+              "before": 366.728558,
+              "after": 366.942004
+            },
+            {
+              "before": 367.609275,
+              "after": 367.861944
+            },
+            {
+              "before": 368.526304,
+              "after": 368.756444
+            },
+            {
+              "before": 369.429358,
+              "after": 369.648594
+            },
+            {
+              "before": 370.321882,
+              "after": 370.551572
+            },
+            {
+              "before": 371.213437,
+              "after": 371.425107
+            },
+            {
+              "before": 372.098466,
+              "after": 372.347565
+            },
+            {
+              "before": 373.021537,
+              "after": 373.249727
+            },
+            {
+              "before": 373.917072,
+              "after": 374.129117
+            },
+            {
+              "before": 374.794365,
+              "after": 375.003956
+            },
+            {
+              "before": 375.676837,
+              "after": 375.879409
+            },
+            {
+              "before": 376.543869,
+              "after": 376.755322
+            },
+            {
+              "before": 377.421836,
+              "after": 377.63113
+            },
+            {
+              "before": 378.290432,
+              "after": 378.499489
+            }
+          ]
+        }
+      ],
+      "images_visually_inspected": true,
+      "spoken_audio_reviewed": false,
+      "source_speed_verified": false
+    },
+    {
+      "source_id": "V21",
+      "video_id": "1u90Tke_5Bs",
+      "preview_sampling": "up_to_25_evenly_spaced_player_previews",
+      "preview_interval_s": 5.0,
+      "playback_excerpts": [
+        {
+          "requested_start_s": 470,
+          "status": "selected_playback_captured",
+          "capture_times_s": [
+            {
+              "before": 470.903718,
+              "after": 471.132189
+            },
+            {
+              "before": 471.801335,
+              "after": 472.034232
+            },
+            {
+              "before": 472.704412,
+              "after": 472.94548
+            },
+            {
+              "before": 473.610485,
+              "after": 473.839228
+            },
+            {
+              "before": 474.506493,
+              "after": 474.757575
+            },
+            {
+              "before": 475.419893,
+              "after": 475.659521
+            },
+            {
+              "before": 476.319033,
+              "after": 476.578418
+            },
+            {
+              "before": 477.242436,
+              "after": 477.494277
+            },
+            {
+              "before": 478.164624,
+              "after": 478.401992
+            },
+            {
+              "before": 479.069829,
+              "after": 479.322969
+            },
+            {
+              "before": 479.99243,
+              "after": 480.22762
+            },
+            {
+              "before": 480.8947,
+              "after": 481.126817
+            },
+            {
+              "before": 481.799436,
+              "after": 482.080987
+            },
+            {
+              "before": 482.744593,
+              "after": 482.961423
+            },
+            {
+              "before": 483.626987,
+              "after": 483.873622
+            }
+          ]
+        }
+      ],
+      "images_visually_inspected": true,
+      "spoken_audio_reviewed": false,
+      "source_speed_verified": false
+    },
+    {
+      "source_id": "V22",
+      "video_id": "OKCvnIV6pQU",
+      "preview_sampling": "up_to_25_evenly_spaced_player_previews",
+      "preview_interval_s": 2.0,
+      "playback_excerpts": [
+        {
+          "requested_start_s": 125,
+          "status": "selected_playback_captured",
+          "capture_times_s": [
+            {
+              "before": 125.531366,
+              "after": 125.786601
+            },
+            {
+              "before": 126.446566,
+              "after": 126.727871
+            },
+            {
+              "before": 127.390677,
+              "after": 127.661717
+            },
+            {
+              "before": 128.324757,
+              "after": 128.593782
+            },
+            {
+              "before": 129.26289,
+              "after": 129.511684
+            },
+            {
+              "before": 130.170265,
+              "after": 130.350751
+            },
+            {
+              "before": 131.017823,
+              "after": 131.203219
+            },
+            {
+              "before": 131.874052,
+              "after": 132.089887
+            },
+            {
+              "before": 132.747506,
+              "after": 132.978263
+            },
+            {
+              "before": 133.640031,
+              "after": 133.873328
+            },
+            {
+              "before": 134.544641,
+              "after": 134.790256
+            },
+            {
+              "before": 135.450246,
+              "after": 135.69591
+            },
+            {
+              "before": 136.355767,
+              "after": 136.599043
+            },
+            {
+              "before": 137.260076,
+              "after": 137.528586
+            },
+            {
+              "before": 138.201355,
+              "after": 138.50267
+            }
+          ]
+        }
+      ],
+      "images_visually_inspected": true,
+      "spoken_audio_reviewed": false,
+      "source_speed_verified": false
+    },
+    {
+      "source_id": "V23",
+      "video_id": "90NV7xg_vnc",
+      "preview_sampling": "up_to_25_evenly_spaced_player_previews",
+      "preview_interval_s": 2.0,
+      "playback_excerpts": [
+        {
+          "requested_start_s": 90,
+          "status": "selected_playback_captured",
+          "capture_times_s": [
+            {
+              "before": 90.536376,
+              "after": 90.536376
+            },
+            {
+              "before": 91.232812,
+              "after": 91.467289
+            },
+            {
+              "before": 92.139072,
+              "after": 92.357596
+            },
+            {
+              "before": 93.028666,
+              "after": 93.214792
+            },
+            {
+              "before": 93.875467,
+              "after": 94.124094
+            },
+            {
+              "before": 94.791805,
+              "after": 94.999183
+            },
+            {
+              "before": 95.66725,
+              "after": 95.870722
+            },
+            {
+              "before": 96.543595,
+              "after": 96.740393
+            },
+            {
+              "before": 97.405642,
+              "after": 97.574244
+            },
+            {
+              "before": 98.242285,
+              "after": 98.458326
+            },
+            {
+              "before": 99.127605,
+              "after": 99.329032
+            },
+            {
+              "before": 99.999713,
+              "after": 100.186047
+            },
+            {
+              "before": 100.855169,
+              "after": 101.054349
+            },
+            {
+              "before": 101.731116,
+              "after": 101.932835
+            },
+            {
+              "before": 102.601984,
+              "after": 102.812731
+            }
+          ]
+        }
+      ],
+      "images_visually_inspected": true,
+      "spoken_audio_reviewed": false,
+      "source_speed_verified": false
+    },
+    {
+      "source_id": "V24",
+      "video_id": "XIqjWsa20kw",
+      "preview_sampling": "up_to_25_evenly_spaced_player_previews",
+      "preview_interval_s": 2.0,
+      "playback_excerpts": [
+        {
+          "requested_start_s": 140,
+          "status": "selected_playback_captured",
+          "capture_times_s": [
+            {
+              "before": 142.563627,
+              "after": 142.824878
+            },
+            {
+              "before": 143.484708,
+              "after": 143.740314
+            },
+            {
+              "before": 144.405796,
+              "after": 144.674281
+            },
+            {
+              "before": 145.345444,
+              "after": 145.588337
+            },
+            {
+              "before": 146.250995,
+              "after": 146.514105
+            },
+            {
+              "before": 147.17219,
+              "after": 147.440954
+            },
+            {
+              "before": 148.109684,
+              "after": 148.361042
+            },
+            {
+              "before": 149.026341,
+              "after": 149.276986
+            },
+            {
+              "before": 149.933936,
+              "after": 150.18316
+            },
+            {
+              "before": 150.842964,
+              "after": 151.091051
+            },
+            {
+              "before": 151.754164,
+              "after": 152.001898
+            },
+            {
+              "before": 152.66054,
+              "after": 152.942931
+            },
+            {
+              "before": 153.611895,
+              "after": 153.858144
+            },
+            {
+              "before": 154.518254,
+              "after": 154.767849
+            },
+            {
+              "before": 155.437578,
+              "after": 155.670583
+            }
+          ]
+        }
+      ],
+      "images_visually_inspected": true,
+      "spoken_audio_reviewed": false,
+      "source_speed_verified": false
+    },
+    {
+      "source_id": "V25",
+      "video_id": "t36ufnNFSSM",
+      "preview_sampling": "up_to_25_evenly_spaced_player_previews",
+      "preview_interval_s": 1.0,
+      "playback_excerpts": [
+        {
+          "requested_start_s": 7,
+          "status": "selected_playback_captured",
+          "capture_times_s": [
+            {
+              "before": 7.793681,
+              "after": 8.048224
+            },
+            {
+              "before": 8.722406,
+              "after": 9.008431
+            },
+            {
+              "before": 9.682377,
+              "after": 9.949732
+            },
+            {
+              "before": 10.618336,
+              "after": 10.886564
+            },
+            {
+              "before": 11.554694,
+              "after": 11.824829
+            },
+            {
+              "before": 12.49352,
+              "after": 12.763406
+            },
+            {
+              "before": 13.427784,
+              "after": 13.703289
+            },
+            {
+              "before": 14.382651,
+              "after": 14.639796
+            },
+            {
+              "before": 15.319812,
+              "after": 15.603155
+            },
+            {
+              "before": 16.271119,
+              "after": 16.589988
+            },
+            {
+              "before": 17.269175,
+              "after": 17.58216
+            },
+            {
+              "before": 18.259222,
+              "after": 18.551179
+            },
+            {
+              "before": 19.232276,
+              "after": 19.515447
+            },
+            {
+              "before": 20.197405,
+              "after": 20.459292
+            },
+            {
+              "before": 21.137979,
+              "after": 21.4206
+            }
+          ]
+        }
+      ],
+      "images_visually_inspected": true,
+      "spoken_audio_reviewed": false,
+      "source_speed_verified": false
+    },
+    {
+      "source_id": "V26",
+      "video_id": "xwRRbIcY5mY",
+      "preview_sampling": "up_to_25_evenly_spaced_player_previews",
+      "preview_interval_s": 2.0,
+      "playback_excerpts": [
+        {
+          "requested_start_s": 155,
+          "status": "selected_playback_captured",
+          "capture_times_s": [
+            {
+              "before": 155.843777,
+              "after": 156.115573
+            },
+            {
+              "before": 156.781448,
+              "after": 157.057308
+            },
+            {
+              "before": 157.737027,
+              "after": 157.997777
+            },
+            {
+              "before": 158.665031,
+              "after": 158.927891
+            },
+            {
+              "before": 159.600429,
+              "after": 159.852957
+            },
+            {
+              "before": 160.522422,
+              "after": 160.741945
+            },
+            {
+              "before": 161.410859,
+              "after": 161.660817
+            },
+            {
+              "before": 162.321488,
+              "after": 162.554623
+            },
+            {
+              "before": 163.227643,
+              "after": 163.462285
+            },
+            {
+              "before": 164.138499,
+              "after": 164.399604
+            },
+            {
+              "before": 165.072712,
+              "after": 165.304227
+            },
+            {
+              "before": 165.964392,
+              "after": 166.194139
+            },
+            {
+              "before": 166.854541,
+              "after": 167.102011
+            },
+            {
+              "before": 167.776338,
+              "after": 168.003762
+            },
+            {
+              "before": 168.663851,
+              "after": 168.908693
+            }
+          ]
+        }
+      ],
+      "images_visually_inspected": true,
+      "spoken_audio_reviewed": false,
+      "source_speed_verified": false
+    },
+    {
+      "source_id": "V27",
+      "video_id": "8j-aD8F_T3s",
+      "preview_sampling": "up_to_25_evenly_spaced_player_previews",
+      "preview_interval_s": 5.0,
+      "playback_excerpts": [
+        {
+          "requested_start_s": 165,
+          "status": "selected_playback_captured",
+          "capture_times_s": [
+            {
+              "before": 165.924179,
+              "after": 166.149597
+            },
+            {
+              "before": 166.822817,
+              "after": 167.057312
+            },
+            {
+              "before": 167.726874,
+              "after": 167.96203
+            },
+            {
+              "before": 168.631957,
+              "after": 168.870804
+            },
+            {
+              "before": 169.536184,
+              "after": 169.772038
+            },
+            {
+              "before": 170.435692,
+              "after": 170.686721
+            },
+            {
+              "before": 171.356354,
+              "after": 171.595134
+            },
+            {
+              "before": 172.256874,
+              "after": 172.496809
+            },
+            {
+              "before": 173.17344,
+              "after": 173.401873
+            },
+            {
+              "before": 174.069137,
+              "after": 174.301862
+            },
+            {
+              "before": 174.973779,
+              "after": 175.203581
+            },
+            {
+              "before": 175.875501,
+              "after": 176.117657
+            },
+            {
+              "before": 176.785761,
+              "after": 177.03471
+            },
+            {
+              "before": 177.707496,
+              "after": 177.947046
+            },
+            {
+              "before": 178.611642,
+              "after": 178.883177
+            }
+          ]
+        }
+      ],
+      "images_visually_inspected": true,
+      "spoken_audio_reviewed": false,
+      "source_speed_verified": false
+    },
+    {
+      "source_id": "V28",
+      "video_id": "gbWvUannYnU",
+      "preview_sampling": "up_to_25_evenly_spaced_player_previews",
+      "preview_interval_s": 1.0,
+      "playback_excerpts": [
+        {
+          "requested_start_s": 28,
+          "status": "selected_playback_captured",
+          "capture_times_s": [
+            {
+              "before": 28.85267,
+              "after": 29.034735
+            },
+            {
+              "before": 29.702438,
+              "after": 29.883174
+            },
+            {
+              "before": 30.54766,
+              "after": 30.70858
+            },
+            {
+              "before": 31.374823,
+              "after": 31.554066
+            },
+            {
+              "before": 32.215528,
+              "after": 32.396539
+            },
+            {
+              "before": 33.063292,
+              "after": 33.243745
+            },
+            {
+              "before": 33.910727,
+              "after": 34.098265
+            },
+            {
+              "before": 34.770349,
+              "after": 34.966222
+            },
+            {
+              "before": 35.62605,
+              "after": 35.822698
+            },
+            {
+              "before": 36.485941,
+              "after": 36.664086
+            },
+            {
+              "before": 37.329879,
+              "after": 37.539743
+            },
+            {
+              "before": 38.197988,
+              "after": 38.381705
+            },
+            {
+              "before": 39.045923,
+              "after": 39.215088
+            },
+            {
+              "before": 39.886428,
+              "after": 40.05908
+            },
+            {
+              "before": 40.726691,
+              "after": 40.923223
+            }
+          ]
+        }
+      ],
+      "images_visually_inspected": true,
+      "spoken_audio_reviewed": false,
+      "source_speed_verified": false
+    },
+    {
+      "source_id": "V29",
+      "video_id": "S4hioJ4ThJA",
+      "preview_sampling": "up_to_25_evenly_spaced_player_previews",
+      "preview_interval_s": 2.0,
+      "playback_excerpts": [
+        {
+          "requested_start_s": 76,
+          "status": "selected_playback_captured",
+          "capture_times_s": [
+            {
+              "before": 76.58316,
+              "after": 76.856025
+            },
+            {
+              "before": 77.524585,
+              "after": 77.791517
+            },
+            {
+              "before": 78.459669,
+              "after": 78.729556
+            },
+            {
+              "before": 79.396245,
+              "after": 79.659588
+            },
+            {
+              "before": 80.332195,
+              "after": 80.593134
+            },
+            {
+              "before": 81.255915,
+              "after": 81.474907
+            },
+            {
+              "before": 82.141556,
+              "after": 82.385303
+            },
+            {
+              "before": 83.047083,
+              "after": 83.299863
+            },
+            {
+              "before": 83.957112,
+              "after": 84.248228
+            },
+            {
+              "before": 84.910381,
+              "after": 85.184637
+            },
+            {
+              "before": 85.845765,
+              "after": 86.101789
+            },
+            {
+              "before": 86.765974,
+              "after": 87.033791
+            },
+            {
+              "before": 87.702685,
+              "after": 87.972024
+            },
+            {
+              "before": 88.644215,
+              "after": 88.899248
+            },
+            {
+              "before": 89.563357,
+              "after": 89.803206
+            }
+          ]
+        }
+      ],
+      "images_visually_inspected": true,
+      "spoken_audio_reviewed": false,
+      "source_speed_verified": false
+    },
+    {
+      "source_id": "V30",
+      "video_id": "a9bcuEpg3yM",
+      "preview_sampling": "up_to_25_evenly_spaced_player_previews",
+      "preview_interval_s": 5.0,
+      "playback_excerpts": [
+        {
+          "requested_start_s": 210,
+          "status": "selected_playback_captured",
+          "capture_times_s": [
+            {
+              "before": 210.911257,
+              "after": 211.077302
+            },
+            {
+              "before": 211.739457,
+              "after": 211.922942
+            },
+            {
+              "before": 212.597566,
+              "after": 212.765713
+            },
+            {
+              "before": 213.430659,
+              "after": 213.60738
+            },
+            {
+              "before": 214.273943,
+              "after": 214.497129
+            },
+            {
+              "before": 215.161714,
+              "after": 215.371572
+            },
+            {
+              "before": 216.034174,
+              "after": 216.253188
+            },
+            {
+              "before": 216.92655,
+              "after": 217.145588
+            },
+            {
+              "before": 217.815378,
+              "after": 218.001066
+            },
+            {
+              "before": 218.67373,
+              "after": 218.878293
+            },
+            {
+              "before": 219.54902,
+              "after": 219.809503
+            },
+            {
+              "before": 220.469768,
+              "after": 220.641552
+            },
+            {
+              "before": 221.313284,
+              "after": 221.483133
+            },
+            {
+              "before": 222.156526,
+              "after": 222.38165
+            },
+            {
+              "before": 223.048987,
+              "after": 223.286963
+            }
+          ]
+        }
+      ],
+      "images_visually_inspected": true,
+      "spoken_audio_reviewed": false,
+      "source_speed_verified": false
+    }
+  ]
+}

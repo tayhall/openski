@@ -6,11 +6,15 @@
 // as the Android AccelCorrection. Gyro: corrected = raw - bias.
 namespace openski::calibration {
 #if defined(OPENSKI_CAL_S3_SUPERMINI)
+// The acquisition profile (Mpu6050Profile.h kId) these constants were measured under. They are applied
+// unchanged to every build that defines OPENSKI_CAL_S3_SUPERMINI, including the research profile.
+inline constexpr const char* kMeasuredAcquisitionProfile = "openski_mpu6050_legacy_v1";
 // Bench Tools six-face run and 60 s still capture, 7 October 2026 (docs/bench-results.md).
 inline constexpr float kAccelOffsetMps2[3] = {0.5074297f, -0.1688016f, -0.0054902f};
 inline constexpr float kAccelScale[3] = {0.9987761f, 1.0056490f, 1.0305399f};
 inline constexpr float kGyroBiasRadps[3] = {-0.033161f, 0.004014f, 0.006981f};  // -1.90, +0.23, +0.40 deg/s
 #else
+inline constexpr const char* kMeasuredAcquisitionProfile = "none";
 inline constexpr float kAccelOffsetMps2[3] = {0, 0, 0};
 inline constexpr float kAccelScale[3] = {1, 1, 1};
 inline constexpr float kGyroBiasRadps[3] = {0, 0, 0};

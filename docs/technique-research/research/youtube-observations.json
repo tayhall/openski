@@ -1,0 +1,831 @@
+{
+  "schema_version": "0.1.0",
+  "review_date": "2026-10-08",
+  "record_type": "qualitative_visual_study",
+  "notes_document": "youtube-viewing-notes.md",
+  "source_registry": "source-catalogue.csv",
+  "frame_retention": "temporary_viewing_only_removed_after_inspection",
+  "numerical_measurements_produced": false,
+  "observations": [
+    {
+      "id": "V01-review",
+      "source_id": "V01",
+      "access_method": [
+        "public_player_previews",
+        "normal_browser_playback"
+      ],
+      "played_excerpt_locator_s": [
+        395,
+        403
+      ],
+      "locator_is_physical_skiing_time": false,
+      "scope": "Selected excerpts only; not complete lesson viewing",
+      "evidence_layers": [
+        "visible_body_configuration",
+        "visible_coaching_annotations",
+        "creator_description"
+      ],
+      "spoken_audio_reviewed": false,
+      "timing_status": "holds_and_replays_observed_no_duration_claim",
+      "confidence_probability": null,
+      "processing_rights": "unknown",
+      "training_performed": false
+    },
+    {
+      "id": "V02-review",
+      "source_id": "V02",
+      "access_method": [
+        "public_player_previews",
+        "normal_browser_playback"
+      ],
+      "played_excerpt_locator_s": [
+        132,
+        141
+      ],
+      "locator_is_physical_skiing_time": false,
+      "scope": "Selected linked-turn excerpt and additional previews; not complete lesson viewing",
+      "evidence_layers": [
+        "visible_movement_sequence",
+        "creator_description"
+      ],
+      "spoken_audio_reviewed": false,
+      "timing_status": "qualitative_order_only_original_capture_speed_not_verified",
+      "confidence_probability": null,
+      "processing_rights": "unknown",
+      "training_performed": false
+    },
+    {
+      "id": "V03-review",
+      "source_id": "V03",
+      "access_method": [
+        "public_player_previews",
+        "creator_description"
+      ],
+      "played_excerpt_locator_s": null,
+      "locator_is_physical_skiing_time": false,
+      "scope": "Selected previews; normal-playback target not successfully verified",
+      "evidence_layers": [
+        "visible_task_labels_and_configurations",
+        "creator_description"
+      ],
+      "spoken_audio_reviewed": false,
+      "timing_status": "preview_spacing_too_coarse_for_events",
+      "confidence_probability": null,
+      "processing_rights": "unknown",
+      "training_performed": false
+    },
+    {
+      "id": "V04-review",
+      "source_id": "V04",
+      "access_method": [
+        "public_player_previews",
+        "normal_browser_playback"
+      ],
+      "played_excerpt_locator_s": [
+        236,
+        247
+      ],
+      "locator_is_physical_skiing_time": false,
+      "scope": "Selected excerpts, not complete lesson viewing",
+      "evidence_layers": [
+        "visible_movement_sequence",
+        "visible_written_annotations"
+      ],
+      "spoken_audio_reviewed": false,
+      "timing_status": "qualitative_order_only_capture_speed_unverified",
+      "confidence_probability": null,
+      "processing_rights": "unknown",
+      "training_performed": false,
+      "finding_ids": [
+        "F004",
+        "F005"
+      ]
+    },
+    {
+      "id": "V05-review",
+      "source_id": "V05",
+      "access_method": [
+        "public_player_previews",
+        "normal_browser_playback"
+      ],
+      "played_excerpt_locator_s": [
+        0,
+        11
+      ],
+      "locator_is_physical_skiing_time": false,
+      "scope": "Selected excerpts, not complete lesson viewing",
+      "evidence_layers": [
+        "visible_movement_sequence",
+        "visible_written_annotations"
+      ],
+      "spoken_audio_reviewed": false,
+      "timing_status": "qualitative_order_only_capture_speed_unverified",
+      "confidence_probability": null,
+      "processing_rights": "unknown",
+      "training_performed": false,
+      "finding_ids": [
+        "F006",
+        "F007"
+      ]
+    },
+    {
+      "id": "V06-review",
+      "source_id": "V06",
+      "access_method": [
+        "public_player_previews",
+        "normal_browser_playback"
+      ],
+      "played_excerpt_locator_s": [
+        370,
+        381
+      ],
+      "locator_is_physical_skiing_time": false,
+      "scope": "Selected excerpts, not complete lesson viewing",
+      "evidence_layers": [
+        "visible_movement_sequence"
+      ],
+      "spoken_audio_reviewed": false,
+      "timing_status": "qualitative_order_only_capture_speed_unverified",
+      "confidence_probability": null,
+      "processing_rights": "unknown",
+      "training_performed": false,
+      "finding_ids": [
+        "F008",
+        "F009"
+      ]
+    },
+    {
+      "id": "V07-review",
+      "source_id": "V07",
+      "access_method": [
+        "public_player_previews",
+        "normal_browser_playback"
+      ],
+      "played_excerpt_locator_s": [
+        810.88,
+        823.5
+      ],
+      "locator_is_physical_skiing_time": false,
+      "scope": "Evenly sampled preview scan and selected playback frames; not complete lesson playback. Exact capture timestamps are retained in viewing-audit.json.",
+      "evidence_layers": [
+        "visual_observation",
+        "written_guidance_when_present",
+        "research_interpretation",
+        "sensor_hypothesis"
+      ],
+      "spoken_audio_reviewed": false,
+      "timing_status": "relative_order_only_source_speed_unverified",
+      "confidence_probability": null,
+      "processing_rights": "unknown",
+      "training_performed": false,
+      "finding_ids": [
+        "F010"
+      ]
+    },
+    {
+      "id": "V08-review",
+      "source_id": "V08",
+      "access_method": [
+        "public_player_previews",
+        "normal_browser_playback"
+      ],
+      "played_excerpt_locator_s": [
+        6.01,
+        18.5
+      ],
+      "locator_is_physical_skiing_time": false,
+      "scope": "Evenly sampled preview scan and selected playback frames; not complete lesson playback. Exact capture timestamps are retained in viewing-audit.json.",
+      "evidence_layers": [
+        "visual_observation",
+        "written_guidance_when_present",
+        "research_interpretation",
+        "sensor_hypothesis"
+      ],
+      "spoken_audio_reviewed": false,
+      "timing_status": "relative_order_only_source_speed_unverified",
+      "confidence_probability": null,
+      "processing_rights": "unknown",
+      "training_performed": false,
+      "finding_ids": [
+        "F011"
+      ]
+    },
+    {
+      "id": "V09-review",
+      "source_id": "V09",
+      "access_method": [
+        "public_player_previews",
+        "normal_browser_playback"
+      ],
+      "played_excerpt_locator_s": [
+        6.84,
+        19.92
+      ],
+      "locator_is_physical_skiing_time": false,
+      "scope": "Evenly sampled preview scan and selected playback frames; not complete lesson playback. Exact capture timestamps are retained in viewing-audit.json.",
+      "evidence_layers": [
+        "visual_observation",
+        "written_guidance_when_present",
+        "research_interpretation",
+        "sensor_hypothesis"
+      ],
+      "spoken_audio_reviewed": false,
+      "timing_status": "relative_order_only_source_speed_unverified",
+      "confidence_probability": null,
+      "processing_rights": "unknown",
+      "training_performed": false,
+      "finding_ids": [
+        "F012"
+      ]
+    },
+    {
+      "id": "V10-review",
+      "source_id": "V10",
+      "access_method": [
+        "public_player_previews",
+        "normal_browser_playback"
+      ],
+      "played_excerpt_locator_s": [
+        6.86,
+        19.72
+      ],
+      "locator_is_physical_skiing_time": false,
+      "scope": "Evenly sampled preview scan and selected playback frames; not complete lesson playback. Exact capture timestamps are retained in viewing-audit.json.",
+      "evidence_layers": [
+        "visual_observation",
+        "written_guidance_when_present",
+        "research_interpretation",
+        "sensor_hypothesis"
+      ],
+      "spoken_audio_reviewed": false,
+      "timing_status": "relative_order_only_source_speed_unverified",
+      "confidence_probability": null,
+      "processing_rights": "unknown",
+      "training_performed": false,
+      "finding_ids": [
+        "F013"
+      ]
+    },
+    {
+      "id": "V11-review",
+      "source_id": "V11",
+      "access_method": [
+        "public_player_previews",
+        "normal_browser_playback"
+      ],
+      "played_excerpt_locator_s": [
+        13.89,
+        26.6
+      ],
+      "locator_is_physical_skiing_time": false,
+      "scope": "Evenly sampled preview scan and selected playback frames; not complete lesson playback. Exact capture timestamps are retained in viewing-audit.json.",
+      "evidence_layers": [
+        "visual_observation",
+        "written_guidance_when_present",
+        "research_interpretation",
+        "sensor_hypothesis"
+      ],
+      "spoken_audio_reviewed": false,
+      "timing_status": "relative_order_only_source_speed_unverified",
+      "confidence_probability": null,
+      "processing_rights": "unknown",
+      "training_performed": false,
+      "finding_ids": [
+        "F014"
+      ]
+    },
+    {
+      "id": "V12-review",
+      "source_id": "V12",
+      "access_method": [
+        "public_player_previews",
+        "normal_browser_playback"
+      ],
+      "played_excerpt_locator_s": [
+        300.83,
+        314.33
+      ],
+      "locator_is_physical_skiing_time": false,
+      "scope": "Evenly sampled preview scan and selected playback frames; not complete lesson playback. Exact capture timestamps are retained in viewing-audit.json.",
+      "evidence_layers": [
+        "visual_observation",
+        "written_guidance_when_present",
+        "research_interpretation",
+        "sensor_hypothesis"
+      ],
+      "spoken_audio_reviewed": false,
+      "timing_status": "relative_order_only_source_speed_unverified",
+      "confidence_probability": null,
+      "processing_rights": "unknown",
+      "training_performed": false,
+      "finding_ids": [
+        "F015"
+      ]
+    },
+    {
+      "id": "V13-review",
+      "source_id": "V13",
+      "access_method": [
+        "public_player_previews",
+        "normal_browser_playback"
+      ],
+      "played_excerpt_locator_s": [
+        110.95,
+        123.03
+      ],
+      "locator_is_physical_skiing_time": false,
+      "scope": "Evenly sampled preview scan and selected playback frames; not complete lesson playback. Exact capture timestamps are retained in viewing-audit.json.",
+      "evidence_layers": [
+        "visual_observation",
+        "written_guidance_when_present",
+        "research_interpretation",
+        "sensor_hypothesis"
+      ],
+      "spoken_audio_reviewed": false,
+      "timing_status": "relative_order_only_source_speed_unverified",
+      "confidence_probability": null,
+      "processing_rights": "unknown",
+      "training_performed": false,
+      "finding_ids": [
+        "F016"
+      ]
+    },
+    {
+      "id": "V14-review",
+      "source_id": "V14",
+      "access_method": [
+        "public_player_previews",
+        "normal_browser_playback"
+      ],
+      "played_excerpt_locator_s": [
+        55.99,
+        68.41
+      ],
+      "locator_is_physical_skiing_time": false,
+      "scope": "Evenly sampled preview scan and selected playback frames; not complete lesson playback. Exact capture timestamps are retained in viewing-audit.json.",
+      "evidence_layers": [
+        "visual_observation",
+        "written_guidance_when_present",
+        "research_interpretation",
+        "sensor_hypothesis"
+      ],
+      "spoken_audio_reviewed": false,
+      "timing_status": "relative_order_only_source_speed_unverified",
+      "confidence_probability": null,
+      "processing_rights": "unknown",
+      "training_performed": false,
+      "finding_ids": [
+        "F017"
+      ]
+    },
+    {
+      "id": "V15-review",
+      "source_id": "V15",
+      "access_method": [
+        "public_player_previews",
+        "normal_browser_playback"
+      ],
+      "played_excerpt_locator_s": [
+        179.66,
+        192.13
+      ],
+      "locator_is_physical_skiing_time": false,
+      "scope": "Evenly sampled preview scan and selected playback frames; not complete lesson playback. Exact capture timestamps are retained in viewing-audit.json.",
+      "evidence_layers": [
+        "visual_observation",
+        "written_guidance_when_present",
+        "research_interpretation",
+        "sensor_hypothesis"
+      ],
+      "spoken_audio_reviewed": false,
+      "timing_status": "relative_order_only_source_speed_unverified",
+      "confidence_probability": null,
+      "processing_rights": "unknown",
+      "training_performed": false,
+      "finding_ids": [
+        "F018"
+      ]
+    },
+    {
+      "id": "V16-review",
+      "source_id": "V16",
+      "access_method": [
+        "public_player_previews",
+        "normal_browser_playback"
+      ],
+      "played_excerpt_locator_s": [
+        185.97,
+        198.5
+      ],
+      "locator_is_physical_skiing_time": false,
+      "scope": "Evenly sampled preview scan and selected playback frames; not complete lesson playback. Exact capture timestamps are retained in viewing-audit.json.",
+      "evidence_layers": [
+        "visual_observation",
+        "written_guidance_when_present",
+        "research_interpretation",
+        "sensor_hypothesis"
+      ],
+      "spoken_audio_reviewed": false,
+      "timing_status": "relative_order_only_source_speed_unverified",
+      "confidence_probability": null,
+      "processing_rights": "unknown",
+      "training_performed": false,
+      "finding_ids": [
+        "F019"
+      ]
+    },
+    {
+      "id": "V17-review",
+      "source_id": "V17",
+      "access_method": [
+        "public_player_previews",
+        "normal_browser_playback"
+      ],
+      "played_excerpt_locator_s": [
+        48.86,
+        60.93
+      ],
+      "locator_is_physical_skiing_time": false,
+      "scope": "Evenly sampled preview scan and selected playback frames; not complete lesson playback. Exact capture timestamps are retained in viewing-audit.json.",
+      "evidence_layers": [
+        "visual_observation",
+        "written_guidance_when_present",
+        "research_interpretation",
+        "sensor_hypothesis"
+      ],
+      "spoken_audio_reviewed": false,
+      "timing_status": "relative_order_only_source_speed_unverified",
+      "confidence_probability": null,
+      "processing_rights": "unknown",
+      "training_performed": false,
+      "finding_ids": [
+        "F020"
+      ]
+    },
+    {
+      "id": "V18-review",
+      "source_id": "V18",
+      "access_method": [
+        "public_player_previews",
+        "normal_browser_playback"
+      ],
+      "played_excerpt_locator_s": [
+        40.86,
+        53.97
+      ],
+      "locator_is_physical_skiing_time": false,
+      "scope": "Evenly sampled preview scan and selected playback frames; not complete lesson playback. Exact capture timestamps are retained in viewing-audit.json.",
+      "evidence_layers": [
+        "visual_observation",
+        "written_guidance_when_present",
+        "research_interpretation",
+        "sensor_hypothesis"
+      ],
+      "spoken_audio_reviewed": false,
+      "timing_status": "relative_order_only_source_speed_unverified",
+      "confidence_probability": null,
+      "processing_rights": "unknown",
+      "training_performed": false,
+      "finding_ids": [
+        "F021"
+      ]
+    },
+    {
+      "id": "V19-review",
+      "source_id": "V19",
+      "access_method": [
+        "public_player_previews",
+        "normal_browser_playback"
+      ],
+      "played_excerpt_locator_s": [
+        110.9,
+        124.16
+      ],
+      "locator_is_physical_skiing_time": false,
+      "scope": "Evenly sampled preview scan and selected playback frames; not complete lesson playback. Exact capture timestamps are retained in viewing-audit.json.",
+      "evidence_layers": [
+        "visual_observation",
+        "written_guidance_when_present",
+        "research_interpretation",
+        "sensor_hypothesis"
+      ],
+      "spoken_audio_reviewed": false,
+      "timing_status": "relative_order_only_source_speed_unverified",
+      "confidence_probability": null,
+      "processing_rights": "unknown",
+      "training_performed": false,
+      "finding_ids": [
+        "F022"
+      ]
+    },
+    {
+      "id": "V20-review",
+      "source_id": "V20",
+      "access_method": [
+        "public_player_previews",
+        "normal_browser_playback"
+      ],
+      "played_excerpt_locator_s": [
+        365.87,
+        378.5
+      ],
+      "locator_is_physical_skiing_time": false,
+      "scope": "Evenly sampled preview scan and selected playback frames; not complete lesson playback. Exact capture timestamps are retained in viewing-audit.json.",
+      "evidence_layers": [
+        "visual_observation",
+        "written_guidance_when_present",
+        "research_interpretation",
+        "sensor_hypothesis"
+      ],
+      "spoken_audio_reviewed": false,
+      "timing_status": "relative_order_only_source_speed_unverified",
+      "confidence_probability": null,
+      "processing_rights": "unknown",
+      "training_performed": false,
+      "finding_ids": [
+        "F023"
+      ]
+    },
+    {
+      "id": "V21-review",
+      "source_id": "V21",
+      "access_method": [
+        "public_player_previews",
+        "normal_browser_playback"
+      ],
+      "played_excerpt_locator_s": [
+        470.9,
+        483.87
+      ],
+      "locator_is_physical_skiing_time": false,
+      "scope": "Evenly sampled preview scan and selected playback frames; not complete lesson playback. Exact capture timestamps are retained in viewing-audit.json.",
+      "evidence_layers": [
+        "visual_observation",
+        "written_guidance_when_present",
+        "research_interpretation",
+        "sensor_hypothesis"
+      ],
+      "spoken_audio_reviewed": false,
+      "timing_status": "relative_order_only_source_speed_unverified",
+      "confidence_probability": null,
+      "processing_rights": "unknown",
+      "training_performed": false,
+      "finding_ids": [
+        "F024"
+      ]
+    },
+    {
+      "id": "V22-review",
+      "source_id": "V22",
+      "access_method": [
+        "public_player_previews",
+        "normal_browser_playback"
+      ],
+      "played_excerpt_locator_s": [
+        125.53,
+        138.5
+      ],
+      "locator_is_physical_skiing_time": false,
+      "scope": "Evenly sampled preview scan and selected playback frames; not complete lesson playback. Exact capture timestamps are retained in viewing-audit.json.",
+      "evidence_layers": [
+        "visual_observation",
+        "written_guidance_when_present",
+        "research_interpretation",
+        "sensor_hypothesis"
+      ],
+      "spoken_audio_reviewed": false,
+      "timing_status": "relative_order_only_source_speed_unverified",
+      "confidence_probability": null,
+      "processing_rights": "unknown",
+      "training_performed": false,
+      "finding_ids": [
+        "F025"
+      ]
+    },
+    {
+      "id": "V23-review",
+      "source_id": "V23",
+      "access_method": [
+        "public_player_previews",
+        "normal_browser_playback"
+      ],
+      "played_excerpt_locator_s": [
+        90.54,
+        102.81
+      ],
+      "locator_is_physical_skiing_time": false,
+      "scope": "Evenly sampled preview scan and selected playback frames; not complete lesson playback. Exact capture timestamps are retained in viewing-audit.json.",
+      "evidence_layers": [
+        "visual_observation",
+        "written_guidance_when_present",
+        "research_interpretation",
+        "sensor_hypothesis"
+      ],
+      "spoken_audio_reviewed": false,
+      "timing_status": "relative_order_only_source_speed_unverified",
+      "confidence_probability": null,
+      "processing_rights": "unknown",
+      "training_performed": false,
+      "finding_ids": [
+        "F026"
+      ]
+    },
+    {
+      "id": "V24-review",
+      "source_id": "V24",
+      "access_method": [
+        "public_player_previews",
+        "normal_browser_playback"
+      ],
+      "played_excerpt_locator_s": [
+        142.56,
+        155.67
+      ],
+      "locator_is_physical_skiing_time": false,
+      "scope": "Evenly sampled preview scan and selected playback frames; not complete lesson playback. Exact capture timestamps are retained in viewing-audit.json.",
+      "evidence_layers": [
+        "visual_observation",
+        "written_guidance_when_present",
+        "research_interpretation",
+        "sensor_hypothesis"
+      ],
+      "spoken_audio_reviewed": false,
+      "timing_status": "relative_order_only_source_speed_unverified",
+      "confidence_probability": null,
+      "processing_rights": "unknown",
+      "training_performed": false,
+      "finding_ids": [
+        "F027"
+      ]
+    },
+    {
+      "id": "V25-review",
+      "source_id": "V25",
+      "access_method": [
+        "public_player_previews",
+        "normal_browser_playback"
+      ],
+      "played_excerpt_locator_s": [
+        7.79,
+        21.42
+      ],
+      "locator_is_physical_skiing_time": false,
+      "scope": "Evenly sampled preview scan and selected playback frames; not complete lesson playback. Exact capture timestamps are retained in viewing-audit.json.",
+      "evidence_layers": [
+        "visual_observation",
+        "written_guidance_when_present",
+        "research_interpretation",
+        "sensor_hypothesis"
+      ],
+      "spoken_audio_reviewed": false,
+      "timing_status": "relative_order_only_source_speed_unverified",
+      "confidence_probability": null,
+      "processing_rights": "unknown",
+      "training_performed": false,
+      "finding_ids": [
+        "F028"
+      ]
+    },
+    {
+      "id": "V26-review",
+      "source_id": "V26",
+      "access_method": [
+        "public_player_previews",
+        "normal_browser_playback"
+      ],
+      "played_excerpt_locator_s": [
+        155.84,
+        168.91
+      ],
+      "locator_is_physical_skiing_time": false,
+      "scope": "Evenly sampled preview scan and selected playback frames; not complete lesson playback. Exact capture timestamps are retained in viewing-audit.json.",
+      "evidence_layers": [
+        "visual_observation",
+        "written_guidance_when_present",
+        "research_interpretation",
+        "sensor_hypothesis"
+      ],
+      "spoken_audio_reviewed": false,
+      "timing_status": "relative_order_only_source_speed_unverified",
+      "confidence_probability": null,
+      "processing_rights": "unknown",
+      "training_performed": false,
+      "finding_ids": [
+        "F029"
+      ]
+    },
+    {
+      "id": "V27-review",
+      "source_id": "V27",
+      "access_method": [
+        "public_player_previews",
+        "normal_browser_playback"
+      ],
+      "played_excerpt_locator_s": [
+        165.92,
+        178.88
+      ],
+      "locator_is_physical_skiing_time": false,
+      "scope": "Evenly sampled preview scan and selected playback frames; not complete lesson playback. Exact capture timestamps are retained in viewing-audit.json.",
+      "evidence_layers": [
+        "visual_observation",
+        "written_guidance_when_present",
+        "research_interpretation",
+        "sensor_hypothesis"
+      ],
+      "spoken_audio_reviewed": false,
+      "timing_status": "relative_order_only_source_speed_unverified",
+      "confidence_probability": null,
+      "processing_rights": "unknown",
+      "training_performed": false,
+      "finding_ids": [
+        "F030"
+      ]
+    },
+    {
+      "id": "V28-review",
+      "source_id": "V28",
+      "access_method": [
+        "public_player_previews",
+        "normal_browser_playback"
+      ],
+      "played_excerpt_locator_s": [
+        28.85,
+        40.92
+      ],
+      "locator_is_physical_skiing_time": false,
+      "scope": "Evenly sampled preview scan and selected playback frames; not complete lesson playback. Exact capture timestamps are retained in viewing-audit.json.",
+      "evidence_layers": [
+        "visual_observation",
+        "written_guidance_when_present",
+        "research_interpretation",
+        "sensor_hypothesis"
+      ],
+      "spoken_audio_reviewed": false,
+      "timing_status": "relative_order_only_source_speed_unverified",
+      "confidence_probability": null,
+      "processing_rights": "unknown",
+      "training_performed": false,
+      "finding_ids": [
+        "F031"
+      ]
+    },
+    {
+      "id": "V29-review",
+      "source_id": "V29",
+      "access_method": [
+        "public_player_previews",
+        "normal_browser_playback"
+      ],
+      "played_excerpt_locator_s": [
+        76.58,
+        89.8
+      ],
+      "locator_is_physical_skiing_time": false,
+      "scope": "Evenly sampled preview scan and selected playback frames; not complete lesson playback. Exact capture timestamps are retained in viewing-audit.json.",
+      "evidence_layers": [
+        "visual_observation",
+        "written_guidance_when_present",
+        "research_interpretation",
+        "sensor_hypothesis"
+      ],
+      "spoken_audio_reviewed": false,
+      "timing_status": "relative_order_only_source_speed_unverified",
+      "confidence_probability": null,
+      "processing_rights": "unknown",
+      "training_performed": false,
+      "finding_ids": [
+        "F032"
+      ]
+    },
+    {
+      "id": "V30-review",
+      "source_id": "V30",
+      "access_method": [
+        "public_player_previews",
+        "normal_browser_playback"
+      ],
+      "played_excerpt_locator_s": [
+        210.91,
+        223.29
+      ],
+      "locator_is_physical_skiing_time": false,
+      "scope": "Evenly sampled preview scan and selected playback frames; not complete lesson playback. Exact capture timestamps are retained in viewing-audit.json.",
+      "evidence_layers": [
+        "visual_observation",
+        "written_guidance_when_present",
+        "research_interpretation",
+        "sensor_hypothesis"
+      ],
+      "spoken_audio_reviewed": false,
+      "timing_status": "relative_order_only_source_speed_unverified",
+      "confidence_probability": null,
+      "processing_rights": "unknown",
+      "training_performed": false,
+      "finding_ids": [
+        "F033"
+      ]
+    }
+  ],
+  "findings_document": "technique-findings.json"
+}

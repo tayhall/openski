@@ -1,0 +1,1779 @@
+{
+  "schema_version": "0.1.0",
+  "dataset_kind": "qualitative_findings_not_reference_measurements",
+  "source_registry": "source-catalogue.csv",
+  "findings": [
+    {
+      "finding_id": "F001",
+      "source_id": "V02",
+      "source_url": "https://www.youtube.com/watch?v=9VjjfIzDhos",
+      "review_date": "2026-10-08",
+      "topic": "leg_flexion_changes_across_linked_turns",
+      "context": [
+        "parallel_turn_demonstration",
+        "following_camera"
+      ],
+      "source_segment": {
+        "start_s": 133,
+        "end_s": 141,
+        "locator_precision": "approximate_player_location",
+        "source_capture_speed_verified": false
+      },
+      "evidence_basis": [
+        "playback_frames"
+      ],
+      "visual_observation": "More upright configurations alternate with inclined positions; relative leg flexion changes as the skier changes turn side.",
+      "coaching_guidance": null,
+      "research_interpretation": "Retain both leg trajectories and their timing rather than a single peak knee angle.",
+      "movement_sequence": [
+        {
+          "earlier": "more_upright_configuration",
+          "relation": "alternates_with",
+          "later": "inclined_turn_configuration",
+          "basis": "visually_observed"
+        }
+      ],
+      "sensor_connection": {
+        "status": "candidate_proxy",
+        "single_boot": "Investigate boot angular-rate reversals; these do not measure knee flexion.",
+        "dual_boot": "Investigate bilateral timing without treating it as leg joint angles.",
+        "pressure_insoles": "Could independently investigate loading; posture does not establish load.",
+        "validation_needed": [
+          "Synchronised body observations and boot recordings",
+          "Independent event definitions"
+        ]
+      },
+      "quality": {
+        "review_scope": "selected_playback",
+        "camera_view": "rear_oblique_following",
+        "confidence_probability": null,
+        "limitations": [
+          "Perspective and camera motion",
+          "Source capture speed unverified",
+          "No force inference"
+        ],
+        "validated_for_openski": false,
+        "spoken_audio_reviewed": false
+      },
+      "numerical_measurements": []
+    },
+    {
+      "finding_id": "F002",
+      "source_id": "V01",
+      "source_url": "https://www.youtube.com/watch?v=RGgF-hQrZqc",
+      "review_date": "2026-10-08",
+      "topic": "analysis_playback_is_not_physical_turn_time",
+      "context": [
+        "coaching_analysis",
+        "held_images"
+      ],
+      "source_segment": {
+        "start_s": 395,
+        "end_s": 403,
+        "locator_precision": "approximate_player_location",
+        "source_capture_speed_verified": false
+      },
+      "evidence_basis": [
+        "playback_frames",
+        "visible_written_annotation"
+      ],
+      "visual_observation": "The displayed skiing configuration is held while the analysis progresses.",
+      "coaching_guidance": "A visible annotation encourages patience in transition.",
+      "research_interpretation": "Separate lesson timestamps from movement duration; this excerpt supports conceptual review, not a duration reference.",
+      "movement_sequence": [],
+      "sensor_connection": {
+        "status": "methodological_constraint",
+        "single_boot": "Do not fit event-duration targets to paused lesson playback.",
+        "dual_boot": "The same timebase restriction applies to bilateral comparisons.",
+        "pressure_insoles": "Do not align loading events to held visual frames as if they were real time.",
+        "validation_needed": [
+          "Verified original capture timebase",
+          "Uninterrupted event reference"
+        ]
+      },
+      "quality": {
+        "review_scope": "selected_playback",
+        "camera_view": "rear_analysis_overlay",
+        "confidence_probability": null,
+        "limitations": [
+          "Held frames",
+          "No usable transcript",
+          "No physical duration claim"
+        ],
+        "validated_for_openski": false,
+        "spoken_audio_reviewed": false
+      },
+      "numerical_measurements": []
+    },
+    {
+      "finding_id": "F003",
+      "source_id": "V03",
+      "source_url": "https://www.youtube.com/watch?v=QIyQ9F2aj4k",
+      "review_date": "2026-10-08",
+      "topic": "task_specific_peak_edging_phase",
+      "context": [
+        "dynamic_short_turns",
+        "certification_task_variations"
+      ],
+      "source_segment": {
+        "start_s": null,
+        "end_s": null,
+        "locator_precision": "description_only",
+        "source_capture_speed_verified": false
+      },
+      "evidence_basis": [
+        "creator_description"
+      ],
+      "visual_observation": null,
+      "coaching_guidance": "The creator describes progressive edging and deliberate variations in the phase of maximum edging.",
+      "research_interpretation": "Task identity must accompany any proposed peak-timing reference.",
+      "movement_sequence": [
+        {
+          "earlier": "edge_angle_development",
+          "relation": "before",
+          "later": "edge_angle_release",
+          "basis": "coaching_guidance"
+        }
+      ],
+      "sensor_connection": {
+        "status": "candidate_proxy",
+        "single_boot": "Research boot-rate or conditional orientation timing within a declared task.",
+        "dual_boot": "Compare both boots within matching tasks; no universal phase target.",
+        "pressure_insoles": "Load maxima are separate events from edging maxima.",
+        "validation_needed": [
+          "Independent ski-angle reference if claiming edging",
+          "Task-specific outcomes"
+        ]
+      },
+      "quality": {
+        "review_scope": "description_only",
+        "camera_view": "not_applicable_to_description",
+        "confidence_probability": null,
+        "limitations": [
+          "Guidance rather than measured event timing",
+          "No universal optimal phase inferred"
+        ],
+        "validated_for_openski": false,
+        "spoken_audio_reviewed": false
+      },
+      "numerical_measurements": []
+    },
+    {
+      "finding_id": "F004",
+      "source_id": "V04",
+      "source_url": "https://www.youtube.com/watch?v=fX9bgulqRrY",
+      "review_date": "2026-10-08",
+      "topic": "linked_turn_development_in_railroad_track_drill",
+      "context": [
+        "advanced_carving_instruction",
+        "railroad_track_and_hand_drag_drills"
+      ],
+      "source_segment": {
+        "start_s": 236,
+        "end_s": 247,
+        "locator_precision": "approximate_player_location",
+        "source_capture_speed_verified": false
+      },
+      "evidence_basis": [
+        "playback_frames",
+        "sampled_previews",
+        "visible_written_annotation"
+      ],
+      "visual_observation": "The skier links relatively shallow arcs, alternating more upright and inclined configurations.",
+      "coaching_guidance": "A preceding visible title identifies the railroad-track drill.",
+      "research_interpretation": "Research development and reversal trajectories at modest inclination; spectacular peak lean is not necessary to study the sequence.",
+      "movement_sequence": [
+        {
+          "earlier": "more_upright_configuration",
+          "relation": "alternates_with",
+          "later": "inclined_arc",
+          "basis": "visually_observed"
+        }
+      ],
+      "sensor_connection": {
+        "status": "candidate_proxy",
+        "single_boot": "Candidate boot-rate development and reversal features.",
+        "dual_boot": "Compare bilateral trajectory timing within this drill.",
+        "pressure_insoles": "Loading would need independent measurement.",
+        "validation_needed": [
+          "Synchronised boot/video data",
+          "Independent carving or skidding labels"
+        ]
+      },
+      "quality": {
+        "review_scope": "selected_playback",
+        "camera_view": "mixed_frontal_side_rear",
+        "confidence_probability": null,
+        "limitations": [
+          "Camera pans and the view changes",
+          "Not enough detail to certify clean carving",
+          "Playback capture delays and jumps preclude duration measurement",
+          "No source-speed or biomechanical calibration",
+          "Selected excerpts only"
+        ],
+        "validated_for_openski": false,
+        "spoken_audio_reviewed": false
+      },
+      "numerical_measurements": []
+    },
+    {
+      "finding_id": "F005",
+      "source_id": "V04",
+      "source_url": "https://www.youtube.com/watch?v=fX9bgulqRrY",
+      "review_date": "2026-10-08",
+      "topic": "hand_drag_is_a_drill_context",
+      "context": [
+        "advanced_carving_instruction",
+        "railroad_track_and_hand_drag_drills"
+      ],
+      "source_segment": {
+        "start_s": 279,
+        "end_s": 325,
+        "locator_precision": "approximate_player_location",
+        "source_capture_speed_verified": false
+      },
+      "evidence_basis": [
+        "sampled_previews",
+        "visible_written_annotation"
+      ],
+      "visual_observation": "A hand-drag drill is separately titled and illustrated in the previews.",
+      "coaching_guidance": null,
+      "research_interpretation": "Label drill-specific hand and torso positions separately from free skiing; do not make hand contact a performance target.",
+      "movement_sequence": [],
+      "sensor_connection": {
+        "status": "not_directly_measurable",
+        "single_boot": "Boot IMU cannot detect hand contact.",
+        "dual_boot": "Two boot IMUs do not measure arms or torso.",
+        "pressure_insoles": "Insoles do not identify hand contact.",
+        "validation_needed": [
+          "Independent movement/task labels",
+          "Outcome comparison outside the drill"
+        ]
+      },
+      "quality": {
+        "review_scope": "selected_previews",
+        "camera_view": "mixed_frontal_side_rear",
+        "confidence_probability": null,
+        "limitations": [
+          "Preview spacing cannot resolve hand-contact timing",
+          "No force claim",
+          "No source-speed or biomechanical calibration",
+          "Selected excerpts only"
+        ],
+        "validated_for_openski": false,
+        "spoken_audio_reviewed": false
+      },
+      "numerical_measurements": []
+    },
+    {
+      "finding_id": "F006",
+      "source_id": "V05",
+      "source_url": "https://www.youtube.com/watch?v=S4M9AVh4YPU",
+      "review_date": "2026-10-08",
+      "topic": "asymmetric_leg_configuration_in_in_rigger_drill",
+      "context": [
+        "carving_drill",
+        "in_rigger_exaggeration_drill"
+      ],
+      "source_segment": {
+        "start_s": 0,
+        "end_s": 10,
+        "locator_precision": "approximate_player_location",
+        "source_capture_speed_verified": false
+      },
+      "evidence_basis": [
+        "playback_frames",
+        "visible_written_annotation"
+      ],
+      "visual_observation": "One leg reaches farther laterally while the other is flexed; this configuration changes across linked arcs.",
+      "coaching_guidance": "Visible text identifies an in-rigger drill.",
+      "research_interpretation": "Deliberate leg differences in a drill must not automatically trigger an asymmetry fault.",
+      "movement_sequence": [
+        {
+          "earlier": "lateral_reach_on_one_side",
+          "relation": "alternates_with",
+          "later": "lateral_reach_on_opposite_side",
+          "basis": "visually_observed"
+        }
+      ],
+      "sensor_connection": {
+        "status": "candidate_proxy",
+        "single_boot": "A single boot cannot explain full-body asymmetry.",
+        "dual_boot": "Bilateral differences require task labels; they are not inherently defects.",
+        "pressure_insoles": "Independent loading could test support distribution without assuming it from posture.",
+        "validation_needed": [
+          "Task-labelled synchronised recordings",
+          "Anatomical-side verification"
+        ]
+      },
+      "quality": {
+        "review_scope": "selected_playback",
+        "camera_view": "close_oblique_following",
+        "confidence_probability": null,
+        "limitations": [
+          "Wide-angle moving view",
+          "No support-force inference",
+          "No source-speed or biomechanical calibration",
+          "Selected excerpts only"
+        ],
+        "validated_for_openski": false,
+        "spoken_audio_reviewed": false
+      },
+      "numerical_measurements": []
+    },
+    {
+      "finding_id": "F007",
+      "source_id": "V05",
+      "source_url": "https://www.youtube.com/watch?v=S4M9AVh4YPU",
+      "review_date": "2026-10-08",
+      "topic": "outside_leg_lengthening_is_a_coaching_cue",
+      "context": [
+        "carving_drill",
+        "in_rigger_exaggeration_drill"
+      ],
+      "source_segment": {
+        "start_s": 8,
+        "end_s": 10,
+        "locator_precision": "approximate_player_location",
+        "source_capture_speed_verified": false
+      },
+      "evidence_basis": [
+        "visible_written_annotation",
+        "playback_frames"
+      ],
+      "visual_observation": null,
+      "coaching_guidance": "The visible annotation links outside-ski grip with a long, lengthening leg.",
+      "research_interpretation": "Treat this as a drill-specific cue, not proof that extension causes grip or that one leg length is universally ideal.",
+      "movement_sequence": [
+        {
+          "earlier": "outside_leg_lengthening",
+          "relation": "overlaps",
+          "later": "intended_ski_grip",
+          "basis": "coaching_guidance"
+        }
+      ],
+      "sensor_connection": {
+        "status": "not_directly_measurable",
+        "single_boot": "Boot orientation is not leg extension or ski grip.",
+        "dual_boot": "Bilateral boots still do not recover knee or hip angles.",
+        "pressure_insoles": "Insoles may describe loading but do not establish lateral edge grip.",
+        "validation_needed": [
+          "Calibrated body-motion reference",
+          "Independent ski-motion outcome"
+        ]
+      },
+      "quality": {
+        "review_scope": "selected_playback",
+        "camera_view": "close_oblique_following",
+        "confidence_probability": null,
+        "limitations": [
+          "Written coaching annotation, not measured causal evidence",
+          "No source-speed or biomechanical calibration",
+          "Selected excerpts only"
+        ],
+        "validated_for_openski": false,
+        "spoken_audio_reviewed": false
+      },
+      "numerical_measurements": []
+    },
+    {
+      "finding_id": "F008",
+      "source_id": "V06",
+      "source_url": "https://www.youtube.com/watch?v=oDTP-aUlloo",
+      "review_date": "2026-10-08",
+      "topic": "ankle_topic_does_not_establish_ankle_observability",
+      "context": [
+        "technical_skiing",
+        "ankle_flexion_and_balance"
+      ],
+      "source_segment": {
+        "start_s": 371,
+        "end_s": 380,
+        "locator_precision": "approximate_player_location",
+        "source_capture_speed_verified": false
+      },
+      "evidence_basis": [
+        "playback_frames"
+      ],
+      "visual_observation": "The excerpt shows booted skiing, but the ankle hinge is obscured and the skier recedes from the camera.",
+      "coaching_guidance": null,
+      "research_interpretation": "Do not label shank inclination or boot pitch as anatomical ankle flexion.",
+      "movement_sequence": [],
+      "sensor_connection": {
+        "status": "not_directly_measurable",
+        "single_boot": "Boot pitch does not measure shank-to-foot angle.",
+        "dual_boot": "Two boot sensors do not supply shank segments.",
+        "pressure_insoles": "Pressure changes do not recover ankle joint geometry.",
+        "validation_needed": [
+          "Additional shank/foot reference",
+          "Boot-cuff and sole alignment calibration"
+        ]
+      },
+      "quality": {
+        "review_scope": "selected_playback",
+        "camera_view": "side_and_rear_following",
+        "confidence_probability": null,
+        "limitations": [
+          "Joint obscured by rigid boots",
+          "Increasing camera distance",
+          "Playback samples are not a verified uninterrupted time reference",
+          "No source-speed or biomechanical calibration",
+          "Selected excerpts only"
+        ],
+        "validated_for_openski": false,
+        "spoken_audio_reviewed": false
+      },
+      "numerical_measurements": []
+    },
+    {
+      "finding_id": "F009",
+      "source_id": "V06",
+      "source_url": "https://www.youtube.com/watch?v=oDTP-aUlloo",
+      "review_date": "2026-10-08",
+      "topic": "inclination_reversal_in_linked_parallel_turns",
+      "context": [
+        "technical_skiing",
+        "ankle_flexion_and_balance"
+      ],
+      "source_segment": {
+        "start_s": 373,
+        "end_s": 380,
+        "locator_precision": "approximate_player_location",
+        "source_capture_speed_verified": false
+      },
+      "evidence_basis": [
+        "playback_frames"
+      ],
+      "visual_observation": "Inclined positions recur on alternating sides, separated by more upright configurations.",
+      "coaching_guidance": null,
+      "research_interpretation": "The recurrence can motivate turn-event hypotheses without assigning ankle flexion values.",
+      "movement_sequence": [
+        {
+          "earlier": "inclination_to_one_side",
+          "relation": "before",
+          "later": "more_upright_configuration",
+          "basis": "visually_observed"
+        },
+        {
+          "earlier": "more_upright_configuration",
+          "relation": "before",
+          "later": "inclination_to_other_side",
+          "basis": "visually_observed"
+        }
+      ],
+      "sensor_connection": {
+        "status": "candidate_proxy",
+        "single_boot": "Candidate boot reversal events require independent validation.",
+        "dual_boot": "Investigate both boot trajectories without equating reversal with load transfer.",
+        "pressure_insoles": "Loading transfer is a separate candidate event.",
+        "validation_needed": [
+          "Operational turn-boundary definition",
+          "Clock synchronisation",
+          "Original capture-time verification"
+        ]
+      },
+      "quality": {
+        "review_scope": "selected_playback",
+        "camera_view": "side_and_rear_following",
+        "confidence_probability": null,
+        "limitations": [
+          "Body inclination is not true ski edge angle",
+          "No turn-duration or pressure measurement",
+          "No source-speed or biomechanical calibration",
+          "Selected excerpts only"
+        ],
+        "validated_for_openski": false,
+        "spoken_audio_reviewed": false
+      },
+      "numerical_measurements": []
+    },
+    {
+      "finding_id": "F010",
+      "source_id": "V07",
+      "source_url": "https://www.youtube.com/watch?v=Tmlx2mtBIWU",
+      "review_date": "2026-10-08",
+      "topic": "task_context_changes_movement_requirements",
+      "context": [
+        "transition_and_coordination",
+        "qualitative_educational_review"
+      ],
+      "source_segment": {
+        "start_s": 0,
+        "end_s": 940.0,
+        "locator_precision": "approximate_player_location",
+        "source_capture_speed_verified": false
+      },
+      "evidence_basis": [
+        "sampled_previews",
+        "playback_frames",
+        "creator_description",
+        "visible_written_annotation"
+      ],
+      "visual_observation": "Previews show side-slip/edge-set, skating, traversing, moguls, funnel and short-turn tasks. The played short-turn excerpt includes a small inset followed by a distant skier linking opposing inclined positions.",
+      "coaching_guidance": "Visible chapter labels distinguish the tasks and assessment level.",
+      "research_interpretation": "Record the task before comparing trajectories; a funnel deliberately changes turn shape and is unsuitable for an unqualified constant-rhythm target. The distant played example cannot resolve joint timing.",
+      "movement_sequence": [],
+      "sensor_connection": {
+        "status": "candidate_proxy",
+        "single_boot": "Calibrated multiaxis boot angular-rate trajectories may support same-definition turn/reversal candidates; no grip, pressure or joint angle is measured.",
+        "dual_boot": "Synchronised bilateral rates may support reversal lag and matched-task trajectory comparisons; inside/outside roles and mounting transforms must be retained.",
+        "pressure_insoles": "Bilateral calibrated plantar signals would provide distinct loading events, not ski edge angle.",
+        "validation_needed": [
+          "Synchronised original-speed skiing video and raw boot IMUs with independent event annotations.",
+          "Separate task, terrain, speed, mounting and sensor-quality effects; measure missed and extra events."
+        ]
+      },
+      "quality": {
+        "review_scope": "selected_playback",
+        "camera_view": "mixed_frontal_side_rear",
+        "confidence_probability": null,
+        "limitations": [
+          "Selected previews and sampled playback frames only; full lesson and spoken audio not reviewed.",
+          "Source capture speed unverified; player locators are not physical movement durations.",
+          "Uncalibrated perspective, edits and possible occlusion; no numerical angles, forces or scores extracted.",
+          "Held, annotated, inset or overlaid images occur in the inspected material; not a continuous biomechanics sequence.",
+          "Segment bounds cover the preview scan; exact selected playback locators are in youtube-observations.json."
+        ],
+        "validated_for_openski": false,
+        "spoken_audio_reviewed": false
+      },
+      "numerical_measurements": []
+    },
+    {
+      "finding_id": "F011",
+      "source_id": "V08",
+      "source_url": "https://www.youtube.com/watch?v=M8BnlV-Pdcw",
+      "review_date": "2026-10-08",
+      "topic": "basic_parallel_candidate_with_regular_task_elements",
+      "context": [
+        "basic_parallel",
+        "qualitative_educational_review"
+      ],
+      "source_segment": {
+        "start_s": 0,
+        "end_s": 42.0,
+        "locator_precision": "approximate_player_location",
+        "source_capture_speed_verified": false
+      },
+      "evidence_basis": [
+        "sampled_previews",
+        "playback_frames",
+        "creator_description",
+        "visible_written_annotation"
+      ],
+      "visual_observation": "The black-jacket/red-trouser skier links parallel turns, alternating a more upright configuration with inclination to either side. The visible assessment assigns candidate 1 a higher task rating than candidates 2 and 3.",
+      "coaching_guidance": "The on-screen assessment describes the task elements as regularly satisfactory for this candidate; it is an organisational task rating, not an OpenSki score.",
+      "research_interpretation": "Use the rated runs as candidate comparisons for coach annotation, not as labels for a particular joint-angle defect. No causal reason for the ratings is established here.",
+      "movement_sequence": [
+        {
+          "earlier": "inclined_turn_configuration",
+          "relation": "alternates_with",
+          "later": "less_inclined_intervening_configuration",
+          "basis": "visually_observed"
+        }
+      ],
+      "sensor_connection": {
+        "status": "candidate_proxy",
+        "single_boot": "Calibrated multiaxis boot angular-rate trajectories may support same-definition turn/reversal candidates; no grip, pressure or joint angle is measured.",
+        "dual_boot": "Synchronised bilateral rates may support reversal lag and matched-task trajectory comparisons; inside/outside roles and mounting transforms must be retained.",
+        "pressure_insoles": "Bilateral calibrated plantar signals would provide distinct loading events, not ski edge angle.",
+        "validation_needed": [
+          "Synchronised original-speed skiing video and raw boot IMUs with independent event annotations.",
+          "Separate task, terrain, speed, mounting and sensor-quality effects; measure missed and extra events."
+        ]
+      },
+      "quality": {
+        "review_scope": "selected_playback",
+        "camera_view": "frontal_oblique_panning",
+        "confidence_probability": null,
+        "limitations": [
+          "Selected previews and sampled playback frames only; full lesson and spoken audio not reviewed.",
+          "Source capture speed unverified; player locators are not physical movement durations.",
+          "Uncalibrated perspective, edits and possible occlusion; no numerical angles, forces or scores extracted.",
+          "Segment bounds cover the preview scan; exact selected playback locators are in youtube-observations.json."
+        ],
+        "validated_for_openski": false,
+        "spoken_audio_reviewed": false
+      },
+      "numerical_measurements": []
+    },
+    {
+      "finding_id": "F012",
+      "source_id": "V09",
+      "source_url": "https://www.youtube.com/watch?v=X8A3yvxH6-s",
+      "review_date": "2026-10-08",
+      "topic": "basic_parallel_consistency_comparator_candidate_2",
+      "context": [
+        "basic_parallel",
+        "qualitative_educational_review"
+      ],
+      "source_segment": {
+        "start_s": 0,
+        "end_s": 40.0,
+        "locator_precision": "approximate_player_location",
+        "source_capture_speed_verified": false
+      },
+      "evidence_basis": [
+        "sampled_previews",
+        "playback_frames",
+        "creator_description",
+        "visible_written_annotation"
+      ],
+      "visual_observation": "The red-jacket skier also links turns with alternating inclination. The on-screen assessment is lower than candidate 1 and describes task elements as present inconsistently.",
+      "coaching_guidance": "The source supplies a task-specific consistency assessment.",
+      "research_interpretation": "A binary good/bad pose label would discard the source distinction between having a movement and sustaining it. Retain consecutive-turn trajectories and source assessment separately.",
+      "movement_sequence": [
+        {
+          "earlier": "inclined_turn_configuration",
+          "relation": "alternates_with",
+          "later": "less_inclined_intervening_configuration",
+          "basis": "visually_observed"
+        }
+      ],
+      "sensor_connection": {
+        "status": "candidate_proxy",
+        "single_boot": "Calibrated multiaxis boot angular-rate trajectories may support same-definition turn/reversal candidates; no grip, pressure or joint angle is measured.",
+        "dual_boot": "Synchronised bilateral rates may support reversal lag and matched-task trajectory comparisons; inside/outside roles and mounting transforms must be retained.",
+        "pressure_insoles": "Bilateral calibrated plantar signals would provide distinct loading events, not ski edge angle.",
+        "validation_needed": [
+          "Synchronised original-speed skiing video and raw boot IMUs with independent event annotations.",
+          "Separate task, terrain, speed, mounting and sensor-quality effects; measure missed and extra events."
+        ]
+      },
+      "quality": {
+        "review_scope": "selected_playback",
+        "camera_view": "frontal_oblique_panning",
+        "confidence_probability": null,
+        "limitations": [
+          "Selected previews and sampled playback frames only; full lesson and spoken audio not reviewed.",
+          "Source capture speed unverified; player locators are not physical movement durations.",
+          "Uncalibrated perspective, edits and possible occlusion; no numerical angles, forces or scores extracted.",
+          "Segment bounds cover the preview scan; exact selected playback locators are in youtube-observations.json."
+        ],
+        "validated_for_openski": false,
+        "spoken_audio_reviewed": false
+      },
+      "numerical_measurements": []
+    },
+    {
+      "finding_id": "F013",
+      "source_id": "V10",
+      "source_url": "https://www.youtube.com/watch?v=QI6coO9t5QU",
+      "review_date": "2026-10-08",
+      "topic": "basic_parallel_consistency_comparator_candidate_3",
+      "context": [
+        "basic_parallel",
+        "qualitative_educational_review"
+      ],
+      "source_segment": {
+        "start_s": 0,
+        "end_s": 39.0,
+        "locator_precision": "approximate_player_location",
+        "source_capture_speed_verified": false
+      },
+      "evidence_basis": [
+        "sampled_previews",
+        "playback_frames",
+        "creator_description",
+        "visible_written_annotation"
+      ],
+      "visual_observation": "The orange-jacket skier links parallel turns with modest inclination and more upright intervening positions. The source gives the same overall rating as candidate 2.",
+      "coaching_guidance": "The source describes inconsistent appearance of task elements.",
+      "research_interpretation": "The same task rating does not establish identical mechanics or the same error. These three runs are one assessment source cluster, not three independent coaching authorities.",
+      "movement_sequence": [
+        {
+          "earlier": "inclined_turn_configuration",
+          "relation": "alternates_with",
+          "later": "less_inclined_intervening_configuration",
+          "basis": "visually_observed"
+        }
+      ],
+      "sensor_connection": {
+        "status": "candidate_proxy",
+        "single_boot": "Calibrated multiaxis boot angular-rate trajectories may support same-definition turn/reversal candidates; no grip, pressure or joint angle is measured.",
+        "dual_boot": "Synchronised bilateral rates may support reversal lag and matched-task trajectory comparisons; inside/outside roles and mounting transforms must be retained.",
+        "pressure_insoles": "Bilateral calibrated plantar signals would provide distinct loading events, not ski edge angle.",
+        "validation_needed": [
+          "Synchronised original-speed skiing video and raw boot IMUs with independent event annotations.",
+          "Separate task, terrain, speed, mounting and sensor-quality effects; measure missed and extra events."
+        ]
+      },
+      "quality": {
+        "review_scope": "selected_playback",
+        "camera_view": "frontal_oblique_panning",
+        "confidence_probability": null,
+        "limitations": [
+          "Selected previews and sampled playback frames only; full lesson and spoken audio not reviewed.",
+          "Source capture speed unverified; player locators are not physical movement durations.",
+          "Uncalibrated perspective, edits and possible occlusion; no numerical angles, forces or scores extracted.",
+          "Segment bounds cover the preview scan; exact selected playback locators are in youtube-observations.json."
+        ],
+        "validated_for_openski": false,
+        "spoken_audio_reviewed": false
+      },
+      "numerical_measurements": []
+    },
+    {
+      "finding_id": "F014",
+      "source_id": "V11",
+      "source_url": "https://www.youtube.com/watch?v=WTX21DO7Qsc",
+      "review_date": "2026-10-08",
+      "topic": "short_turn_demo_is_edited_and_uses_flexion",
+      "context": [
+        "short_turns",
+        "qualitative_educational_review"
+      ],
+      "source_segment": {
+        "start_s": 0,
+        "end_s": 794.0,
+        "locator_precision": "approximate_player_location",
+        "source_capture_speed_verified": false
+      },
+      "evidence_basis": [
+        "sampled_previews",
+        "playback_frames",
+        "creator_description",
+        "visible_written_annotation"
+      ],
+      "visual_observation": "The played opening montage shows flexed legs, repeated changes of ski direction and side-to-side body position, with pole movements and snow spray. Camera cuts interrupt the sequence.",
+      "coaching_guidance": "Creator chapters separate walking-turn, zigzag and inside-knee exercises.",
+      "research_interpretation": "Study steering and tipping together for short turns. Do not infer turn duration across montage cuts or outside-ski loading from spray.",
+      "movement_sequence": [],
+      "sensor_connection": {
+        "status": "candidate_proxy",
+        "single_boot": "Calibrated multiaxis boot angular-rate trajectories may support same-definition turn/reversal candidates; no grip, pressure or joint angle is measured.",
+        "dual_boot": "Synchronised bilateral rates may support reversal lag and matched-task trajectory comparisons; inside/outside roles and mounting transforms must be retained.",
+        "pressure_insoles": "Bilateral calibrated plantar signals would provide distinct loading events, not ski edge angle.",
+        "validation_needed": [
+          "Synchronised original-speed skiing video and raw boot IMUs with independent event annotations.",
+          "Separate task, terrain, speed, mounting and sensor-quality effects; measure missed and extra events."
+        ]
+      },
+      "quality": {
+        "review_scope": "selected_playback",
+        "camera_view": "mixed_side_rear_frontal",
+        "confidence_probability": null,
+        "limitations": [
+          "Selected previews and sampled playback frames only; full lesson and spoken audio not reviewed.",
+          "Source capture speed unverified; player locators are not physical movement durations.",
+          "Uncalibrated perspective, edits and possible occlusion; no numerical angles, forces or scores extracted.",
+          "Segment bounds cover the preview scan; exact selected playback locators are in youtube-observations.json."
+        ],
+        "validated_for_openski": false,
+        "spoken_audio_reviewed": false
+      },
+      "numerical_measurements": []
+    },
+    {
+      "finding_id": "F015",
+      "source_id": "V12",
+      "source_url": "https://www.youtube.com/watch?v=NzyaqhzvrI4",
+      "review_date": "2026-10-08",
+      "topic": "short_turn_comparison_inset_has_separate_timebase",
+      "context": [
+        "short_turns",
+        "qualitative_educational_review"
+      ],
+      "source_segment": {
+        "start_s": 0,
+        "end_s": 1082.0,
+        "locator_precision": "approximate_player_location",
+        "source_capture_speed_verified": false
+      },
+      "evidence_basis": [
+        "sampled_previews",
+        "playback_frames"
+      ],
+      "visual_observation": "The played excerpt overlays a flexed skier making a turn beside the standing instructor; other previews contain linked skiing demonstrations from different viewpoints.",
+      "coaching_guidance": null,
+      "research_interpretation": "An inset, overlay or comparison can have its own playback speed and clock. Segmentation must isolate the skiing region and its timebase before relating movements to sensor timestamps.",
+      "movement_sequence": [],
+      "sensor_connection": {
+        "status": "methodological_constraint",
+        "single_boot": "No physical event timing can be validated against an edited, held or independently timed composite.",
+        "dual_boot": "Clock alignment cannot repair an unknown video timebase; validate against an uninterrupted original-speed source.",
+        "pressure_insoles": "Loading event alignment has the same source-timebase restriction.",
+        "validation_needed": [
+          "Identify shot boundaries, holds, repeats, overlays and source speed before annotation.",
+          "Use a verified common timebase for video and sensors; retain uncertainty."
+        ]
+      },
+      "quality": {
+        "review_scope": "selected_playback",
+        "camera_view": "mixed_wide_angle_oblique",
+        "confidence_probability": null,
+        "limitations": [
+          "Selected previews and sampled playback frames only; full lesson and spoken audio not reviewed.",
+          "Source capture speed unverified; player locators are not physical movement durations.",
+          "Uncalibrated perspective, edits and possible occlusion; no numerical angles, forces or scores extracted.",
+          "Held, annotated, inset or overlaid images occur in the inspected material; not a continuous biomechanics sequence.",
+          "Segment bounds cover the preview scan; exact selected playback locators are in youtube-observations.json."
+        ],
+        "validated_for_openski": false,
+        "spoken_audio_reviewed": false
+      },
+      "numerical_measurements": []
+    },
+    {
+      "finding_id": "F016",
+      "source_id": "V13",
+      "source_url": "https://www.youtube.com/watch?v=CqW2AnC01kc",
+      "review_date": "2026-10-08",
+      "topic": "falling_leaf_lesson_includes_learner_practice",
+      "context": [
+        "controlled_steering_and_comparisons",
+        "qualitative_educational_review"
+      ],
+      "source_segment": {
+        "start_s": 0,
+        "end_s": 262.0,
+        "locator_precision": "approximate_player_location",
+        "source_capture_speed_verified": false
+      },
+      "evidence_basis": [
+        "sampled_previews",
+        "playback_frames",
+        "creator_description",
+        "visible_written_annotation"
+      ],
+      "visual_observation": "The played learner-practice excerpt shows repeated changes in ski heading, flexion and body orientation while drifting through the exercise. A visible caption identifies a first attempt.",
+      "coaching_guidance": "The title identifies a falling-leaf drill; the practice example is not presented as a validated expert reference.",
+      "research_interpretation": "Separate drill learner attempts from instructor demonstrations. Do not label a heading change as an ordinary linked turn solely because a boot gyro would register rotation.",
+      "movement_sequence": [],
+      "sensor_connection": {
+        "status": "candidate_proxy",
+        "single_boot": "Calibrated multiaxis boot angular-rate trajectories may support same-definition turn/reversal candidates; no grip, pressure or joint angle is measured.",
+        "dual_boot": "Synchronised bilateral rates may support reversal lag and matched-task trajectory comparisons; inside/outside roles and mounting transforms must be retained.",
+        "pressure_insoles": "Bilateral calibrated plantar signals would provide distinct loading events, not ski edge angle.",
+        "validation_needed": [
+          "Synchronised original-speed skiing video and raw boot IMUs with independent event annotations.",
+          "Separate task, terrain, speed, mounting and sensor-quality effects; measure missed and extra events."
+        ]
+      },
+      "quality": {
+        "review_scope": "selected_playback",
+        "camera_view": "close_oblique_following",
+        "confidence_probability": null,
+        "limitations": [
+          "Selected previews and sampled playback frames only; full lesson and spoken audio not reviewed.",
+          "Source capture speed unverified; player locators are not physical movement durations.",
+          "Uncalibrated perspective, edits and possible occlusion; no numerical angles, forces or scores extracted.",
+          "Segment bounds cover the preview scan; exact selected playback locators are in youtube-observations.json."
+        ],
+        "validated_for_openski": false,
+        "spoken_audio_reviewed": false
+      },
+      "numerical_measurements": []
+    },
+    {
+      "finding_id": "F017",
+      "source_id": "V14",
+      "source_url": "https://www.youtube.com/watch?v=i4s-jOSeAWU",
+      "review_date": "2026-10-08",
+      "topic": "braquage_rotates_skis_relative_to_torso",
+      "context": [
+        "controlled_steering_and_comparisons",
+        "qualitative_educational_review"
+      ],
+      "source_segment": {
+        "start_s": 0,
+        "end_s": 150.0,
+        "locator_precision": "approximate_player_location",
+        "source_capture_speed_verified": false
+      },
+      "evidence_basis": [
+        "sampled_previews",
+        "playback_frames",
+        "creator_description",
+        "visible_written_annotation"
+      ],
+      "visual_observation": "In the played drill the skis change heading across the slope while the upper body remains more consistently oriented toward the camera/downhill. Knee and hip flexion vary during the repetitions.",
+      "coaching_guidance": "The creator title frames the exercise as leg-rotation training.",
+      "research_interpretation": "Ski-heading rotation and lateral tipping are different motion components. A turning signal needs task labels and multiaxis features; torso-leg separation cannot be recovered from boot-only sensing.",
+      "movement_sequence": [],
+      "sensor_connection": {
+        "status": "not_directly_measurable",
+        "single_boot": "Boot rotation cannot recover knee/hip angles, torso-leg separation, vertical body travel or stance width.",
+        "dual_boot": "Two boot rotations still do not determine body joint angles, torso pose or inter-boot distance; associated rate patterns remain hypotheses.",
+        "pressure_insoles": "Plantar loading does not reconstruct body pose or anatomical joint angles.",
+        "validation_needed": [
+          "Calibrated body/ski imaging or additional body sensors for the stated movement.",
+          "Test proposed boot-rate associations independently; do not relabel a proxy as a body measurement."
+        ]
+      },
+      "quality": {
+        "review_scope": "selected_playback",
+        "camera_view": "frontal_oblique",
+        "confidence_probability": null,
+        "limitations": [
+          "Selected previews and sampled playback frames only; full lesson and spoken audio not reviewed.",
+          "Source capture speed unverified; player locators are not physical movement durations.",
+          "Uncalibrated perspective, edits and possible occlusion; no numerical angles, forces or scores extracted.",
+          "Segment bounds cover the preview scan; exact selected playback locators are in youtube-observations.json."
+        ],
+        "validated_for_openski": false,
+        "spoken_audio_reviewed": false
+      },
+      "numerical_measurements": []
+    },
+    {
+      "finding_id": "F018",
+      "source_id": "V15",
+      "source_url": "https://www.youtube.com/watch?v=PfJe653v24I",
+      "review_date": "2026-10-08",
+      "topic": "parallel_progression_distinguishes_release_and_direction_change",
+      "context": [
+        "basic_parallel",
+        "qualitative_educational_review"
+      ],
+      "source_segment": {
+        "start_s": 0,
+        "end_s": 325.0,
+        "locator_precision": "approximate_player_location",
+        "source_capture_speed_verified": false
+      },
+      "evidence_basis": [
+        "sampled_previews",
+        "playback_frames",
+        "creator_description",
+        "visible_written_annotation"
+      ],
+      "visual_observation": "Previews show wedge-to-parallel demonstrations and a curved turn diagram. The played release chapter shows a stationary explanation and body lean, not an uninterrupted skiing sequence.",
+      "coaching_guidance": "Visible headings and creator chapters distinguish leg steering, rounded turns, edge release and weight transfer.",
+      "research_interpretation": "Define separate candidate events for boot tipping reversal, ski-heading change and loading transfer. This lesson supports the conceptual distinction, not numerical event offsets.",
+      "movement_sequence": [],
+      "sensor_connection": {
+        "status": "candidate_proxy",
+        "single_boot": "Calibrated multiaxis boot angular-rate trajectories may support same-definition turn/reversal candidates; no grip, pressure or joint angle is measured.",
+        "dual_boot": "Synchronised bilateral rates may support reversal lag and matched-task trajectory comparisons; inside/outside roles and mounting transforms must be retained.",
+        "pressure_insoles": "Bilateral calibrated plantar signals would provide distinct loading events, not ski edge angle.",
+        "validation_needed": [
+          "Synchronised original-speed skiing video and raw boot IMUs with independent event annotations.",
+          "Separate task, terrain, speed, mounting and sensor-quality effects; measure missed and extra events."
+        ]
+      },
+      "quality": {
+        "review_scope": "selected_playback",
+        "camera_view": "mixed_frontal_side",
+        "confidence_probability": null,
+        "limitations": [
+          "Selected previews and sampled playback frames only; full lesson and spoken audio not reviewed.",
+          "Source capture speed unverified; player locators are not physical movement durations.",
+          "Uncalibrated perspective, edits and possible occlusion; no numerical angles, forces or scores extracted.",
+          "Segment bounds cover the preview scan; exact selected playback locators are in youtube-observations.json."
+        ],
+        "validated_for_openski": false,
+        "spoken_audio_reviewed": false
+      },
+      "numerical_measurements": []
+    },
+    {
+      "finding_id": "F019",
+      "source_id": "V16",
+      "source_url": "https://www.youtube.com/watch?v=RIMiiOy2LKA",
+      "review_date": "2026-10-08",
+      "topic": "parallel_drill_library_separates_tipping_and_loading",
+      "context": [
+        "basic_parallel",
+        "qualitative_educational_review"
+      ],
+      "source_segment": {
+        "start_s": 0,
+        "end_s": 515.0,
+        "locator_precision": "approximate_player_location",
+        "source_capture_speed_verified": false
+      },
+      "evidence_basis": [
+        "sampled_previews",
+        "playback_frames",
+        "creator_description",
+        "visible_written_annotation"
+      ],
+      "visual_observation": "The played section includes a held side-view posture illustration and then linked turns with changing inclination. Previews identify inner-ski lifts, sideslipping and parallel stops.",
+      "coaching_guidance": "Visible labels prescribe different drills; a posture arrow is an illustration rather than a measured force vector.",
+      "research_interpretation": "Collect drilling context and distinguish observed ski lift/contact from actual underfoot force. An IMU cannot directly verify that the skier loads the intended foot.",
+      "movement_sequence": [],
+      "sensor_connection": {
+        "status": "not_directly_measurable",
+        "single_boot": "Boot orientation and acceleration alone cannot establish outside-ski loading, plantar pressure or rearward body balance.",
+        "dual_boot": "Bilateral orientation does not resolve force distribution between feet.",
+        "pressure_insoles": "Calibrated bilateral insoles could investigate plantar load transfer; boot-cuff force paths limit interpretation as total ski force.",
+        "validation_needed": [
+          "Synchronised calibrated bilateral plantar sensors and independent load/reference measurements.",
+          "Separate visible ski lift/contact, inferred support and measured force."
+        ]
+      },
+      "quality": {
+        "review_scope": "selected_playback",
+        "camera_view": "mixed_side_rear_oblique",
+        "confidence_probability": null,
+        "limitations": [
+          "Selected previews and sampled playback frames only; full lesson and spoken audio not reviewed.",
+          "Source capture speed unverified; player locators are not physical movement durations.",
+          "Uncalibrated perspective, edits and possible occlusion; no numerical angles, forces or scores extracted.",
+          "Held, annotated, inset or overlaid images occur in the inspected material; not a continuous biomechanics sequence.",
+          "Segment bounds cover the preview scan; exact selected playback locators are in youtube-observations.json."
+        ],
+        "validated_for_openski": false,
+        "spoken_audio_reviewed": false
+      },
+      "numerical_measurements": []
+    },
+    {
+      "finding_id": "F020",
+      "source_id": "V17",
+      "source_url": "https://www.youtube.com/watch?v=NWMVF0KQz2k",
+      "review_date": "2026-10-08",
+      "topic": "short_turn_edge_grip_expectations_depend_on_development_stage",
+      "context": [
+        "short_turns",
+        "qualitative_educational_review"
+      ],
+      "source_segment": {
+        "start_s": 0,
+        "end_s": 151.0,
+        "locator_precision": "approximate_player_location",
+        "source_capture_speed_verified": false
+      },
+      "evidence_basis": [
+        "sampled_previews",
+        "playback_frames",
+        "creator_description",
+        "visible_written_annotation"
+      ],
+      "visual_observation": "The played acquisition example links short parallel turns through alternating inclination. Previews explicitly label acquisition and consolidation examples, with different written grip-timing expectations relative to the fall line.",
+      "coaching_guidance": "The acquisition overview places grip after the fall line; a consolidation annotation moves its onset to the fall line. The source also specifies groomed blue terrain.",
+      "research_interpretation": "Retain assessment stage and terrain. A generic early-edge target would lose this stated task progression. Written grip criteria are not independently measured grip events.",
+      "movement_sequence": [
+        {
+          "earlier": "inclined_turn_configuration",
+          "relation": "alternates_with",
+          "later": "less_inclined_intervening_configuration",
+          "basis": "visually_observed"
+        }
+      ],
+      "sensor_connection": {
+        "status": "candidate_proxy",
+        "single_boot": "Calibrated multiaxis boot angular-rate trajectories may support same-definition turn/reversal candidates; no grip, pressure or joint angle is measured.",
+        "dual_boot": "Synchronised bilateral rates may support reversal lag and matched-task trajectory comparisons; inside/outside roles and mounting transforms must be retained.",
+        "pressure_insoles": "Bilateral calibrated plantar signals would provide distinct loading events, not ski edge angle.",
+        "validation_needed": [
+          "Synchronised original-speed skiing video and raw boot IMUs with independent event annotations.",
+          "Separate task, terrain, speed, mounting and sensor-quality effects; measure missed and extra events."
+        ]
+      },
+      "quality": {
+        "review_scope": "selected_playback",
+        "camera_view": "frontal_oblique_panning",
+        "confidence_probability": null,
+        "limitations": [
+          "Selected previews and sampled playback frames only; full lesson and spoken audio not reviewed.",
+          "Source capture speed unverified; player locators are not physical movement durations.",
+          "Uncalibrated perspective, edits and possible occlusion; no numerical angles, forces or scores extracted.",
+          "Segment bounds cover the preview scan; exact selected playback locators are in youtube-observations.json."
+        ],
+        "validated_for_openski": false,
+        "spoken_audio_reviewed": false
+      },
+      "numerical_measurements": []
+    },
+    {
+      "finding_id": "F021",
+      "source_id": "V18",
+      "source_url": "https://www.youtube.com/watch?v=tBU0VJ0vBrs",
+      "review_date": "2026-10-08",
+      "topic": "certification_standard_contains_below_standard_examples",
+      "context": [
+        "short_turns",
+        "qualitative_educational_review"
+      ],
+      "source_segment": {
+        "start_s": 0,
+        "end_s": 180.0,
+        "locator_precision": "approximate_player_location",
+        "source_capture_speed_verified": false
+      },
+      "evidence_basis": [
+        "sampled_previews",
+        "playback_frames",
+        "creator_description",
+        "visible_written_annotation"
+      ],
+      "visual_observation": "The played blue-jacket example links turns under a consolidation badge. Other preview examples carry refinement badges. The overview names groomed black terrain and grip above the fall line.",
+      "coaching_guidance": "The creator explicitly says consolidation examples do not meet Level 3 criteria and refinement examples do meet them.",
+      "research_interpretation": "Never assign expert-positive labels to every skier in an official standards video. Preserve the within-video badge and skier identity; the overview does not make a boot reversal a grip measurement.",
+      "movement_sequence": [
+        {
+          "earlier": "inclined_turn_configuration",
+          "relation": "alternates_with",
+          "later": "less_inclined_intervening_configuration",
+          "basis": "visually_observed"
+        }
+      ],
+      "sensor_connection": {
+        "status": "candidate_proxy",
+        "single_boot": "Calibrated multiaxis boot angular-rate trajectories may support same-definition turn/reversal candidates; no grip, pressure or joint angle is measured.",
+        "dual_boot": "Synchronised bilateral rates may support reversal lag and matched-task trajectory comparisons; inside/outside roles and mounting transforms must be retained.",
+        "pressure_insoles": "Bilateral calibrated plantar signals would provide distinct loading events, not ski edge angle.",
+        "validation_needed": [
+          "Synchronised original-speed skiing video and raw boot IMUs with independent event annotations.",
+          "Separate task, terrain, speed, mounting and sensor-quality effects; measure missed and extra events."
+        ]
+      },
+      "quality": {
+        "review_scope": "selected_playback",
+        "camera_view": "frontal_oblique_panning",
+        "confidence_probability": null,
+        "limitations": [
+          "Selected previews and sampled playback frames only; full lesson and spoken audio not reviewed.",
+          "Source capture speed unverified; player locators are not physical movement durations.",
+          "Uncalibrated perspective, edits and possible occlusion; no numerical angles, forces or scores extracted.",
+          "Played consolidation skier explicitly does not meet the source Level 3 standard.",
+          "Segment bounds cover the preview scan; exact selected playback locators are in youtube-observations.json."
+        ],
+        "validated_for_openski": false,
+        "spoken_audio_reviewed": false
+      },
+      "numerical_measurements": []
+    },
+    {
+      "finding_id": "F022",
+      "source_id": "V19",
+      "source_url": "https://www.youtube.com/watch?v=nh0YYFXsiUw",
+      "review_date": "2026-10-08",
+      "topic": "cross_under_transition_is_a_distinct_research_task",
+      "context": [
+        "transition_and_coordination",
+        "qualitative_educational_review"
+      ],
+      "source_segment": {
+        "start_s": 0,
+        "end_s": 533.0,
+        "locator_precision": "approximate_player_location",
+        "source_capture_speed_verified": false
+      },
+      "evidence_basis": [
+        "sampled_previews",
+        "playback_frames",
+        "creator_description",
+        "visible_written_annotation"
+      ],
+      "visual_observation": "The selected cross-under chapter shows a rear-oblique skiing example with a drawn leg line, standing explanation and a closer flexed turn example; the edit prevents one continuous event timeline.",
+      "coaching_guidance": "Creator chapters distinguish crossover and cross-under release exercises, and later an airborne edge-change exercise.",
+      "research_interpretation": "A single preferred vertical-body pattern cannot cover these distinct tasks. Record flexion/release relationships and contact state separately; do not require a rise at every transition.",
+      "movement_sequence": [],
+      "sensor_connection": {
+        "status": "not_directly_measurable",
+        "single_boot": "Boot rotation cannot recover knee/hip angles, torso-leg separation, vertical body travel or stance width.",
+        "dual_boot": "Two boot rotations still do not determine body joint angles, torso pose or inter-boot distance; associated rate patterns remain hypotheses.",
+        "pressure_insoles": "Plantar loading does not reconstruct body pose or anatomical joint angles.",
+        "validation_needed": [
+          "Calibrated body/ski imaging or additional body sensors for the stated movement.",
+          "Test proposed boot-rate associations independently; do not relabel a proxy as a body measurement."
+        ]
+      },
+      "quality": {
+        "review_scope": "selected_playback",
+        "camera_view": "rear_oblique_and_frontal",
+        "confidence_probability": null,
+        "limitations": [
+          "Selected previews and sampled playback frames only; full lesson and spoken audio not reviewed.",
+          "Source capture speed unverified; player locators are not physical movement durations.",
+          "Uncalibrated perspective, edits and possible occlusion; no numerical angles, forces or scores extracted.",
+          "Segment bounds cover the preview scan; exact selected playback locators are in youtube-observations.json."
+        ],
+        "validated_for_openski": false,
+        "spoken_audio_reviewed": false
+      },
+      "numerical_measurements": []
+    },
+    {
+      "finding_id": "F023",
+      "source_id": "V20",
+      "source_url": "https://www.youtube.com/watch?v=LrmCNarCzIY",
+      "review_date": "2026-10-08",
+      "topic": "carving_progression_separates_tracks_tipping_and_angulation",
+      "context": [
+        "carving_medium_long",
+        "qualitative_educational_review"
+      ],
+      "source_segment": {
+        "start_s": 0,
+        "end_s": 894.0,
+        "locator_precision": "approximate_player_location",
+        "source_capture_speed_verified": false
+      },
+      "evidence_basis": [
+        "sampled_previews",
+        "playback_frames",
+        "creator_description",
+        "visible_written_annotation"
+      ],
+      "visual_observation": "Previews progress from skidded/carved examples through traverse, J-turn, railroad and angulation demonstrations. The played railroad section is mainly a stationary frontal tipping explanation.",
+      "coaching_guidance": "Creator chapters distinguish elementary tipping drills from subsequent angulation instruction.",
+      "research_interpretation": "Track evidence and whole-body movement give different information. Treat commercial edge-angle displays and named angle targets as source claims requiring independent appraisal, not imported OpenSki thresholds.",
+      "movement_sequence": [],
+      "sensor_connection": {
+        "status": "candidate_proxy",
+        "single_boot": "Calibrated multiaxis boot angular-rate trajectories may support same-definition turn/reversal candidates; no grip, pressure or joint angle is measured.",
+        "dual_boot": "Synchronised bilateral rates may support reversal lag and matched-task trajectory comparisons; inside/outside roles and mounting transforms must be retained.",
+        "pressure_insoles": "Bilateral calibrated plantar signals would provide distinct loading events, not ski edge angle.",
+        "validation_needed": [
+          "Synchronised original-speed skiing video and raw boot IMUs with independent event annotations.",
+          "Separate task, terrain, speed, mounting and sensor-quality effects; measure missed and extra events."
+        ]
+      },
+      "quality": {
+        "review_scope": "selected_playback",
+        "camera_view": "mixed_frontal_side_rear",
+        "confidence_probability": null,
+        "limitations": [
+          "Selected previews and sampled playback frames only; full lesson and spoken audio not reviewed.",
+          "Source capture speed unverified; player locators are not physical movement durations.",
+          "Uncalibrated perspective, edits and possible occlusion; no numerical angles, forces or scores extracted.",
+          "Segment bounds cover the preview scan; exact selected playback locators are in youtube-observations.json."
+        ],
+        "validated_for_openski": false,
+        "spoken_audio_reviewed": false
+      },
+      "numerical_measurements": []
+    },
+    {
+      "finding_id": "F024",
+      "source_id": "V21",
+      "source_url": "https://www.youtube.com/watch?v=1u90Tke_5Bs",
+      "review_date": "2026-10-08",
+      "topic": "turn_shape_and_movement_sequence_are_separate_variables",
+      "context": [
+        "carving_medium_long",
+        "qualitative_educational_review"
+      ],
+      "source_segment": {
+        "start_s": 0,
+        "end_s": 735.0,
+        "locator_precision": "approximate_player_location",
+        "source_capture_speed_verified": false
+      },
+      "evidence_basis": [
+        "sampled_previews",
+        "playback_frames",
+        "creator_description",
+        "visible_written_annotation"
+      ],
+      "visual_observation": "Previews show drawn trajectories over snow tracks, different turn demonstrations and a funnel exercise. The selected chapter concerns transitioning before angulating.",
+      "coaching_guidance": "Creator chapters distinguish changing arc length from movement drills and propose a crossover/topple/angulate sequence for the illustrated problem.",
+      "research_interpretation": "Compare sequence within turn-shape and tactical context. The title and coaching drill do not justify a universal ordering for every skiing discipline.",
+      "movement_sequence": [
+        {
+          "earlier": "crossover_and_topple",
+          "relation": "before",
+          "later": "angulation_in_this_corrective_drill",
+          "basis": "coaching_guidance"
+        }
+      ],
+      "sensor_connection": {
+        "status": "not_directly_measurable",
+        "single_boot": "Boot rotation cannot recover knee/hip angles, torso-leg separation, vertical body travel or stance width.",
+        "dual_boot": "Two boot rotations still do not determine body joint angles, torso pose or inter-boot distance; associated rate patterns remain hypotheses.",
+        "pressure_insoles": "Plantar loading does not reconstruct body pose or anatomical joint angles.",
+        "validation_needed": [
+          "Calibrated body/ski imaging or additional body sensors for the stated movement.",
+          "Test proposed boot-rate associations independently; do not relabel a proxy as a body measurement."
+        ]
+      },
+      "quality": {
+        "review_scope": "selected_playback",
+        "camera_view": "mixed_oblique_and_track_views",
+        "confidence_probability": null,
+        "limitations": [
+          "Selected previews and sampled playback frames only; full lesson and spoken audio not reviewed.",
+          "Source capture speed unverified; player locators are not physical movement durations.",
+          "Uncalibrated perspective, edits and possible occlusion; no numerical angles, forces or scores extracted.",
+          "Held, annotated, inset or overlaid images occur in the inspected material; not a continuous biomechanics sequence.",
+          "Segment bounds cover the preview scan; exact selected playback locators are in youtube-observations.json."
+        ],
+        "validated_for_openski": false,
+        "spoken_audio_reviewed": false
+      },
+      "numerical_measurements": []
+    },
+    {
+      "finding_id": "F025",
+      "source_id": "V22",
+      "source_url": "https://www.youtube.com/watch?v=OKCvnIV6pQU",
+      "review_date": "2026-10-08",
+      "topic": "composite_transition_diagram_is_not_a_tracked_body",
+      "context": [
+        "transition_and_coordination",
+        "qualitative_educational_review"
+      ],
+      "source_segment": {
+        "start_s": 0,
+        "end_s": 197.0,
+        "locator_precision": "approximate_player_location",
+        "source_capture_speed_verified": false
+      },
+      "evidence_basis": [
+        "sampled_previews",
+        "playback_frames",
+        "creator_description",
+        "visible_written_annotation"
+      ],
+      "visual_observation": "Preview analysis superimposes successive skier positions and drawn force/centre-of-mass arrows. It is an explanatory visual rather than a calibrated force measurement.",
+      "coaching_guidance": "The creator presents the excerpt as an explanation of carving transitions.",
+      "research_interpretation": "Exclude duplicate bodies, drawn arrows and held composite images from pose tracking. Apparent motion in a diagram is not a physical-time trajectory and cannot validate boot phase timing.",
+      "movement_sequence": [],
+      "sensor_connection": {
+        "status": "methodological_constraint",
+        "single_boot": "No physical event timing can be validated against an edited, held or independently timed composite.",
+        "dual_boot": "Clock alignment cannot repair an unknown video timebase; validate against an uninterrupted original-speed source.",
+        "pressure_insoles": "Loading event alignment has the same source-timebase restriction.",
+        "validation_needed": [
+          "Identify shot boundaries, holds, repeats, overlays and source speed before annotation.",
+          "Use a verified common timebase for video and sensors; retain uncertainty."
+        ]
+      },
+      "quality": {
+        "review_scope": "selected_playback",
+        "camera_view": "oblique_analysis_with_superimposed_positions",
+        "confidence_probability": null,
+        "limitations": [
+          "Selected previews and sampled playback frames only; full lesson and spoken audio not reviewed.",
+          "Source capture speed unverified; player locators are not physical movement durations.",
+          "Uncalibrated perspective, edits and possible occlusion; no numerical angles, forces or scores extracted.",
+          "Held, annotated, inset or overlaid images occur in the inspected material; not a continuous biomechanics sequence.",
+          "Segment bounds cover the preview scan; exact selected playback locators are in youtube-observations.json."
+        ],
+        "validated_for_openski": false,
+        "spoken_audio_reviewed": false
+      },
+      "numerical_measurements": []
+    },
+    {
+      "finding_id": "F026",
+      "source_id": "V23",
+      "source_url": "https://www.youtube.com/watch?v=90NV7xg_vnc",
+      "review_date": "2026-10-08",
+      "topic": "race_gate_context_constrains_turn_comparisons",
+      "context": [
+        "racing",
+        "qualitative_educational_review"
+      ],
+      "source_segment": {
+        "start_s": 0,
+        "end_s": 148.0,
+        "locator_precision": "approximate_player_location",
+        "source_capture_speed_verified": false
+      },
+      "evidence_basis": [
+        "sampled_previews",
+        "playback_frames"
+      ],
+      "visual_observation": "The played GS section shows repeated highly inclined gate turns, leg-length differences and more upright intervening configurations. Broadcast cuts change view and skier scale.",
+      "coaching_guidance": null,
+      "research_interpretation": "Retain gate/course context, terrain and camera shot boundaries. Gate passage, peak inclination and transition are different candidate events; a visible race clock alone does not calibrate joint geometry.",
+      "movement_sequence": [
+        {
+          "earlier": "inclined_turn_configuration",
+          "relation": "alternates_with",
+          "later": "less_inclined_intervening_configuration",
+          "basis": "visually_observed"
+        }
+      ],
+      "sensor_connection": {
+        "status": "candidate_proxy",
+        "single_boot": "Calibrated multiaxis boot angular-rate trajectories may support same-definition turn/reversal candidates; no grip, pressure or joint angle is measured.",
+        "dual_boot": "Synchronised bilateral rates may support reversal lag and matched-task trajectory comparisons; inside/outside roles and mounting transforms must be retained.",
+        "pressure_insoles": "Bilateral calibrated plantar signals would provide distinct loading events, not ski edge angle.",
+        "validation_needed": [
+          "Synchronised original-speed skiing video and raw boot IMUs with independent event annotations.",
+          "Separate task, terrain, speed, mounting and sensor-quality effects; measure missed and extra events."
+        ]
+      },
+      "quality": {
+        "review_scope": "selected_playback",
+        "camera_view": "broadcast_frontal_side_panning",
+        "confidence_probability": null,
+        "limitations": [
+          "Selected previews and sampled playback frames only; full lesson and spoken audio not reviewed.",
+          "Source capture speed unverified; player locators are not physical movement durations.",
+          "Uncalibrated perspective, edits and possible occlusion; no numerical angles, forces or scores extracted.",
+          "Segment bounds cover the preview scan; exact selected playback locators are in youtube-observations.json."
+        ],
+        "validated_for_openski": false,
+        "spoken_audio_reviewed": false
+      },
+      "numerical_measurements": []
+    },
+    {
+      "finding_id": "F027",
+      "source_id": "V24",
+      "source_url": "https://www.youtube.com/watch?v=XIqjWsa20kw",
+      "review_date": "2026-10-08",
+      "topic": "gs_training_interleaves_coaching_and_turn_demonstrations",
+      "context": [
+        "racing",
+        "qualitative_educational_review"
+      ],
+      "source_segment": {
+        "start_s": 0,
+        "end_s": 261.0,
+        "locator_precision": "approximate_player_location",
+        "source_capture_speed_verified": false
+      },
+      "evidence_basis": [
+        "sampled_previews",
+        "playback_frames",
+        "creator_description",
+        "visible_written_annotation"
+      ],
+      "visual_observation": "The played excerpt alternates an interview with gate turns showing inclination and differing leg flexion; the skier passes partly behind a gate. Previews include a stationary demonstration.",
+      "coaching_guidance": "The creator identifies Federica Brignone training and coach Gianluca Rulfi explaining GS technique; spoken content was not reviewed.",
+      "research_interpretation": "Tag instructional demonstration, interview and actual gate run separately. Gate occlusion and edits prevent assuming a single measurable movement sequence across the excerpt.",
+      "movement_sequence": [],
+      "sensor_connection": {
+        "status": "not_directly_measurable",
+        "single_boot": "Boot rotation cannot recover knee/hip angles, torso-leg separation, vertical body travel or stance width.",
+        "dual_boot": "Two boot rotations still do not determine body joint angles, torso pose or inter-boot distance; associated rate patterns remain hypotheses.",
+        "pressure_insoles": "Plantar loading does not reconstruct body pose or anatomical joint angles.",
+        "validation_needed": [
+          "Calibrated body/ski imaging or additional body sensors for the stated movement.",
+          "Test proposed boot-rate associations independently; do not relabel a proxy as a body measurement."
+        ]
+      },
+      "quality": {
+        "review_scope": "selected_playback",
+        "camera_view": "frontal_oblique_fixed_and_panning",
+        "confidence_probability": null,
+        "limitations": [
+          "Selected previews and sampled playback frames only; full lesson and spoken audio not reviewed.",
+          "Source capture speed unverified; player locators are not physical movement durations.",
+          "Uncalibrated perspective, edits and possible occlusion; no numerical angles, forces or scores extracted.",
+          "Segment bounds cover the preview scan; exact selected playback locators are in youtube-observations.json."
+        ],
+        "validated_for_openski": false,
+        "spoken_audio_reviewed": false
+      },
+      "numerical_measurements": []
+    },
+    {
+      "finding_id": "F028",
+      "source_id": "V25",
+      "source_url": "https://www.youtube.com/watch?v=t36ufnNFSSM",
+      "review_date": "2026-10-08",
+      "topic": "follow_cam_gs_provides_sequence_but_moving_reference",
+      "context": [
+        "racing",
+        "qualitative_educational_review"
+      ],
+      "source_segment": {
+        "start_s": 0,
+        "end_s": 57.0,
+        "locator_precision": "approximate_player_location",
+        "source_capture_speed_verified": false
+      },
+      "evidence_basis": [
+        "sampled_previews",
+        "playback_frames"
+      ],
+      "visual_observation": "The played following-camera sequence shows successive red/blue gates, alternating lateral displacement and inclined positions. Skier size and viewing direction change while the camera follows.",
+      "coaching_guidance": null,
+      "research_interpretation": "Following footage is useful for turn order and gate context but image-vertical is not a stable snow-normal reference. Do not transfer its apparent lean directly to boot roll or ski edge angle.",
+      "movement_sequence": [
+        {
+          "earlier": "inclined_turn_configuration",
+          "relation": "alternates_with",
+          "later": "less_inclined_intervening_configuration",
+          "basis": "visually_observed"
+        }
+      ],
+      "sensor_connection": {
+        "status": "candidate_proxy",
+        "single_boot": "Calibrated multiaxis boot angular-rate trajectories may support same-definition turn/reversal candidates; no grip, pressure or joint angle is measured.",
+        "dual_boot": "Synchronised bilateral rates may support reversal lag and matched-task trajectory comparisons; inside/outside roles and mounting transforms must be retained.",
+        "pressure_insoles": "Bilateral calibrated plantar signals would provide distinct loading events, not ski edge angle.",
+        "validation_needed": [
+          "Synchronised original-speed skiing video and raw boot IMUs with independent event annotations.",
+          "Separate task, terrain, speed, mounting and sensor-quality effects; measure missed and extra events."
+        ]
+      },
+      "quality": {
+        "review_scope": "selected_playback",
+        "camera_view": "rear_following_wide_angle",
+        "confidence_probability": null,
+        "limitations": [
+          "Selected previews and sampled playback frames only; full lesson and spoken audio not reviewed.",
+          "Source capture speed unverified; player locators are not physical movement durations.",
+          "Uncalibrated perspective, edits and possible occlusion; no numerical angles, forces or scores extracted.",
+          "Segment bounds cover the preview scan; exact selected playback locators are in youtube-observations.json."
+        ],
+        "validated_for_openski": false,
+        "spoken_audio_reviewed": false
+      },
+      "numerical_measurements": []
+    },
+    {
+      "finding_id": "F029",
+      "source_id": "V26",
+      "source_url": "https://www.youtube.com/watch?v=xwRRbIcY5mY",
+      "review_date": "2026-10-08",
+      "topic": "demonstrated_lean_error_needs_context_not_pose_threshold",
+      "context": [
+        "errors_and_corrections",
+        "qualitative_educational_review"
+      ],
+      "source_segment": {
+        "start_s": 0,
+        "end_s": 267.0,
+        "locator_precision": "approximate_player_location",
+        "source_capture_speed_verified": false
+      },
+      "evidence_basis": [
+        "sampled_previews",
+        "playback_frames",
+        "creator_description",
+        "visible_written_annotation"
+      ],
+      "visual_observation": "Previews explicitly label leaning-back and leaning-inside examples, then posture and inner-ski-lift drills. The played section shows a standing tipping/lean demonstration.",
+      "coaching_guidance": "Visible annotations offer posture and outside-ski-oriented cues for these illustrated errors.",
+      "research_interpretation": "Use the author-labelled examples for a coach-reviewed error taxonomy, not automatic diagnoses. A boot pitch value alone cannot establish rearward body balance or unwanted inside loading.",
+      "movement_sequence": [],
+      "sensor_connection": {
+        "status": "not_directly_measurable",
+        "single_boot": "Boot orientation and acceleration alone cannot establish outside-ski loading, plantar pressure or rearward body balance.",
+        "dual_boot": "Bilateral orientation does not resolve force distribution between feet.",
+        "pressure_insoles": "Calibrated bilateral insoles could investigate plantar load transfer; boot-cuff force paths limit interpretation as total ski force.",
+        "validation_needed": [
+          "Synchronised calibrated bilateral plantar sensors and independent load/reference measurements.",
+          "Separate visible ski lift/contact, inferred support and measured force."
+        ]
+      },
+      "quality": {
+        "review_scope": "selected_playback",
+        "camera_view": "close_frontal_side",
+        "confidence_probability": null,
+        "limitations": [
+          "Selected previews and sampled playback frames only; full lesson and spoken audio not reviewed.",
+          "Source capture speed unverified; player locators are not physical movement durations.",
+          "Uncalibrated perspective, edits and possible occlusion; no numerical angles, forces or scores extracted.",
+          "Held, annotated, inset or overlaid images occur in the inspected material; not a continuous biomechanics sequence.",
+          "Segment bounds cover the preview scan; exact selected playback locators are in youtube-observations.json."
+        ],
+        "validated_for_openski": false,
+        "spoken_audio_reviewed": false
+      },
+      "numerical_measurements": []
+    },
+    {
+      "finding_id": "F030",
+      "source_id": "V27",
+      "source_url": "https://www.youtube.com/watch?v=8j-aD8F_T3s",
+      "review_date": "2026-10-08",
+      "topic": "stance_width_coaching_cannot_be_verified_by_boot_rotation_alone",
+      "context": [
+        "errors_and_corrections",
+        "qualitative_educational_review"
+      ],
+      "source_segment": {
+        "start_s": 0,
+        "end_s": 673.0,
+        "locator_precision": "approximate_player_location",
+        "source_capture_speed_verified": false
+      },
+      "evidence_basis": [
+        "sampled_previews",
+        "playback_frames",
+        "creator_description",
+        "visible_written_annotation"
+      ],
+      "visual_observation": "Previews contrast a coached learner, skiing drills and day-to-day comparison. The played railroad chapter contains an instructor explanation and a stationary exchange rather than an uninterrupted skiing run.",
+      "coaching_guidance": "The creator identifies variable stance width and low edging as that learner's coaching topics.",
+      "research_interpretation": "Keep an individual coaching diagnosis distinct from a population rule. Dual-boot orientation does not provide the distance between boots; stance width needs additional sensing or imaging.",
+      "movement_sequence": [],
+      "sensor_connection": {
+        "status": "not_directly_measurable",
+        "single_boot": "Boot rotation cannot recover knee/hip angles, torso-leg separation, vertical body travel or stance width.",
+        "dual_boot": "Two boot rotations still do not determine body joint angles, torso pose or inter-boot distance; associated rate patterns remain hypotheses.",
+        "pressure_insoles": "Plantar loading does not reconstruct body pose or anatomical joint angles.",
+        "validation_needed": [
+          "Calibrated body/ski imaging or additional body sensors for the stated movement.",
+          "Test proposed boot-rate associations independently; do not relabel a proxy as a body measurement."
+        ]
+      },
+      "quality": {
+        "review_scope": "selected_playback",
+        "camera_view": "mixed_frontal_oblique",
+        "confidence_probability": null,
+        "limitations": [
+          "Selected previews and sampled playback frames only; full lesson and spoken audio not reviewed.",
+          "Source capture speed unverified; player locators are not physical movement durations.",
+          "Uncalibrated perspective, edits and possible occlusion; no numerical angles, forces or scores extracted.",
+          "Segment bounds cover the preview scan; exact selected playback locators are in youtube-observations.json."
+        ],
+        "validated_for_openski": false,
+        "spoken_audio_reviewed": false
+      },
+      "numerical_measurements": []
+    },
+    {
+      "finding_id": "F031",
+      "source_id": "V28",
+      "source_url": "https://www.youtube.com/watch?v=gbWvUannYnU",
+      "review_date": "2026-10-08",
+      "topic": "advanced_short_turn_standard_remains_steered",
+      "context": [
+        "short_turns",
+        "qualitative_educational_review"
+      ],
+      "source_segment": {
+        "start_s": 0,
+        "end_s": 114.0,
+        "locator_precision": "approximate_player_location",
+        "source_capture_speed_verified": false
+      },
+      "evidence_basis": [
+        "sampled_previews",
+        "playback_frames",
+        "creator_description",
+        "visible_written_annotation"
+      ],
+      "visual_observation": "The opening explicitly labels steered ski performance. The played skier links short turns with changing leg flexion and inclination. Previews contain different refinement badges and a separate pressure/edging explanation.",
+      "coaching_guidance": "Visible criteria emphasise coordinated pressure/edging and grip above the fall line for this advanced task.",
+      "research_interpretation": "Advanced short turns need not be classified as pure carving. Preserve steering/grip criteria and assessment stage instead of treating larger boot tilt as higher skill.",
+      "movement_sequence": [
+        {
+          "earlier": "inclined_turn_configuration",
+          "relation": "alternates_with",
+          "later": "less_inclined_intervening_configuration",
+          "basis": "visually_observed"
+        }
+      ],
+      "sensor_connection": {
+        "status": "candidate_proxy",
+        "single_boot": "Calibrated multiaxis boot angular-rate trajectories may support same-definition turn/reversal candidates; no grip, pressure or joint angle is measured.",
+        "dual_boot": "Synchronised bilateral rates may support reversal lag and matched-task trajectory comparisons; inside/outside roles and mounting transforms must be retained.",
+        "pressure_insoles": "Bilateral calibrated plantar signals would provide distinct loading events, not ski edge angle.",
+        "validation_needed": [
+          "Synchronised original-speed skiing video and raw boot IMUs with independent event annotations.",
+          "Separate task, terrain, speed, mounting and sensor-quality effects; measure missed and extra events."
+        ]
+      },
+      "quality": {
+        "review_scope": "selected_playback",
+        "camera_view": "frontal_oblique_panning",
+        "confidence_probability": null,
+        "limitations": [
+          "Selected previews and sampled playback frames only; full lesson and spoken audio not reviewed.",
+          "Source capture speed unverified; player locators are not physical movement durations.",
+          "Uncalibrated perspective, edits and possible occlusion; no numerical angles, forces or scores extracted.",
+          "Segment bounds cover the preview scan; exact selected playback locators are in youtube-observations.json."
+        ],
+        "validated_for_openski": false,
+        "spoken_audio_reviewed": false
+      },
+      "numerical_measurements": []
+    },
+    {
+      "finding_id": "F032",
+      "source_id": "V29",
+      "source_url": "https://www.youtube.com/watch?v=S4hioJ4ThJA",
+      "review_date": "2026-10-08",
+      "topic": "deliberately_skidded_turns_are_an_intended_outcome",
+      "context": [
+        "controlled_steering_and_comparisons",
+        "qualitative_educational_review"
+      ],
+      "source_segment": {
+        "start_s": 0,
+        "end_s": 161.0,
+        "locator_precision": "approximate_player_location",
+        "source_capture_speed_verified": false
+      },
+      "evidence_basis": [
+        "sampled_previews",
+        "playback_frames",
+        "creator_description",
+        "visible_written_annotation"
+      ],
+      "visual_observation": "The played demonstration links turns with ski-heading changes and visible lateral snow displacement. The lesson labels a skidded-turn task and separately illustrates an unwanted acceleration example.",
+      "coaching_guidance": "Visible annotations and creator description favour steering/pivoting with reduced edging for this steep-terrain exercise.",
+      "research_interpretation": "A lower-edging strategy can be intended for controlled sliding. Do not penalise low boot inclination without knowing the skier's task, speed-control outcome and terrain.",
+      "movement_sequence": [],
+      "sensor_connection": {
+        "status": "candidate_proxy",
+        "single_boot": "Calibrated multiaxis boot angular-rate trajectories may support same-definition turn/reversal candidates; no grip, pressure or joint angle is measured.",
+        "dual_boot": "Synchronised bilateral rates may support reversal lag and matched-task trajectory comparisons; inside/outside roles and mounting transforms must be retained.",
+        "pressure_insoles": "Bilateral calibrated plantar signals would provide distinct loading events, not ski edge angle.",
+        "validation_needed": [
+          "Synchronised original-speed skiing video and raw boot IMUs with independent event annotations.",
+          "Separate task, terrain, speed, mounting and sensor-quality effects; measure missed and extra events."
+        ]
+      },
+      "quality": {
+        "review_scope": "selected_playback",
+        "camera_view": "rear_oblique_then_frontal",
+        "confidence_probability": null,
+        "limitations": [
+          "Selected previews and sampled playback frames only; full lesson and spoken audio not reviewed.",
+          "Source capture speed unverified; player locators are not physical movement durations.",
+          "Uncalibrated perspective, edits and possible occlusion; no numerical angles, forces or scores extracted.",
+          "Segment bounds cover the preview scan; exact selected playback locators are in youtube-observations.json."
+        ],
+        "validated_for_openski": false,
+        "spoken_audio_reviewed": false
+      },
+      "numerical_measurements": []
+    },
+    {
+      "finding_id": "F033",
+      "source_id": "V30",
+      "source_url": "https://www.youtube.com/watch?v=a9bcuEpg3yM",
+      "review_date": "2026-10-08",
+      "topic": "mixed_turn_types_require_separate_phase_models",
+      "context": [
+        "controlled_steering_and_comparisons",
+        "qualitative_educational_review"
+      ],
+      "source_segment": {
+        "start_s": 0,
+        "end_s": 386.0,
+        "locator_precision": "approximate_player_location",
+        "source_capture_speed_verified": false
+      },
+      "evidence_basis": [
+        "sampled_previews",
+        "playback_frames",
+        "creator_description",
+        "visible_written_annotation"
+      ],
+      "visual_observation": "Previews identify carving, short, mogul, stivot and powder sections; their visible body configurations and snow context differ. The selected playback is within the stivot section.",
+      "coaching_guidance": "The creator frames adapting turn type to changing conditions as the lesson objective.",
+      "research_interpretation": "Record pivot/heading change and later engagement as separate research events in stivot examples; do not impose a pure-carving phase template on all five techniques. This is a classification hypothesis to validate.",
+      "movement_sequence": [],
+      "sensor_connection": {
+        "status": "candidate_proxy",
+        "single_boot": "Calibrated multiaxis boot angular-rate trajectories may support same-definition turn/reversal candidates; no grip, pressure or joint angle is measured.",
+        "dual_boot": "Synchronised bilateral rates may support reversal lag and matched-task trajectory comparisons; inside/outside roles and mounting transforms must be retained.",
+        "pressure_insoles": "Bilateral calibrated plantar signals would provide distinct loading events, not ski edge angle.",
+        "validation_needed": [
+          "Synchronised original-speed skiing video and raw boot IMUs with independent event annotations.",
+          "Separate task, terrain, speed, mounting and sensor-quality effects; measure missed and extra events."
+        ]
+      },
+      "quality": {
+        "review_scope": "selected_playback",
+        "camera_view": "mixed_frontal_rear_oblique",
+        "confidence_probability": null,
+        "limitations": [
+          "Selected previews and sampled playback frames only; full lesson and spoken audio not reviewed.",
+          "Source capture speed unverified; player locators are not physical movement durations.",
+          "Uncalibrated perspective, edits and possible occlusion; no numerical angles, forces or scores extracted.",
+          "Segment bounds cover the preview scan; exact selected playback locators are in youtube-observations.json."
+        ],
+        "validated_for_openski": false,
+        "spoken_audio_reviewed": false
+      },
+      "numerical_measurements": []
+    }
+  ]
+}

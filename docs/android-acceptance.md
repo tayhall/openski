@@ -77,3 +77,15 @@ Observed on the Pixel 9a emulator with a demo run (8 October 2026): the card on 
 4. Open a run in the logbook straight after it ends, before the boots' data is saved, and again after saving. Expect the Run tab and no crash. Open an ordinary recording: expect the old three tabs only.
 5. Check a run where a boot dropped its link for 30 s: the window around the gap shows flat stretches at zero, and the sentence still reads sensibly.
 6. Tune the sentence thresholds (2°, 0.15 s, 20%) if "close" or "uneven" feels wrong on real runs.
+
+## Owed on hardware (research round)
+
+Nothing below has been run on a real boot. The JVM and host tests cover the parsing, the detector parity fixture and the exports. The storage-migration instrumentation check for database version 9 has been compiled but not run (no emulator was attached); run it on an emulator as in the run flow checks above. These items need powered boots.
+
+- [ ] Heading-turn frames (movement characteristic, version 4) arrive on a real boot while turning in place on a chair or in a doorway, and `heading-turns.csv` from the replay of that recording lists lobes close to the turns made.
+- [ ] A flash download of a recording that includes a deliberate knock (a sharp tap on the boot) shows the quality flag set in the stored samples and `D1` data markers in a protocol trace. Only near-rail (within 8 counts of full scale) and dropped-before flags are stored, so knock hard enough to clip or drop samples and expect the exported `samples.csv` `quality` column to be non-zero there; or accept that `quality` stays 0 for a gentle tap and record which it was.
+- [ ] A session recorded before the protocol v3 change (flash record format 2 or live frame v1) still replays and exports unchanged after the app update and the version 9 migration.
+- [ ] Rest-bias convergence after a cold start: `http://ski-s3.local/api/v1/motion` shows `bias_updates` advancing and `gyro_bias_radps` settling within its 0.15 rad/s clamp while the boot sits still, with `bias_refused` staying low.
+- [ ] Before the first flash of recorder-v3 firmware onto a board that holds an older retained recording, download and erase it first; an older recording downloaded afterwards has its timestamps' low three bits read as quality flags (see `docs/ble-protocol.md` Compatibility).
+- [ ] On the first snow day, a side-by-side of roll-lobe candidates against heading-rate candidates against video, following `docs/first-snow-protocol.md` in the research repo.
+- [ ] Re-measure the accelerometer and gyro calibration under the research acquisition profile (16 g, 20 Hz); until then `/api/v1/acquisition` reports `recogniser_calibration_matches_profile: false` on research builds.

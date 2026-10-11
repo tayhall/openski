@@ -33,7 +33,9 @@ data class SkiSession(
 )
 
 data class SensorCapture(val id: String, val sessionId: String, val side: String, val address: String,
-    val startedAtMs: Long, val state: String, val expected: Int, val dropped: Int, val error: String)
+    val startedAtMs: Long, val state: String, val expected: Int, val dropped: Int, val error: String,
+    /** 2 = legacy 16-byte records, 3 = records whose timestamp low bits are signal-quality flags. */
+    val recordFormat: Int = 2)
 data class StoredLive(val side: String, val receivedAtMs: Long, val sample: SensorSample)
 data class StoredFlash(val capture: SensorCapture, val index: Int, val record: FlashRecord)
 data class SessionData(val session: SkiSession, val live: List<StoredLive>, val flash: List<StoredFlash>,
@@ -46,7 +48,7 @@ data class TestMarker(val id: Long, val timeMs: Long, val label: String, val sid
 data class SensorHealth(val side: String, val timeMs: Long, val battery: Int?, val batteryAtMs: Long?,
     val rssi: Int?, val rssiAtMs: Long?)
 
-class LocalSessionStore(context: Context, databaseName: String = "openski-local.db") : SQLiteOpenHelper(context, databaseName, null, 8) {
+class LocalSessionStore(context: Context, databaseName: String = "openski-local.db") : SQLiteOpenHelper(context, databaseName, null, 9) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE sessions (
             id TEXT PRIMARY KEY, started_at_ms INTEGER NOT NULL, ended_at_ms INTEGER,
@@ -65,6 +67,7 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
         addOriginSchema(db)
         addAnalysisSchema(db)
         addRunSchema(db)
+        addQualitySchema(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -75,6 +78,13 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
         if (oldVersion < 6) addOriginSchema(db)
         if (oldVersion < 7) addAnalysisSchema(db)
         if (oldVersion < 8) addRunSchema(db)
+        if (oldVersion < 9) addQualitySchema(db)
+    }
+
+    /** Version 9: signal quality. Live samples carry quality bits; a capture records its flash record format. */
+    private fun addQualitySchema(db: SQLiteDatabase) {
+        db.execSQL("ALTER TABLE captures ADD COLUMN record_format INTEGER NOT NULL DEFAULT 2")
+        db.execSQL("ALTER TABLE samples ADD COLUMN quality INTEGER NOT NULL DEFAULT 0")
     }
 
     private fun addOriginSchema(db: SQLiteDatabase) {
@@ -266,10 +276,10 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
     }
 
     @Synchronized fun captures(sessionId: String? = null): List<SensorCapture> = readableDatabase.rawQuery(
-        "SELECT id,session_id,side,address,started_at_ms,state,expected,dropped,error FROM captures " +
+        "SELECT id,session_id,side,address,started_at_ms,state,expected,dropped,error,record_format FROM captures " +
             (if (sessionId != null) "WHERE session_id=? " else "") + "ORDER BY started_at_ms", sessionId?.let { arrayOf(it) },
     ).use { c -> buildList { while (c.moveToNext()) add(SensorCapture(c.getString(0), c.getString(1), c.getString(2),
-        c.getString(3), c.getLong(4), c.getString(5), c.getInt(6), c.getInt(7), c.getString(8))) } }
+        c.getString(3), c.getLong(4), c.getString(5), c.getInt(6), c.getInt(7), c.getString(8), c.getInt(9))) } }
 
     @Synchronized fun pendingCapture(address: String): SensorCapture? = captures().lastOrNull {
         it.address == address && it.state !in listOf("erased", "unavailable", "lost")
@@ -291,8 +301,12 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
         } finally { db.endTransaction() }
     }
 
-    /** Validate the committed bytes, then promote the staging copy in one transaction. */
-    @Synchronized fun validateDownload(id: String, expected: Int, dropped: Int): Boolean {
+    /**
+     * Validate the committed bytes, then promote the staging copy in one transaction. [recordFormat]
+     * (2 or 3) is stored with the promoted records, so a failed validation leaves the old format alone.
+     */
+    @Synchronized fun validateDownload(id: String, expected: Int, dropped: Int, recordFormat: Int): Boolean {
+        require(recordFormat == 2 || recordFormat == 3)
         val db = writableDatabase
         db.beginTransaction()
         try {
@@ -307,6 +321,7 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
             db.delete("flash_samples", "capture_id=?", arrayOf(id))
             db.execSQL("INSERT INTO flash_samples SELECT * FROM download_samples WHERE capture_id=?", arrayOf(id))
             db.delete("download_samples", "capture_id=?", arrayOf(id))
+            db.execSQL("UPDATE captures SET record_format=? WHERE id=?", arrayOf<Any>(recordFormat, id))
             updateCapture(id, "verified", expected, dropped)
             db.setTransactionSuccessful()
             return true
@@ -315,14 +330,14 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
 
     @Synchronized fun loadData(id: String): SessionData? {
         val session = getSession(id) ?: return null
-        val live = readableDatabase.rawQuery("SELECT side,received_at_ms,sensor_time_ms,sequence,ax,ay,az,gx,gy,gz FROM samples WHERE session_id=? ORDER BY id", arrayOf(id)).use { c ->
+        val live = readableDatabase.rawQuery("SELECT side,received_at_ms,sensor_time_ms,sequence,ax,ay,az,gx,gy,gz,quality FROM samples WHERE session_id=? ORDER BY id", arrayOf(id)).use { c ->
             buildList { while (c.moveToNext()) add(StoredLive(c.getString(0), c.getLong(1), SensorSample(c.getInt(3), c.getLong(2),
-                c.getFloat(4), c.getFloat(5), c.getFloat(6), c.getFloat(7), c.getFloat(8), c.getFloat(9)))) }
+                c.getFloat(4), c.getFloat(5), c.getFloat(6), c.getFloat(7), c.getFloat(8), c.getFloat(9), c.getInt(10)))) }
         }
         val captures = captures(id)
         val flash = captures.flatMap { capture -> readableDatabase.rawQuery(
             "SELECT record_index,raw FROM flash_samples WHERE capture_id=? ORDER BY record_index", arrayOf(capture.id)).use { c ->
-                buildList { while (c.moveToNext()) FlashRecord.decode(c.getBlob(1))?.let { add(StoredFlash(capture, c.getInt(0), it)) } }
+                buildList { while (c.moveToNext()) FlashRecord.decode(c.getBlob(1), capture.recordFormat >= 3)?.let { add(StoredFlash(capture, c.getInt(0), it)) } }
             }
         }
         val events = readableDatabase.rawQuery("SELECT time_ms,message FROM session_events WHERE session_id=? ORDER BY time_ms", arrayOf(id)).use { c ->
@@ -419,6 +434,7 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
                     put("sensor_time_ms", s.timestampMs); put("sequence", s.sequence)
                     put("ax", s.accelX); put("ay", s.accelY); put("az", s.accelZ)
                     put("gx", s.gyroX); put("gy", s.gyroY); put("gz", s.gyroZ)
+                    put("quality", s.quality)
                 })
             }
             db.setTransactionSuccessful()

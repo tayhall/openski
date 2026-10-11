@@ -63,4 +63,70 @@ class RecorderProtocolTest {
         assertTrue(RecorderStatus(8, 0, 0x40, 0, 0, 60000).production)
         assertFalse(RecorderStatus(8, 0, 0x3f, 0, 0, 60000).production)
     }
+    private fun rawRecord(us: Int): ByteArray = ByteBuffer.allocate(16).order(ByteOrder.LITTLE_ENDIAN).putInt(us)
+        .putShort(100).putShort(200).putShort(981).putShort(10).putShort(20).putShort(30).array()
+
+    @Test fun flagsAreMaskedOnlyForVersionThreeRecords() {
+        val raw = rawRecord(0x0000_0105)
+        val flagged = FlashRecord.decode(raw, withFlags = true)!!
+        assertEquals(0x100L, flagged.timestampUs)
+        assertEquals(17, flagged.sample.quality)
+        assertEquals(0x100L / 1000, flagged.sample.timestampMs)
+        assertArrayEquals(raw, flagged.raw)
+        val legacy = FlashRecord.decode(raw, withFlags = false)!!
+        assertEquals(0x105L, legacy.timestampUs)
+        assertEquals(0, legacy.sample.quality)
+        assertEquals(0x105L, FlashRecord.decode(raw)!!.timestampUs)
+        assertEquals(2, FlashRecord.decode(rawRecord(0x0000_0102), true)!!.sample.quality)
+    }
+    @Test fun chunkMarkerSelectsRecordFormat() {
+        val body = byteArrayOf(0, 0, 0) + rawRecord(0x105)
+        assertTrue(FlashChunk.decode(byteArrayOf(0xd1.toByte()) + body)!!.withFlags)
+        assertFalse(FlashChunk.decode(byteArrayOf(0xd0.toByte()) + body)!!.withFlags)
+        assertNull(FlashChunk.decode(byteArrayOf(0xd2.toByte()) + body))
+        val flagged = FlashChunk.decode(byteArrayOf(0xd1.toByte()) + body)!!
+        assertEquals(17, flagged.records.single().sample.quality)
+        assertEquals(0x105L, FlashChunk.decode(byteArrayOf(0xd0.toByte()) + body)!!.records.single().timestampUs)
+    }
+    @Test fun recorderStatusVersions() {
+        fun status(version: Int) = ByteBuffer.allocate(16).order(ByteOrder.LITTLE_ENDIAN).put(version.toByte()).put(3).put(0).put(5)
+            .putInt(10).putInt(1).putInt(60000).array()
+        assertEquals(2, RecorderStatus.decode(status(2))!!.version)
+        assertEquals(3, RecorderStatus.decode(status(3))!!.version)
+        assertNull(RecorderStatus.decode(status(1)))
+        assertNull(RecorderStatus.decode(status(4)))
+    }
+    @Test fun liveFrameVersionsAndQuality() {
+        fun frame(size: Int, version: Int, quality: Int = 0): ByteArray {
+            val b = ByteBuffer.allocate(size).order(ByteOrder.LITTLE_ENDIAN).put(version.toByte()).putShort(7).putInt(1234)
+                .putShort(100).putShort(-200).putShort(981).putShort(10).putShort(20).putShort(30)
+            if (size == 20) b.put(quality.toByte())
+            return b.array()
+        }
+        val v1 = SensorSample.decode(frame(19, 1))!!
+        assertEquals(0, v1.quality)
+        assertEquals(1234L, v1.timestampMs)
+        assertEquals(0x0a, SensorSample.decode(frame(20, 2, 0x0a))!!.quality)
+        assertEquals(0x0f, SensorSample.decode(frame(20, 2, 0xff))!!.quality)
+        assertNull(SensorSample.decode(frame(20, 1)))
+        assertNull(SensorSample.decode(frame(19, 2)))
+        assertNull(SensorSample.decode(frame(20, 3)))
+    }
+    @Test fun transferRejectsMixedRecordFormats() {
+        val transfer = TransferValidator(4)
+        assertTrue(transfer.accept(FlashChunk(0, listOf(record(), record()), withFlags = true)))
+        assertFalse(transfer.accept(FlashChunk(2, listOf(record()), withFlags = false)))
+        assertTrue(transfer.accept(FlashChunk(2, listOf(record()), withFlags = true)))
+        assertEquals(3, transfer.next)
+        assertEquals(true, transfer.withFlags)
+        assertEquals(3, transfer.recordFormat)
+    }
+    @Test fun transferExposesLegacyFormatAndDefaultsToTwo() {
+        val transfer = TransferValidator(2)
+        assertNull(transfer.withFlags)
+        assertEquals(2, transfer.recordFormat)
+        assertTrue(transfer.accept(FlashChunk(0, listOf(record(), record()), withFlags = false)))
+        assertEquals(false, transfer.withFlags)
+        assertEquals(2, transfer.recordFormat)
+    }
 }

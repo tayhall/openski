@@ -5,10 +5,13 @@
 #include <WiFi.h>
 #include <esp_timer.h>
 #include <esp_system.h>
+#include <string.h>
 
 #include "AppConfig.h"
 #include "BluetoothService.h"
 #include "ImuService.h"
+#include "Mpu6050Profile.h"
+#include "SensorCalibration.h"
 #include "MotionService.h"
 #include "RecorderService.h"
 #include "WifiService.h"
@@ -81,6 +84,24 @@ String skiJson() {
              e.peakRollDegrees, e.peakRateDps, e.pitchDegrees, e.outsideEnvelope ? "true" : "false");
     json += body;
   }
+  char headingHead[128];
+  snprintf(headingHead, sizeof(headingHead),
+           "],\"heading_count\":%lu,\"heading_rejected\":%lu,\"heading_turns\":[",
+           static_cast<unsigned long>(ski.headingCount), static_cast<unsigned long>(ski.headingRejected));
+  json += headingHead;
+  motion::HeadingTurn turns[16];
+  const uint8_t turnCount = motion::recentHeadingTurns(turns, 16);
+  for (uint8_t i = 0; i < turnCount; ++i) {
+    const auto& t = turns[i];
+    char body[288];
+    snprintf(body, sizeof(body),
+             "%s{\"sequence\":%lu,\"start_ms\":%lu,\"end_ms\":%lu,\"positive\":%s,"
+             "\"peak_rate_dps\":%.1f,\"change_deg\":%.2f,\"skipped\":%s,\"near_rail\":%s}",
+             i ? "," : "", static_cast<unsigned long>(t.sequence), static_cast<unsigned long>(t.startUs/1000),
+             static_cast<unsigned long>(t.endUs/1000), t.positive ? "true" : "false", t.peakRateDps,
+             t.changeDegrees, t.skippedSamples ? "true" : "false", t.nearRail ? "true" : "false");
+    json += body;
+  }
   json += "]}";
   return json;
 }
@@ -97,6 +118,14 @@ void handleMotion() {
            state.accelerationMagnitudeMps2);
   String response(body);
   response.remove(response.length()-1);
+  float bias[3];
+  motion::gyroBias(bias);
+  char biasBody[128];
+  snprintf(biasBody, sizeof(biasBody),
+           ",\"gyro_bias_radps\":[%.5f,%.5f,%.5f],\"bias_updates\":%lu,\"bias_refused\":%lu",
+           bias[0], bias[1], bias[2], static_cast<unsigned long>(motion::biasUpdates()),
+           static_cast<unsigned long>(motion::biasRefused()));
+  response += biasBody;
   response += ",\"recent_events\":[";
   motion::Event events[16];
   const uint8_t count = motion::recentEvents(events, 16);
@@ -220,14 +249,99 @@ void handleImu() {
   server.send(200, "application/json", body);
 }
 
+void handleAcquisition() {
+  const auto& monitor = imu::monitor();
+  const auto& stats = monitor.stats();
+  // The recogniser calibration is a fixed per-unit constant set; flag when it was measured under a
+  // different acquisition profile than the one compiled in (e.g. legacy 8 g / 42 Hz vs research 16 g / 20 Hz).
+  const char* measuredProfile = calibration::kMeasuredAcquisitionProfile;
+  const bool calibrationNone = strcmp(measuredProfile, "none") == 0;
+  const bool calibrationMatches = calibrationNone || strcmp(measuredProfile, imu::mpuProfile::kId) == 0;
+  char body[2100];
+  snprintf(body, sizeof(body),
+      "{\"schema_version\":1,\"profile_id\":\"%s\","
+      "\"research_baseline\":\"openski_pre_field_experiments_v0.1\","
+      "\"sensor\":\"%s\",\"ready\":%s,\"device\":\"%s\",\"build\":\"%s\","
+      "\"frame\":\"sensor\",\"acceleration_includes_gravity\":true,"
+      "\"raw_calibration_applied\":false,"
+      "\"recogniser_calibration_profile\":\"%s\",\"recogniser_calibration_matches_profile\":%s,"
+      "\"boot_side\":null,"
+      "\"sensor_to_boot_rotation\":null,\"calibration_reference\":null,"
+      "\"nominal_sample_rate_hz\":%u,\"accel_full_scale_g\":%u,"
+      "\"gyro_full_scale_deg_s\":%u,\"nominal_gyro_bandwidth_hz\":%u,"
+      "\"timestamp_unit\":\"us\",\"timestamp_bits\":32,"
+      "\"timestamp_reference\":\"device_read_completion\","
+      "\"accel_unit\":\"m/s2\",\"gyro_unit\":\"rad/s\","
+      "\"sample_count\":%lu,\"read_failures\":%lu,"
+      "\"gap_review_threshold_us\":20000,\"timestamp_gaps\":%lu,"
+      "\"timestamp_wraps\":%lu,\"last_interval_us\":%lu,\"max_interval_us\":%lu,"
+      "\"accel_near_rail_samples\":%lu,\"gyro_near_rail_samples\":%lu,"
+      "\"latest_quality_flags\":%u,\"has_sample\":%s,"
+      "\"quality_scope\":\"since_device_boot\",\"dual_boot_synchronised\":false,"
+      "\"validation_status\":\"bench_and_field_validation_required\"}",
+      imu::mpuProfile::kId, monitor.sensorName(), stats.ready ? "true" : "false",
+      config::kHostname, config::kBuildId, measuredProfile, calibrationMatches ? "true" : "false",
+      imu::mpuProfile::kSampleRateHz, imu::mpuProfile::kAccelRangeG,
+      imu::mpuProfile::kGyroRangeDps, imu::mpuProfile::kNominalGyroBandwidthHz,
+      static_cast<unsigned long>(stats.samples), static_cast<unsigned long>(stats.readFailures),
+      static_cast<unsigned long>(stats.timestampGaps), static_cast<unsigned long>(stats.timestampWraps),
+      static_cast<unsigned long>(stats.lastIntervalUs), static_cast<unsigned long>(stats.maxIntervalUs),
+      static_cast<unsigned long>(stats.accelNearRailSamples),
+      static_cast<unsigned long>(stats.gyroNearRailSamples),
+      static_cast<unsigned>(monitor.latest().qualityFlags), monitor.hasSample() ? "true" : "false");
+  server.send(200, "application/json", body);
+}
+
 void handleNotFound() {
   server.send(404, "application/json", "{\"error\":\"not_found\"}");
 }
+
+#if defined(OPENSKI_ADC_DIAGNOSTIC) && defined(CONFIG_IDF_TARGET_ESP32S3)
+void handleAdcDiagnostic() {
+  if (recorder::status().recording || bluetooth::connected()) {
+    server.send(409, "application/json", "{\"error\":\"stop_recording_and_disconnect_ble_before_adc_scan\"}");
+    return;
+  }
+  // ADC1 GPIO1..10 only. Never touch IMU I2C pins, USB, boot straps,
+  // flash/PSRAM pins or ADC2 while Wi-Fi is active. No outputs or pulls.
+  const uint8_t pins[] = {1, 2, 4, 5, 6, 7, 10};
+  analogReadResolution(12);
+  String json = "{\"method\":\"unused_adc1_scan_v1\",\"battery_voltage_v\":null,"
+                "\"charge_percent\":null,\"interpretation\":\"unverified_pin_voltages\","
+                "\"attenuation\":\"11db\",\"samples_per_pin\":16,\"pins\":[";
+  bool first = true;
+  for (uint8_t pin : pins) {
+    if (pin == config::kImuSdaPin || pin == config::kImuSclPin) continue;
+    analogSetPinAttenuation(pin, ADC_11db);
+    analogRead(pin);  // Discard initial conversion after channel setup.
+    uint32_t rawSum = 0, mvSum = 0, minMv = UINT32_MAX, maxMv = 0;
+    for (int i = 0; i < 16; ++i) {
+      rawSum += analogRead(pin);
+      const uint32_t mv = analogReadMilliVolts(pin);
+      mvSum += mv;
+      if (mv < minMv) minMv = mv;
+      if (mv > maxMv) maxMv = mv;
+    }
+    char item[180];
+    snprintf(item, sizeof(item), "%s{\"gpio\":%u,\"mean_raw\":%.1f,\"mean_mv\":%.1f,\"min_mv\":%lu,\"max_mv\":%lu}",
+             first ? "" : ",", static_cast<unsigned>(pin), rawSum / 16.0f, mvSum / 16.0f,
+             static_cast<unsigned long>(minMv), static_cast<unsigned long>(maxMv));
+    json += item;
+    first = false;
+  }
+  json += "]}";
+  server.send(200, "application/json", json);
+}
+#endif
 }  // namespace
 
 void begin() {
+#if defined(OPENSKI_ADC_DIAGNOSTIC) && defined(CONFIG_IDF_TARGET_ESP32S3)
+  server.on("/api/v1/diagnostics/adc", HTTP_GET, handleAdcDiagnostic);
+#endif
   server.on("/", HTTP_GET, handleRoot);
   server.on("/api/v1/imu", HTTP_GET, handleImu);
+  server.on("/api/v1/acquisition", HTTP_GET, handleAcquisition);
   server.on("/api/v1/motion", HTTP_GET, handleMotion);
   server.on("/api/v1/motion/zero", HTTP_POST, handleZero);
   server.on("/api/v1/status", HTTP_GET, handleStatus);

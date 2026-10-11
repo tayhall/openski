@@ -1,0 +1,176 @@
+{
+  "schema_version": "0.1.0",
+  "profile_id": "openski_pre_field_experiments_v0.1",
+  "created_at": "2026-10-08",
+  "status": "provisional_not_field_validated",
+  "production_coaching_enabled": false,
+  "automatic_firmware_application_allowed": false,
+  "video_estimates_document": "../research/provisional-video-estimates.json",
+  "references": {
+    "R01": {"source_id": "S05", "url": "https://www.frontiersin.org/journals/sports-and-active-living/articles/10.3389/fspor.2019.00018/full", "scope": "Published dual-boot detector; not a validated MPU6050 or single-boot implementation."},
+    "R02": {"url": "https://raw.githubusercontent.com/torvalds/linux/master/drivers/iio/imu/inv_mpu6050/inv_mpu_core.c", "accessed_at": "2026-10-08", "scope": "Primary MPU6050 driver corroborates supported ranges and a nominal 20 Hz filter option. Upstream master may change; inspect actual device/library."},
+    "R03": {"document": "../docs/sensor-integration.md", "scope": "OpenSki engineering requirements and capability limits; no empirical acceptance thresholds."},
+    "R04": {"document": "../research/manual-angle-annotations.json", "scope": "Original manual pixel annotations in selected public frames; uncalibrated image proxies only."}
+  },
+  "parameters": [
+    {
+      "parameter_id": "acquisition_rate_hz", "category": "engineering_start", "value": 100, "unit": "Hz",
+      "selected_for_experiment": true, "production_coaching_allowed": false,
+      "applicable_to": "MPU6050 initial acquisition/logging experiment; separately validate each replacement IMU.",
+      "rationale": "10 ms nominal sample spacing provides substantially more samples than a turn-scale event needs while keeping raw logging manageable. This is our design choice, not a value inferred from public videos.",
+      "evidence_refs": ["R02", "R03"],
+      "validation": "Measure actual device intervals, jitter, FIFO overflow and sample loss; compare 100 and 200 Hz recordings before selecting a production rate.",
+      "limitations": ["Sampling does not guarantee 10 ms event accuracy.", "BLE packet rate is independent of sensor acquisition rate."]
+    },
+    {
+      "parameter_id": "gyro_full_scale_abs_deg_s", "category": "engineering_start", "value": 1000, "unit": "deg/s",
+      "selected_for_experiment": true, "production_coaching_allowed": false,
+      "applicable_to": "MPU6050; symmetric full scale of -1000 to +1000 deg/s.",
+      "rationale": "Use an available wider range for initial recordings to reduce clipping risk; not a prediction of skier peak rates.",
+      "evidence_refs": ["R02"],
+      "validation": "Verify read-back, scale and known bench rotations; inspect per-axis clipping. Compare lower ranges only after observing real noise and headroom.",
+      "limitations": ["Wider range trades quantisation resolution for headroom.", "Export angular rates in rad/s; pi/180 converts deg/s."]
+    },
+    {
+      "parameter_id": "accelerometer_full_scale_abs_g", "category": "engineering_start", "value": 16, "unit": "g",
+      "selected_for_experiment": true, "production_coaching_allowed": false,
+      "applicable_to": "MPU6050; symmetric full scale of -16 to +16 g.",
+      "rationale": "Initial impact/headroom-oriented logging choice among supported ranges; not expected sustained skiing acceleration.",
+      "evidence_refs": ["R02"],
+      "validation": "Check static gravity, multi-orientation scale and clipping; reassess range after real recordings.",
+      "limitations": ["Acceleration includes gravity unless explicitly processed otherwise.", "Export SI acceleration using a documented g conversion; does not measure ski pressure."]
+    },
+    {
+      "parameter_id": "gyro_hardware_lowpass_nominal_hz", "category": "engineering_start", "value": 20, "unit": "Hz",
+      "selected_for_experiment": true, "production_coaching_allowed": false,
+      "applicable_to": "Requested MPU6050 gyroscope bandwidth; confirm actual driver mapping, coupled accelerometer behaviour and sampling configuration.",
+      "rationale": "Keep bandwidth above the turn-analysis filters while suppressing some high-frequency content before 100 Hz logging. The primary driver includes this nominal option.",
+      "evidence_refs": ["R02"],
+      "validation": "Confirm register/library semantics, bandwidth, delay and end-to-end aliasing with bench excitation and higher-rate comparison recordings.",
+      "limitations": ["This does not guarantee adequate anti-alias rejection.", "Exact filter delay and register values have not been verified for the user's module; no register writes supplied."]
+    },
+    {
+      "parameter_id": "ble_batch_max_age_ms", "category": "engineering_start", "value": 50, "unit": "ms",
+      "selected_for_experiment": true, "production_coaching_allowed": false,
+      "applicable_to": "Proposed transport batching budget, subject to negotiated MTU and existing firmware.",
+      "rationale": "Allows roughly five samples at 100 Hz per batch without replacing individual acquisition timestamps.",
+      "evidence_refs": ["R03"],
+      "validation": "Measure sustained throughput, queue growth, packet loss and phone reconnection behaviour; reduce batch size to fit payload limits.",
+      "limitations": ["Not a BLE connection-interval prescription.", "Transport latency is not sensor event time."]
+    },
+    {
+      "parameter_id": "stationary_calibration_capture_s", "category": "engineering_start", "value": 10, "unit": "s",
+      "selected_for_experiment": true, "production_coaching_allowed": false,
+      "applicable_to": "Initial stationary bias/noise capture before a session.",
+      "rationale": "Collects approximately 1000 samples at the proposed rate for an initial bias and noise inspection.",
+      "evidence_refs": ["R03"],
+      "validation": "Verify actual stillness, temperature stability and repeated calibration consistency. A duration alone cannot qualify calibration.",
+      "limitations": ["Stillness acceptance thresholds remain unset pending bench data.", "A stationary bias check does not calibrate sensor-to-boot alignment or dynamic orientation."]
+    },
+    {
+      "parameter_id": "sample_gap_review_threshold_ms", "category": "engineering_start", "value": 20, "unit": "ms",
+      "selected_for_experiment": true, "production_coaching_allowed": false,
+      "applicable_to": "Diagnostic flag when adjacent acquisition timestamps differ by more than this value at nominal 100 Hz.",
+      "rationale": "Two nominal sample periods is a simple initial diagnostic, not a validated accuracy threshold.",
+      "evidence_refs": ["R03"],
+      "validation": "Always inspect sequence gaps as well; evaluate actual clock jitter and whether missing samples affect each metric.",
+      "limitations": ["A smaller gap may still lose a sample; do not rely on this flag alone.", "Do not silently interpolate across gaps or saturation."]
+    },
+    {
+      "parameter_id": "dual_boot_sync_error_budget_ms", "category": "engineering_start", "value": 10, "unit": "ms",
+      "selected_for_experiment": true, "production_coaching_allowed": false,
+      "applicable_to": "Engineering target for residual relative clock error, not achieved accuracy or a bilateral-symmetry tolerance.",
+      "rationale": "Start with a clock-error budget on the order of one proposed sample interval; refine using the lag resolution the experiment actually needs.",
+      "evidence_refs": ["R03"],
+      "validation": "Measure offset, drift and residuals across the run against a common event/reference. Lag interpretation also needs event-detection uncertainty.",
+      "limitations": ["No zero-lag ideal is implied.", "Withhold lag conclusions whenever uncertainty is comparable to the observed lag."]
+    },
+    {
+      "parameter_id": "offline_decision_lowpass_hz", "category": "published_replication", "value": 0.5, "unit": "Hz",
+      "selected_for_experiment": true, "production_coaching_allowed": false,
+      "applicable_to": "Offline replication of R01: bilateral roll-rate combination, fourth-order Butterworth, zero-lag processing, correct sign/axis mapping.",
+      "rationale": "Published coarse-decision filter; not an OpenSki-validated cutoff.",
+      "evidence_refs": ["R01"],
+      "validation": "Replicate the complete method before evaluating new hardware, tasks and single-boot variants.",
+      "limitations": ["Zero-phase offline processing uses future samples and cannot be copied directly into causal real-time feedback.", "Strong smoothing can attenuate short turns."]
+    },
+    {
+      "parameter_id": "offline_event_refinement_lowpass_hz", "category": "published_replication", "value": 3, "unit": "Hz",
+      "selected_for_experiment": true, "production_coaching_allowed": false,
+      "applicable_to": "R01 refinement of already accepted coarse events; not an independent complete detector.",
+      "rationale": "Published fine-timing branch uses a higher cutoff than its coarse decision branch.",
+      "evidence_refs": ["R01"],
+      "validation": "Check filtering conventions, boundary transients and annotation agreement in offline replication.",
+      "limitations": ["Does not make every local extremum a turn switch.", "Causal filtering introduces timing/latency differences that require separate validation."]
+    },
+    {
+      "parameter_id": "offline_refinement_neighbourhood_fraction", "category": "published_replication", "value": 0.6, "unit": "fraction",
+      "selected_for_experiment": true, "production_coaching_allowed": false,
+      "applicable_to": "R01 search neighbourhood: 0.6 of the interval to each neighbouring coarse extremum, separately before and after the candidate.",
+      "rationale": "Published refinement setting; not a target turn-phase fraction.",
+      "evidence_refs": ["R01"],
+      "validation": "Confirm event pairing and edge cases under exact replication before tuning.",
+      "limitations": ["Requires valid neighbouring candidates.", "Not a symmetric fixed-second window."]
+    },
+    {
+      "parameter_id": "offline_candidate_interval_open_s", "category": "published_replication", "value": [0.3, 5], "unit": "s",
+      "selected_for_experiment": true, "production_coaching_allowed": false,
+      "applicable_to": "R01 coarse candidate rule for opposite-sign extrema: strictly greater than 0.3 and strictly less than 5 seconds, with the other published rules.",
+      "rationale": "Replicated search gate; not an ideal turn-duration range or definition of short/long turns.",
+      "evidence_refs": ["R01"],
+      "validation": "Audit excluded events and false/missed turns by task; flag out-of-domain events instead of scoring them poorly.",
+      "limitations": ["Can exclude valid slow traverses or very rapid movements.", "The full detector includes amplitude/decision rules not completed in this profile."]
+    },
+    {
+      "parameter_id": "turn_detector_amplitude_threshold_rad_s", "category": "unresolved", "value": null, "unit": "rad/s",
+      "selected_for_experiment": false, "production_coaching_allowed": false,
+      "applicable_to": "Any complete boot-rate turn detector.",
+      "rationale": "Public visual observations provide no measured boot-rate amplitude or device noise floor.",
+      "evidence_refs": ["R01", "R03"],
+      "validation": "Appraise the complete published thresholds and fit/validate on separate raw recordings without participant leakage.",
+      "limitations": ["No arbitrary fixed threshold supplied; detector remains incomplete."]
+    },
+    {
+      "parameter_id": "dynamic_orientation_fusion_gain", "category": "unresolved", "value": null, "unit": "method_specific",
+      "selected_for_experiment": false, "production_coaching_allowed": false,
+      "applicable_to": "Six-axis orientation estimation, if later introduced.",
+      "rationale": "Algorithm, sensor noise and sustained-turn acceleration behaviour have not been established.",
+      "evidence_refs": ["R03"],
+      "validation": "Select a specific fusion algorithm and validate dynamic orientation against an independent reference.",
+      "limitations": ["Accelerometer gravity correction is unreliable during sustained acceleration."]
+    },
+    {
+      "parameter_id": "ideal_body_or_ski_angle_targets_deg", "category": "unresolved", "value": null, "unit": "deg",
+      "selected_for_experiment": false, "production_coaching_allowed": false,
+      "applicable_to": "Knee, anatomical ankle, hip angulation, torso lean or true snow-relative ski edge angle targets.",
+      "rationale": "Manual projected estimates are frame-specific and uncertain; they do not establish ideals or boot-sensor observability.",
+      "evidence_refs": ["R03", "R04"],
+      "validation": "Calibrated movement references, contextual multi-skier distributions and independent outcome evidence.",
+      "limitations": ["Never import manual image angles into boot-orientation thresholds."]
+    },
+    {
+      "parameter_id": "outside_ski_load_target_ratio", "category": "unresolved", "value": null, "unit": "ratio",
+      "selected_for_experiment": false, "production_coaching_allowed": false,
+      "applicable_to": "Future bilateral insole experiments only.",
+      "rationale": "No measured force data or validated target distribution is available.",
+      "evidence_refs": ["R03"],
+      "validation": "Calibrate insoles and account for boot-cuff force paths; relate plantar loading to independent outcomes.",
+      "limitations": ["Neither a boot IMU nor visible outside-leg extension measures load ratio."]
+    },
+    {
+      "parameter_id": "bilateral_lag_fault_threshold_s", "category": "unresolved", "value": null, "unit": "s",
+      "selected_for_experiment": false, "production_coaching_allowed": false,
+      "applicable_to": "Dual-boot coaching interpretation.",
+      "rationale": "A measurable lag need not be a technique fault and may be task-dependent.",
+      "evidence_refs": ["R03"],
+      "validation": "Separate clock/event uncertainty from repeatable task-specific relationships with skiing outcomes.",
+      "limitations": ["No universal simultaneous-edging requirement or zero-lag ideal."]
+    }
+  ],
+  "literature_timing_examples": [
+    {"example_id": "LT01", "source_ref": "R01", "locator": "Figure 3 description", "technique": "carving_example_sequence", "turn_count": 9, "mean_turn_duration_s": 2.97, "reported_sd_s": 0.43, "status": "source_example_not_population_reference_or_ideal", "openski_validated": false},
+    {"example_id": "LT02", "source_ref": "R01", "locator": "Figure 3 description", "technique": "short_turn_example_sequence", "turn_count": 16, "mean_turn_duration_s": 1.04, "reported_sd_s": 0.41, "status": "source_example_not_population_reference_or_ideal", "openski_validated": false}
+  ],
+  "unknowns": ["Actual skier boot-rate/orientation ranges", "True ski edge and anatomical joint angles", "Physical durations and phase fractions in the reviewed public clips", "Validated causal online detector settings", "Coaching thresholds and performance scores"],
+  "manufacturer_document_check": "Official legacy register-map requests redirected to HTML or failed. Supported options were cross-checked against the primary Linux MPU6050 driver; actual module/library registers, delays and coupled filters still need bench confirmation."
+}

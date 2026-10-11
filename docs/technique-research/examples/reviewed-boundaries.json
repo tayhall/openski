@@ -1,0 +1,4 @@
+{
+  "note": "Intentionally empty template. Times are seconds relative to the first decoded presentation timestamp. Every boundary needs time_s, uncertainty_s, reviewer, definition, next_turn_direction and direction_basis. Include complete turn boundaries only. These are not inferred pressure or ski-flat events.",
+  "boundaries": []
+}

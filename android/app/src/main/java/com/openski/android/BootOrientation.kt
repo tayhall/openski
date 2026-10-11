@@ -16,7 +16,13 @@ data class BootCalibration(val side: String, val timeMs: Double, val axis: Int, 
     val gravity: Vector3, val bias: Vector3, val forward: Vector3?=null)
 data class BootRoll(val side: String, val timeMs: Double, val degrees: Double, val driftSeconds: Double,
     val pitchDegrees: Double=0.0, val yawDegrees: Double=0.0, val segment: Int=0,
-    val rollRateRadps: Double=0.0, val pitchRateRadps: Double=0.0, val yawRateRadps: Double=0.0)
+    val rollRateRadps: Double=0.0, val pitchRateRadps: Double=0.0, val yawRateRadps: Double=0.0,
+    /** Rotation rate about the current vertical (omega . g), the experimental heading rate. */
+    val headingRateRadps: Double=0.0,
+    /** Signal-quality bits of the sample this estimate came from (see [SensorSample.quality]). */
+    val quality: Int=0,
+    /** True when the firmware's impact/free-fall/over-rate gate would have skipped this sample for heading. */
+    val gated: Boolean=false)
 
 private data class OrientationQuaternion(val w: Double, val x: Double, val y: Double, val z: Double) {
     operator fun times(q: OrientationQuaternion)=OrientationQuaternion(
@@ -98,8 +104,18 @@ object BootOrientation {
             .mapNotNull(tracker::accept)
     }
 
+    /**
+     * Mirror of the SkiTracker gate (kImpactG 2.5, kFreeFallG 0.3, kMaxRateRadps 12): such samples carry no
+     * usable vertical or rate, so the firmware leaves the heading filters untouched and replay must too.
+     */
+    fun impactGated(accelMagnitude: Double, gyroMagnitude: Double): Boolean =
+        accelMagnitude>2.5*9.80665 || accelMagnitude<0.3*9.80665 || gyroMagnitude>12.0
+
     /** The same state machine powers real-time telemetry and saved-session replay. */
-    class Tracker(private val calibration: BootCalibration, awaitRest: Boolean=false) {
+    class Tracker(private val calibration: BootCalibration, awaitRest: Boolean=false,
+        /** Learn a slow extra gyro bias while demonstrably at rest ([RestBias]); tests may disable it. */
+        learnRestBias: Boolean=true) {
+        private val restBias=if(learnRestBias) RestBias() else null
         private val up=calibration.gravity
         private val forward=calibration.forward ?: (axis(calibration.axis)-up*up.dot(axis(calibration.axis))).unit()*calibration.sign.toDouble()
         private val lateral=up.cross(forward)
@@ -116,10 +132,16 @@ object BootOrientation {
             seen=true
             previous=p.timeMs
             if(dt>250 || dt<0) { orientation=null; restedMs=0.0; segment++ }
-            val omega=rotation(p.sample)-calibration.bias
             val accel=acceleration(p.sample)
+            val calibrated=rotation(p.sample)-calibration.bias
+            // The learner sees the gyro without its own estimate subtracted (no feedback loop).
+            // A near-rail sample (accelerometer 1, gyro 2) is untrusted: it splits the rest-bias window and
+            // restarts the 2 s rest timer so no correction is applied across it.
+            val nearRail=p.sample.quality and SensorSample.QUALITY_RAIL_MASK!=0
+            if(nearRail) restBias?.interrupt() else restBias?.update(p.timeMs,accel,calibrated)
+            val omega=restBias?.let { calibrated-it.estimate } ?: calibrated
             val stationary=omega.norm()<0.08 && accel.norm() in 9.3..10.3
-            restedMs=if(stationary) restedMs+dt.coerceIn(0.0,100.0) else 0.0
+            restedMs=if(stationary && !nearRail) restedMs+dt.coerceIn(0.0,100.0) else 0.0
             orientation=orientation?.let { (it*OrientationQuaternion.increment(omega,dt.coerceIn(0.0,250.0)/1000)).unit() }
             if(restedMs>=2000) {
                 val current=orientation
@@ -139,7 +161,8 @@ object BootOrientation {
                     BootRoll(p.side,p.timeMs,Math.toDegrees(atan2(g.dot(lateral),g.dot(up))),
                         (p.timeMs-anchor)/1000,Math.toDegrees(atan2(-g.dot(forward),hypot(g.dot(lateral),g.dot(up)))),
                         Math.toDegrees(atan2(sin(yaw),cos(yaw))),segment,
-                        omega.dot(forward),omega.dot(lateral),omega.dot(up))
+                        omega.dot(forward),omega.dot(lateral),omega.dot(up),omega.dot(g),p.sample.quality,
+                        gated=impactGated(accel.norm(),omega.norm()))
                 else null
             }
         }

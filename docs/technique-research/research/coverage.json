@@ -1,0 +1,242 @@
+{
+  "schema_version": "0.1.0",
+  "review_date": "2026-10-08",
+  "purpose": "purposive_qualitative_pilot_not_statistically_representative_reference_dataset",
+  "video_count": 30,
+  "findings_count": 33,
+  "primary_topic_counts": {
+    "transition_and_coordination": 5,
+    "carving_medium_long": 5,
+    "short_turns": 6,
+    "basic_parallel": 5,
+    "controlled_steering_and_comparisons": 4,
+    "racing": 3,
+    "errors_and_corrections": 2
+  },
+  "sources": [
+    {
+      "source_id": "V01",
+      "primary_topic": "transition_and_coordination",
+      "publisher": "Carv Digital Ski Coach and Tom Gellie",
+      "review_scope": "selected_playback_and_previews_visually_inspected",
+      "full_video_reviewed": false
+    },
+    {
+      "source_id": "V02",
+      "primary_topic": "carving_medium_long",
+      "publisher": "Deb Armstrong",
+      "review_scope": "selected_playback_and_previews_visually_inspected",
+      "full_video_reviewed": false
+    },
+    {
+      "source_id": "V03",
+      "primary_topic": "short_turns",
+      "publisher": "Nordica and PSIA-AASI contributors",
+      "review_scope": "selected_previews_and_creator_description_reviewed",
+      "full_video_reviewed": false
+    },
+    {
+      "source_id": "V04",
+      "primary_topic": "carving_medium_long",
+      "publisher": "Carv - Digital Ski Coach",
+      "review_scope": "selected_playback_and_previews_visually_inspected",
+      "full_video_reviewed": false
+    },
+    {
+      "source_id": "V05",
+      "primary_topic": "carving_medium_long",
+      "publisher": "Tom Gellie - Big Picture Skiing",
+      "review_scope": "selected_playback_and_previews_visually_inspected",
+      "full_video_reviewed": false
+    },
+    {
+      "source_id": "V06",
+      "primary_topic": "transition_and_coordination",
+      "publisher": "Deb Armstrong",
+      "review_scope": "selected_playback_and_previews_visually_inspected",
+      "full_video_reviewed": false
+    },
+    {
+      "source_id": "V07",
+      "primary_topic": "transition_and_coordination",
+      "publisher": "Nordica",
+      "review_scope": "selected_playback_and_previews",
+      "full_video_reviewed": false
+    },
+    {
+      "source_id": "V08",
+      "primary_topic": "basic_parallel",
+      "publisher": "Phillip Miller",
+      "review_scope": "selected_playback_and_previews",
+      "full_video_reviewed": false
+    },
+    {
+      "source_id": "V09",
+      "primary_topic": "basic_parallel",
+      "publisher": "Phillip Miller",
+      "review_scope": "selected_playback_and_previews",
+      "full_video_reviewed": false
+    },
+    {
+      "source_id": "V10",
+      "primary_topic": "basic_parallel",
+      "publisher": "Phillip Miller",
+      "review_scope": "selected_playback_and_previews",
+      "full_video_reviewed": false
+    },
+    {
+      "source_id": "V11",
+      "primary_topic": "short_turns",
+      "publisher": "Carv - Digital Ski Coach",
+      "review_scope": "selected_playback_and_previews",
+      "full_video_reviewed": false
+    },
+    {
+      "source_id": "V12",
+      "primary_topic": "short_turns",
+      "publisher": "Stomp It Tutorials",
+      "review_scope": "selected_playback_and_previews",
+      "full_video_reviewed": false
+    },
+    {
+      "source_id": "V13",
+      "primary_topic": "controlled_steering_and_comparisons",
+      "publisher": "Deb Armstrong",
+      "review_scope": "selected_playback_and_previews",
+      "full_video_reviewed": false
+    },
+    {
+      "source_id": "V14",
+      "primary_topic": "controlled_steering_and_comparisons",
+      "publisher": "InTheSnow",
+      "review_scope": "selected_playback_and_previews",
+      "full_video_reviewed": false
+    },
+    {
+      "source_id": "V15",
+      "primary_topic": "basic_parallel",
+      "publisher": "REI",
+      "review_scope": "selected_playback_and_previews",
+      "full_video_reviewed": false
+    },
+    {
+      "source_id": "V16",
+      "primary_topic": "basic_parallel",
+      "publisher": "Alpine Tutorials with George",
+      "review_scope": "selected_playback_and_previews",
+      "full_video_reviewed": false
+    },
+    {
+      "source_id": "V17",
+      "primary_topic": "short_turns",
+      "publisher": "CSIA AMSC",
+      "review_scope": "selected_playback_and_previews",
+      "full_video_reviewed": false
+    },
+    {
+      "source_id": "V18",
+      "primary_topic": "short_turns",
+      "publisher": "CSIA AMSC",
+      "review_scope": "selected_playback_and_previews",
+      "full_video_reviewed": false
+    },
+    {
+      "source_id": "V19",
+      "primary_topic": "transition_and_coordination",
+      "publisher": "Stomp It Tutorials",
+      "review_scope": "selected_playback_and_previews",
+      "full_video_reviewed": false
+    },
+    {
+      "source_id": "V20",
+      "primary_topic": "carving_medium_long",
+      "publisher": "Stomp It Tutorials",
+      "review_scope": "selected_playback_and_previews",
+      "full_video_reviewed": false
+    },
+    {
+      "source_id": "V21",
+      "primary_topic": "carving_medium_long",
+      "publisher": "Stomp It Tutorials",
+      "review_scope": "selected_playback_and_previews",
+      "full_video_reviewed": false
+    },
+    {
+      "source_id": "V22",
+      "primary_topic": "transition_and_coordination",
+      "publisher": "Paul Lorenz",
+      "review_scope": "selected_playback_and_previews",
+      "full_video_reviewed": false
+    },
+    {
+      "source_id": "V23",
+      "primary_topic": "racing",
+      "publisher": "U.S. Ski & Snowboard",
+      "review_scope": "selected_playback_and_previews",
+      "full_video_reviewed": false
+    },
+    {
+      "source_id": "V24",
+      "primary_topic": "racing",
+      "publisher": "FISI TV Official",
+      "review_scope": "selected_playback_and_previews",
+      "full_video_reviewed": false
+    },
+    {
+      "source_id": "V25",
+      "primary_topic": "racing",
+      "publisher": "SHRED.®",
+      "review_scope": "selected_playback_and_previews",
+      "full_video_reviewed": false
+    },
+    {
+      "source_id": "V26",
+      "primary_topic": "errors_and_corrections",
+      "publisher": "Alpine Tutorials with George",
+      "review_scope": "selected_playback_and_previews",
+      "full_video_reviewed": false
+    },
+    {
+      "source_id": "V27",
+      "primary_topic": "errors_and_corrections",
+      "publisher": "Stomp It Tutorials",
+      "review_scope": "selected_playback_and_previews",
+      "full_video_reviewed": false
+    },
+    {
+      "source_id": "V28",
+      "primary_topic": "short_turns",
+      "publisher": "CSIA AMSC",
+      "review_scope": "selected_playback_and_previews",
+      "full_video_reviewed": false
+    },
+    {
+      "source_id": "V29",
+      "primary_topic": "controlled_steering_and_comparisons",
+      "publisher": "Warren Smith Ski Academy",
+      "review_scope": "selected_playback_and_previews",
+      "full_video_reviewed": false
+    },
+    {
+      "source_id": "V30",
+      "primary_topic": "controlled_steering_and_comparisons",
+      "publisher": "Carv - Digital Ski Coach",
+      "review_scope": "selected_playback_and_previews",
+      "full_video_reviewed": false
+    }
+  ],
+  "dependence_notes": [
+    "V08-V10 are one assessment setting and publisher; not three independent authorities.",
+    "REI/PSIA, Nordica/PSIA and PSIA assessment sources share an instructional ecosystem.",
+    "Carv features Gellie and other coaches; publisher count is not independent-coach count.",
+    "V14 and V29 feature the Warren Smith coaching lineage via different publishing channels.",
+    "Several Stomp It lessons include commercial Carv promotion or displays; claims are not independent sensor validation."
+  ],
+  "gaps": [
+    "No validated physical-time measurements or joint/edge-angle distributions.",
+    "No participant-level balanced sample by sex, age, morphology or ability.",
+    "No matched snow, gradient, speed, equipment or camera calibration across videos.",
+    "Selected excerpts only; some are static instruction or composites rather than usable skiing sequences.",
+    "Permission for automated processing remains unknown; no third-party pose inference or training performed."
+  ]
+}
