@@ -95,7 +95,7 @@ object SessionExport {
             entry("heading-turns.csv") { w ->
                 w.write("side,direction,positive_heading_rate,start_ms,end_ms,duration_ms,peak_heading_rate_dps,heading_change_deg,detector\n")
                 headingTurns.forEach { (side,turns)->turns.forEach { t ->
-                    val direction=if(t.positive==positiveLeft(side)) "LEFT" else "RIGHT"
+                    val direction=HeadingDirection.label(t.positive)
                     w.write("$side,$direction,${t.positive},${t.startMs},${t.endMs},${t.endMs-t.startMs},${t.peakRateDps},${t.changeDegrees},experimental_heading_rate\n")
                 } }
             }
@@ -118,7 +118,7 @@ object SessionExport {
                     .put("cadence_per_minute",heading.cadencePerMinute ?: JSONObject.NULL))
             }
             summary.put("heading_detector","Experimental heading-rate turn candidates (rotation about the current vertical), not turn classification. " +
-                "The detector was benchmarked on calf-phone data at 10 Hz; transfer to boot-mounted sensors is unproven. Direction uses saved per-boot settings, default positive rate=LEFT.")
+                "The detector was benchmarked on calf-phone data at 10 Hz; transfer to boot-mounted sensors is unproven. Direction: positive heading rate (counter-clockwise from above) = LEFT, independent of per-boot roll settings.")
             val comparison=BootComparison.analyse(orientation.filter { it.side=="L" },orientation.filter { it.side=="R" },
                 detections.getValue("L"),detections.getValue("R"),positiveLeft("L"),positiveLeft("R"))
             summary.put("boot_comparison",JSONObject().put("angle_pairs",comparison.anglePairs)

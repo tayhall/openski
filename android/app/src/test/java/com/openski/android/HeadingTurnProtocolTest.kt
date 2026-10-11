@@ -27,6 +27,7 @@ class HeadingTurnProtocolTest {
     @Test fun rejectsMalformedFrames() {
         assertNull(HeadingTurnFrame.decode(golden.copyOf(15)))
         assertNull(HeadingTurnFrame.decode(golden.copyOf().also { it[1] = 0x10 }))  // reserved flag bit
+        assertNull(HeadingTurnFrame.decode(golden.copyOf().also { it[1] = (it[1].toInt() or 0x08).toByte() }))  // reserved flag bit 3
         assertNull(HeadingTurnFrame.decode(golden.copyOf().also { it[15] = 1 }))    // reserved bytes
         assertNull(HeadingTurnFrame.decode(golden.copyOf().also { it[1] = 0x03 }))  // sign flag disagrees with the rate
     }

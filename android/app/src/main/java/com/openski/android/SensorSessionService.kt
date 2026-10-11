@@ -456,7 +456,7 @@ class SensorSessionService : Service() {
             // All chunk writes have already been queued on this same executor.
             io.execute {
                 try {
-                    val verified = store.validateDownload(transfer.capture.id, status.samples, status.dropped)
+                    val verified = store.validateDownload(transfer.capture.id, status.samples, status.dropped, transfer.validator.recordFormat)
                     mainHandler.post {
                         if (destroyed || generations[side] != transfer.generation || transfers[side] !== transfer) return@post
                         transfers.remove(side)
@@ -610,9 +610,8 @@ class SensorSessionService : Service() {
         armTransferTimeout(side)
         io.execute {
             try {
+                // The record format travels with the transfer and is committed by validateDownload.
                 store.saveDownload(transfer.capture.id, chunk)
-                // The validator guarantees one format per transfer, and a restarted transfer begins at record 0.
-                if (chunk.firstIndex == 0) store.setRecordFormat(transfer.capture.id, if (chunk.withFlags) 3 else 2)
             }
             catch (error: Exception) { mainHandler.post { if (!destroyed) storageError(error) } }
         }

@@ -122,7 +122,12 @@ class StorageInstrumentation : Instrumentation() {
                     old.flash.single().record.let { check(it.timestampUs==0x105L && it.sample.quality==0) { "Legacy record was masked" } }
                     store.saveSamples("q8",listOf(RecordedSample("R",100500,SensorSample(2,20,0f,0f,9.81f,0f,0f,0f,9))))
                     check(store.loadData("q8")!!.live.last().sample.quality==9) { "Live quality not stored" }
-                    store.setRecordFormat("legacy",3)
+                    // A failed validation must keep the old format; a successful one commits the staged format with the data.
+                    store.beginDownload("legacy")
+                    store.saveDownload("legacy",FlashChunk(0,listOf(FlashRecord.decode(java.nio.ByteBuffer.allocate(16).order(java.nio.ByteOrder.LITTLE_ENDIAN).putInt(0x0000_0105).array())!!),withFlags=true))
+                    check(!store.validateDownload("legacy",2,0,3)) { "Validated incomplete flagged copy" }
+                    check(store.loadData("q8")!!.captures.single().recordFormat==2) { "Failed validation changed record format" }
+                    check(store.validateDownload("legacy",1,0,3))
                     val flagged=store.loadData("q8")!!
                     check(flagged.captures.single().recordFormat==3)
                     flagged.flash.single().record.let { check(it.timestampUs==0x100L && it.sample.quality==17) { "Flagged record not decoded" } }
@@ -157,13 +162,14 @@ class StorageInstrumentation : Instrumentation() {
                 val records=(0..2).map { FlashRecord.decode(java.nio.ByteBuffer.allocate(16).order(java.nio.ByteOrder.LITTLE_ENDIAN).putInt(it*10000).array())!! }
                 store.beginDownload(capture.id)
                 store.saveDownload(capture.id,FlashChunk(0,records.take(2)))
-                check(!store.validateDownload(capture.id,3,0)) { "Validated incomplete copy" }
+                check(!store.validateDownload(capture.id,3,0,3)) { "Validated incomplete copy" }
                 store.saveDownload(capture.id,FlashChunk(2,records.takeLast(1)))
-                check(store.validateDownload(capture.id,3,1))
+                check(store.validateDownload(capture.id,3,1,2))
                 check(store.loadData("old")!!.flash.size==3)
                 store.beginDownload(capture.id)
                 store.saveDownload(capture.id,FlashChunk(0,records.take(1)))
-                check(!store.validateDownload(capture.id,3,0))
+                check(!store.validateDownload(capture.id,3,0,3))
+                check(store.captures("old").single().recordFormat==2) { "Failed replacement changed record format" }
                 check(store.loadData("old")!!.flash.size==3) { "Failed replacement destroyed verified copy" }
                 store.event("old","Test, \"quoted\" event")
                 val output=ByteArrayOutputStream()

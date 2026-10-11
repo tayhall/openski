@@ -46,6 +46,11 @@ class HeadingTurnAnalysisTest {
         }
     }
 
+    @Test fun headingDirectionLabelFollowsTheSignOfTheRateOnly() {
+        assertEquals("LEFT", HeadingDirection.label(true))
+        assertEquals("RIGHT", HeadingDirection.label(false))
+    }
+
     @Test fun aNearRailSampleInsideALobeMarksTheTurn() {
         fun roll(t: Double, rate: Double, quality: Int = 0) = BootRoll("L", t, 0.0, 0.0, headingRateRadps = rate, quality = quality)
         fun stream(railAt: Int?, q: Int = 2): List<BootRoll> {

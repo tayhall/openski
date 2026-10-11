@@ -281,11 +281,6 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
     ).use { c -> buildList { while (c.moveToNext()) add(SensorCapture(c.getString(0), c.getString(1), c.getString(2),
         c.getString(3), c.getLong(4), c.getString(5), c.getInt(6), c.getInt(7), c.getString(8), c.getInt(9))) } }
 
-    @Synchronized fun setRecordFormat(captureId: String, format: Int) {
-        require(format == 2 || format == 3)
-        writableDatabase.update("captures", ContentValues().apply { put("record_format", format) }, "id=?", arrayOf(captureId))
-    }
-
     @Synchronized fun pendingCapture(address: String): SensorCapture? = captures().lastOrNull {
         it.address == address && it.state !in listOf("erased", "unavailable", "lost")
     }
@@ -306,8 +301,12 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
         } finally { db.endTransaction() }
     }
 
-    /** Validate the committed bytes, then promote the staging copy in one transaction. */
-    @Synchronized fun validateDownload(id: String, expected: Int, dropped: Int): Boolean {
+    /**
+     * Validate the committed bytes, then promote the staging copy in one transaction. [recordFormat]
+     * (2 or 3) is stored with the promoted records, so a failed validation leaves the old format alone.
+     */
+    @Synchronized fun validateDownload(id: String, expected: Int, dropped: Int, recordFormat: Int): Boolean {
+        require(recordFormat == 2 || recordFormat == 3)
         val db = writableDatabase
         db.beginTransaction()
         try {
@@ -322,6 +321,7 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
             db.delete("flash_samples", "capture_id=?", arrayOf(id))
             db.execSQL("INSERT INTO flash_samples SELECT * FROM download_samples WHERE capture_id=?", arrayOf(id))
             db.delete("download_samples", "capture_id=?", arrayOf(id))
+            db.execSQL("UPDATE captures SET record_format=? WHERE id=?", arrayOf<Any>(recordFormat, id))
             updateCapture(id, "verified", expected, dropped)
             db.setTransactionSuccessful()
             return true

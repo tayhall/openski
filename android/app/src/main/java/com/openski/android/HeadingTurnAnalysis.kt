@@ -3,6 +3,15 @@ package com.openski.android
 data class HeadingTurnSummary(val count: Int, val medianDurationMs: Double?, val cadencePerMinute: Double?)
 
 /**
+ * Heading rate is omega . up, so a positive rate is a right-handed rotation about world-up, which is
+ * counter-clockwise seen from above, a left turn. This does not depend on how the sensor is mounted,
+ * unlike the per-boot roll polarity (positive_left).
+ */
+object HeadingDirection {
+    fun label(positive: Boolean): String = if (positive) "LEFT" else "RIGHT"
+}
+
+/**
  * Replays the heading-rate detector over orientation output. Experimental turn candidates, not
  * ski turn classification. Rolls must be for one side.
  */

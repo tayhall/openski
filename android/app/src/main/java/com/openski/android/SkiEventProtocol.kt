@@ -81,7 +81,8 @@ data class SkiState(val sequence: Int, val timeMs: Long, val rollDegrees: Float,
 
 /**
  * One heading-turn candidate from the firmware's experimental heading-rate tracker (docs/ble-protocol.md,
- * frame version 4). Heading change comes from the gravity-referenced yaw rate in the sensor frame; it is
+ * frame version 4). Heading change comes from the gravity-referenced yaw rate (rotation about the world vertical,
+ * independent of sensor mounting); it is
  * a candidate, not a classified or validated ski turn. Positive means the heading rate was positive.
  */
 data class HeadingTurnFrame(val sequence: Int, val startMs: Long, val durationMs: Int,

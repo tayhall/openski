@@ -68,7 +68,11 @@ data class FlashChunk(val firstIndex: Int, val records: List<FlashRecord>, val w
 class TransferValidator(val expected: Int) {
     var next = 0
         private set
-    private var withFlags: Boolean? = null
+    /** Record layout of this transfer, known after the first accepted chunk (null before). */
+    var withFlags: Boolean? = null
+        private set
+    /** Capture record format to commit with the data: 3 with quality flags, otherwise 2. */
+    val recordFormat: Int get() = if (withFlags == true) 3 else 2
     fun accept(chunk: FlashChunk): Boolean {
         if (withFlags != null && withFlags != chunk.withFlags) return false
         if (chunk.firstIndex != next || chunk.records.isEmpty() || chunk.records.size > expected - next) return false

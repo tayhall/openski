@@ -118,5 +118,15 @@ class RecorderProtocolTest {
         assertFalse(transfer.accept(FlashChunk(2, listOf(record()), withFlags = false)))
         assertTrue(transfer.accept(FlashChunk(2, listOf(record()), withFlags = true)))
         assertEquals(3, transfer.next)
+        assertEquals(true, transfer.withFlags)
+        assertEquals(3, transfer.recordFormat)
+    }
+    @Test fun transferExposesLegacyFormatAndDefaultsToTwo() {
+        val transfer = TransferValidator(2)
+        assertNull(transfer.withFlags)
+        assertEquals(2, transfer.recordFormat)
+        assertTrue(transfer.accept(FlashChunk(0, listOf(record(), record()), withFlags = false)))
+        assertEquals(false, transfer.withFlags)
+        assertEquals(2, transfer.recordFormat)
     }
 }
