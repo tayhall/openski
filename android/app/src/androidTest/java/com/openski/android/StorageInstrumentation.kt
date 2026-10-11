@@ -240,6 +240,7 @@ class StorageInstrumentation : Instrumentation() {
                 check(store.deleteSession(demoId))
             }
             context.deleteDatabase(name)
+            DrillMountingRegression.run(this)
             finish(Activity.RESULT_OK,Bundle().apply { putString("stream","PASS: v1–v6 migration, demo creation, saved review settings, calibration, test labels, health, session edits, staged recovery validation, retained copy, ZIP export and protected deletion\n") })
         } catch(error: Throwable) {
             targetContext.deleteDatabase(name)
