@@ -22,6 +22,11 @@ class RestBias {
   static constexpr float kClampRadps = 0.15f;           // estimate limit
 
   void update(uint32_t timeUs, float ax, float ay, float az, float gx, float gy, float gz) {
+    const float sum = ax + ay + az + gx + gy + gz;
+    if (!std::isfinite(sum)) {  // NaN or inf in any input: ineligible, and it ends the window
+      closeWindow();
+      return;
+    }
     if (open_ && timeUs - lastUs_ > kMaxStepUs) closeWindow();
     const float a[3] = {ax, ay, az}, g[3] = {gx, gy, gz};
     const float amag = std::sqrt(ax*ax + ay*ay + az*az);
@@ -42,7 +47,9 @@ class RestBias {
   float bias(int axis) const { return axis >= 0 && axis < 3 ? estimate_[axis] : 0.0f; }
   uint32_t updates() const { return updates_; }
   uint32_t refused() const { return refused_; }
-  // True while a still window is open and no sample in it has been too fast to count as rest.
+  // True while an eligible window is open and no sample in it has reached the gyro limit. This
+  // includes the first sample of a window and right after a window restarts; it does NOT mean the
+  // boot has been still for 2 s (use updates() advancing for that).
   bool resting() const { return open_ && !overLimit_; }
 
   void reset() { *this = RestBias(); }
@@ -91,6 +98,7 @@ class RestBias {
     bool refuse = overLimit_;  // too fast to be rest, e.g. a steady turn or a large offset
     for (int i = 0; i < 3; ++i) {
       target[i] = sum_[i]/static_cast<float>(n_);
+      // Guard only: overLimit_ normally pre-empts this, since a mean over 0.15 needs samples over 0.12.
       if (std::fabs(target[i]) > kRefuseRadps) refuse = true;
     }
     if (refuse) {

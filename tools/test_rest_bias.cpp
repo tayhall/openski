@@ -56,6 +56,39 @@ int main() {
     check(r.updates() == 0, "no update from a large offset");
     check(r.bias(0) == 0.0f, "estimate stays at zero");
   }
+  {  // Known, bounded absorption case (not a defect): a steady 0.11 rad/s turn about the vertical
+     // passes every gate (|g| < 0.12, gravity constant, no peak-to-peak), so it is learned as bias,
+     // but only at the rate limit and never beyond its own magnitude.
+    RestBias r; uint32_t t = 0; const uint32_t t0 = t;
+    for (int i = 0; i < 12000; ++i, t += 10000U) {
+      r.update(t, 0, 0, kG, 0, 0, 0.11f);
+      const float elapsed = (t - t0)/1e6f;
+      check(std::fabs(r.bias(2)) <= 0.002f*elapsed + 1e-5f, "vertical turn absorbed no faster than the rate limit");
+      check(std::fabs(r.bias(2)) <= 0.11f + 1e-5f, "vertical turn absorbed no more than its own rate");
+    }
+    check(r.refused() == 0, "vertical turn under the limits is not refused");
+    check(r.updates() > 0, "vertical turn is the documented absorption case");
+  }
+  {  // 0.13 rad/s offset: mean under the 0.15 refusal but over the 0.12 per-sample limit. Only the
+     // over-limit rule stops it (test (c)'s 0.2 is also caught by the mean guard).
+    RestBias r; uint32_t t = 0;
+    feedRest(r, t, 20.0f, 0.13f);
+    check(r.refused() > 0, "0.13 offset refused");
+    check(r.updates() == 0, "no update from a 0.13 offset");
+    check(r.bias(0) == 0.0f, "estimate stays at zero for 0.13 offset");
+  }
+  {  // Non-finite inputs are ineligible and end the window.
+    RestBias r; uint32_t t = 0;
+    feedRest(r, t, 1.5f, 0.04f);
+    check(r.resting(), "window open before the NaN");
+    r.update(t, 0, 0, kG, NAN, 0, 0); t += 10000U;
+    check(!r.resting(), "NaN closes the window");
+    r.update(t, INFINITY, 0, kG, 0.04f, 0, 0); t += 10000U;
+    feedRest(r, t, 1.5f, 0.04f);
+    check(r.updates() == 0, "no update across a NaN");
+    feedRest(r, t, 1.0f, 0.04f);
+    check(r.updates() == 1 && std::isfinite(r.bias(0)), "recovers after non-finite samples");
+  }
   {  // (d) 1.5 g never opens a window.
     RestBias r; uint32_t t = 0;
     bool everResting = false;
