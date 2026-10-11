@@ -147,7 +147,9 @@ class SessionDetailActivity : Activity() {
         page.addView(button("Edit name, notes and alignment") { edit(loaded) })
         page=card(detailsPage)
         page.addView(text("Recording quality",18f))
-        result.quality.forEach { q -> page.addView(text("${if(q.side=="L") "Left" else "Right"}: ${q.liveSamples} live · ${q.flashSamples} validated flash samples\nEstimated coverage ${number(q.coverage*100)}% · ${q.gaps} gaps over 0.1s · longest ${number(q.longestGapMs/1000)}s\nSensor-reported dropped samples: ${q.dropped}")) }
+        result.quality.forEach { q -> page.addView(text("${if(q.side=="L") "Left" else "Right"}: ${q.liveSamples} live · ${q.flashSamples} validated flash samples\nEstimated coverage ${number(q.coverage*100)}% · ${q.gaps} gaps over 0.1s · longest ${number(q.longestGapMs/1000)}s\nSensor-reported dropped samples: ${q.dropped}" +
+                (if(q.droppedBefore>0) " · ${q.droppedBefore} flash records follow a drop" else "") +
+                (if(q.railSamples>0) "\nClipped ${number(q.railPercent)}% of samples (within 8 counts of full scale; not proof of absence of clipping)" else ""))) }
         loaded.captures.forEach { c -> page.addView(text("${c.side} backup: ${c.state} · ${c.expected} records" + if(c.error.isBlank()) "" else "\n${c.error}")) }
         page.addView(text(result.alignment))
         if (loaded.events.isNotEmpty()) page.addView(button("Recording events (${loaded.events.size})") {

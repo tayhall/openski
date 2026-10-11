@@ -41,6 +41,9 @@ class RestBias {
         if(open && lastMs-startMs>=WINDOW_MS) finishWindow()
     }
 
+    /** Close any open window without learning (a near-rail sample or other untrusted data splits it). */
+    fun interrupt() { closeWindow() }
+
     private fun beginWindow(timeMs: Double,a: DoubleArray,g: DoubleArray) {
         open=true; startMs=timeMs; lastMs=timeMs; n=1; overLimit=false
         for(i in 0..2) {

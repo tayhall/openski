@@ -46,6 +46,25 @@ class HeadingTurnAnalysisTest {
         }
     }
 
+    @Test fun aNearRailSampleInsideALobeMarksTheTurn() {
+        fun roll(t: Double, rate: Double, quality: Int = 0) = BootRoll("L", t, 0.0, 0.0, headingRateRadps = rate, quality = quality)
+        fun stream(railAt: Int?): List<BootRoll> {
+            val rolls = ArrayList<BootRoll>()
+            var t = 0.0
+            repeat(50) { rolls += roll(t, -1.0); t += 20.0 }
+            repeat(75) { i -> rolls += roll(t, 1.0, if (i == railAt) 2 else 0); t += 20.0 }
+            repeat(50) { rolls += roll(t, -1.0); t += 20.0 }
+            repeat(75) { rolls += roll(t, 1.0); t += 20.0 }
+            return rolls
+        }
+        val clean = HeadingTurnAnalysis.detect(stream(null))
+        assertTrue(clean.isNotEmpty())
+        assertTrue(clean.none { it.nearRail })
+        val flagged = HeadingTurnAnalysis.detect(stream(30))
+        assertEquals(clean.size, flagged.size)
+        assertTrue(flagged.any { it.nearRail })
+    }
+
     @Test fun aSegmentChangeDoesNotEmitATurnSpanningIt() {
         fun roll(t: Double, rate: Double, segment: Int) = BootRoll("L", t, 0.0, 0.0, segment = segment, headingRateRadps = rate)
         val rolls = ArrayList<BootRoll>()

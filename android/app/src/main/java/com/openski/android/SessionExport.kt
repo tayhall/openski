@@ -38,7 +38,9 @@ object SessionExport {
                 .put("expected_samples", c.expected).put("dropped_samples", c.dropped).put("error", c.error)) } })
             .put("quality", JSONArray().apply { analysis.quality.forEach { q -> put(JSONObject().put("side", q.side)
                 .put("live_samples", q.liveSamples).put("flash_samples", q.flashSamples)
-                .put("estimated_coverage", q.coverage).put("gaps_over_100ms", q.gaps).put("longest_gap_ms", q.longestGapMs)) } })
+                .put("estimated_coverage", q.coverage).put("gaps_over_100ms", q.gaps).put("longest_gap_ms", q.longestGapMs)
+                .put("rail_samples", q.railSamples).put("rail_percent", q.railPercent)
+                .put("dropped_before_samples", q.droppedBefore)) } })
         val orientation=calibrations.flatMap { BootOrientation.estimate(analysis.timeline.corrected(correction),it) }
         ZipOutputStream(output).use { zip ->
             fun entry(name: String, body: (java.io.Writer) -> Unit) {
@@ -59,12 +61,8 @@ object SessionExport {
                 entry("coach-verdicts.csv") { w -> w.write(RunCsv.verdicts(run.verdicts, session.startedAtMs)) }
             }
             entry("samples.csv") { w ->
-                w.write("side,source,capture_id,record_index,session_elapsed_ms,aligned_time_ms,received_at_ms,sensor_time_ms,sensor_time_us,sequence,ax_mps2,ay_mps2,az_mps2,gx_radps,gy_radps,gz_radps\n")
-                analysis.raw.forEach { p -> val s = p.sample
-                    w.write(listOf(p.side,p.source,p.captureId ?: "",p.recordIndex ?: "",p.timeMs-session.startedAtMs,p.timeMs,
-                        p.receivedAtMs ?: "",s.timestampMs,p.sensorTimeUs ?: "",if (s.sequence < 0) "" else s.sequence,
-                        s.accelX,s.accelY,s.accelZ,s.gyroX,s.gyroY,s.gyroZ).joinToString(",") + "\n")
-                }
+                w.write(SampleCsv.HEADER)
+                analysis.raw.forEach { p -> w.write(SampleCsv.row(p,session.startedAtMs)) }
             }
             entry("events.csv") { w ->
                 w.write("time_ms,message\n")
@@ -128,6 +126,10 @@ object SessionExport {
                 .put("correlation",comparison.correlation ?: JSONObject.NULL).put("movement_pairs",comparison.movementPairs)
                 .put("median_right_minus_left_onset_ms",comparison.medianOnsetLagMs ?: JSONObject.NULL)
                 .put("median_right_minus_left_return_ms",comparison.medianReturnLagMs ?: JSONObject.NULL))
+            summary.put("quality",JSONArray().apply { analysis.quality.forEach { q -> put(JSONObject().put("side",q.side)
+                .put("rail_samples",q.railSamples).put("rail_percent",q.railPercent)
+                .put("rail_note","within 8 counts of full scale; not proof of absence of clipping")
+                .put("dropped_before_samples",q.droppedBefore)) } })
             entry("analysis-summary.json") { it.write(summary.toString(2)) }
         }
     }

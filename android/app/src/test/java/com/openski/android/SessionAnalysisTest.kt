@@ -64,6 +64,18 @@ class SessionAnalysisTest {
         assertEquals(0.0,result.quality.last().coverage,0.0)
         assertEquals(2000.0,result.quality.last().longestGapMs,0.0)
     }
+    @Test fun countsRailAndDroppedBeforeSamplesPerSide() {
+        val qualities=listOf(1,2,3,0,16,4,0,16)
+        val live=qualities.mapIndexed { i,q -> StoredLive("L",100000+i*20L,sample(i*20L).copy(quality=q)) } +
+            (0..2).map { StoredLive("R",100000+it*20L,sample(it*20L)) }
+        val result=SessionAnalysis.build(data(live))
+        val left=result.quality.first { it.side=="L" }
+        assertEquals(3,left.railSamples)
+        assertEquals(2,left.droppedBefore)
+        val right=result.quality.first { it.side=="R" }
+        assertEquals(0,right.railSamples)
+        assertEquals(0,right.droppedBefore)
+    }
     @Test fun preservesBothRawSourcesButUsesFlashForGraphs() {
         val capture=SensorCapture("c","s","L","addr",100000,"erased",100,0,"")
         val flash=(0..99).map { i -> val raw=ByteBuffer.allocate(16).order(ByteOrder.LITTLE_ENDIAN)

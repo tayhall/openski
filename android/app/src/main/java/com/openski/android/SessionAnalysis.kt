@@ -6,7 +6,15 @@ data class TimelinePoint(val side: String, val timeMs: Double, val sample: Senso
     val captureId: String? = null, val recordIndex: Int? = null, val sensorTimeUs: Long? = null,
     val receivedAtMs: Long? = null)
 data class StreamQuality(val side: String, val liveSamples: Int, val flashSamples: Int, val coverage: Double,
-    val gaps: Int, val longestGapMs: Double, val dropped: Int)
+    val gaps: Int, val longestGapMs: Double, val dropped: Int,
+    /** Samples with an accelerometer or gyro value within 8 counts of full scale (not proof of clipping). */
+    val railSamples: Int = 0,
+    /** Flash records marked as following one or more dropped samples. */
+    val droppedBefore: Int = 0,
+    /** Samples in the effective timeline inside the session (the denominator of [railPercent]). */
+    val effectiveSamples: Int = 0) {
+    val railPercent: Double get() = if (effectiveSamples > 0) 100.0 * railSamples / effectiveSamples else 0.0
+}
 data class TurnCandidate(val side: String, val startMs: Double, val endMs: Double, val positive: Boolean,
     val peakRadps: Float)
 
@@ -138,7 +146,8 @@ object SessionAnalysis {
             if (end - cursor > 100) { gaps++; longest = max(longest, end - cursor) }
             StreamQuality(side, live.count { it.side == side }, flash.count { it.side == side },
                 (covered / duration).coerceIn(0.0, 1.0), gaps, longest,
-                data.captures.filter { it.side == side }.sumOf { it.dropped })
+                data.captures.filter { it.side == side }.sumOf { it.dropped },
+                points.count { it.sample.quality and 3 != 0 }, points.count { it.sample.quality and 16 != 0 }, points.size)
         }
         return AnalysisResult(raw, effective, quality, if(data.session.origin=="synthetic")
             "Synthetic sensor clocks and sample timestamps; coverage describes generated input, not a measured Bluetooth connection."

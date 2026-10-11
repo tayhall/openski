@@ -18,7 +18,9 @@ data class BootRoll(val side: String, val timeMs: Double, val degrees: Double, v
     val pitchDegrees: Double=0.0, val yawDegrees: Double=0.0, val segment: Int=0,
     val rollRateRadps: Double=0.0, val pitchRateRadps: Double=0.0, val yawRateRadps: Double=0.0,
     /** Rotation rate about the current vertical (omega . g), the experimental heading rate. */
-    val headingRateRadps: Double=0.0)
+    val headingRateRadps: Double=0.0,
+    /** Signal-quality bits of the sample this estimate came from (see [SensorSample.quality]). */
+    val quality: Int=0)
 
 private data class OrientationQuaternion(val w: Double, val x: Double, val y: Double, val z: Double) {
     operator fun times(q: OrientationQuaternion)=OrientationQuaternion(
@@ -124,10 +126,13 @@ object BootOrientation {
             val accel=acceleration(p.sample)
             val calibrated=rotation(p.sample)-calibration.bias
             // The learner sees the gyro without its own estimate subtracted (no feedback loop).
-            restBias?.update(p.timeMs,accel,calibrated)
+            // A near-rail sample (accelerometer 1, gyro 2) is untrusted: it splits the rest-bias window and
+            // restarts the 2 s rest timer so no correction is applied across it.
+            val nearRail=p.sample.quality and 3!=0
+            if(nearRail) restBias?.interrupt() else restBias?.update(p.timeMs,accel,calibrated)
             val omega=restBias?.let { calibrated-it.estimate } ?: calibrated
             val stationary=omega.norm()<0.08 && accel.norm() in 9.3..10.3
-            restedMs=if(stationary) restedMs+dt.coerceIn(0.0,100.0) else 0.0
+            restedMs=if(stationary && !nearRail) restedMs+dt.coerceIn(0.0,100.0) else 0.0
             orientation=orientation?.let { (it*OrientationQuaternion.increment(omega,dt.coerceIn(0.0,250.0)/1000)).unit() }
             if(restedMs>=2000) {
                 val current=orientation
@@ -147,7 +152,7 @@ object BootOrientation {
                     BootRoll(p.side,p.timeMs,Math.toDegrees(atan2(g.dot(lateral),g.dot(up))),
                         (p.timeMs-anchor)/1000,Math.toDegrees(atan2(-g.dot(forward),hypot(g.dot(lateral),g.dot(up)))),
                         Math.toDegrees(atan2(sin(yaw),cos(yaw))),segment,
-                        omega.dot(forward),omega.dot(lateral),omega.dot(up),omega.dot(g))
+                        omega.dot(forward),omega.dot(lateral),omega.dot(up),omega.dot(g),p.sample.quality)
                 else null
             }
         }

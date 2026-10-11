@@ -12,6 +12,17 @@ class RestBiasTest {
         seed=(seed*1664525L+1013904223L) and 0xFFFFFFFFL
         return (((seed shr 16) and 0xff).toInt()-128)/128.0*amp
     }
+    @Test fun interruptingTheWindowStopsAnUpdateAcrossIt() {
+        val plain=RestBias()
+        feedRest(plain,0.0,2.5,0.02)
+        assertEquals(1,plain.updates)
+        val broken=RestBias()
+        var t=feedRest(broken,0.0,1.0,0.02)
+        broken.interrupt()
+        feedRest(broken,t,1.5,0.02)
+        assertEquals(0,broken.updates)
+        assertEquals(0.0,broken.estimate.x,0.0)
+    }
     private fun v(x: Double,y: Double=0.0,z: Double=0.0)=Vector3(x,y,z)
     /** 100 Hz at rest (gravity on z) with a constant gyro offset on x and optional noise; returns the new time. */
     private fun feedRest(r: RestBias,t: Double,seconds: Double,offsetX: Double,noiseAmp: Double=0.0): Double {
