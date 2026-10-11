@@ -99,6 +99,8 @@ Sent when a lobe of the causal heading rate (rotation about the world vertical) 
 
 Positive means a right-handed rotation about world-up, which is counter-clockwise seen from above (a left turn). The detector smooths the rate causally, so start and end are shifted back by the 0.25 s smoothing delay to line up with the motion; the frame itself is still sent only after the lobe ends. Heading change is the signed integral of the de-trended rate over the lobe.
 
+Heading-turn frames are sent in production mode as well as diagnostics, like the half-turn and state frames.
+
 ### `ski_v0` state (version 3, 16 bytes, experimental)
 
 Sent once a second while a client is connected, in both modes.

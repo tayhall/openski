@@ -20,3 +20,7 @@ MPU-6050 wiring for this target: 3.3 V → VCC, GND → GND, GPIO8 → SDA and G
 The S3 hostname is `ski-s3` to avoid conflicting with the existing `ski` board. OTA uses `esp32-s3-supermini-ota`. BLE still advertises `OpenSki-ski`; distinguish the units by the app's address label. This unit's MAC is `d4:05:92:40:20:f0`.
 
 First USB flash passed esptool hash verification. Wi-Fi/OTA/API came up at 192.168.43.28 (DHCP may change). The API confirmed recorder storage ready, a 1,441,792-byte partition and 57,662-sample capacity. No MPU-6050 was detected on GPIO8/9 at the time of verification, so IMU sampling and BLE sensor delivery remain unverified until wiring is confirmed.
+
+## Rest-driven gyro bias (experimental)
+
+`GET /api/v1/motion` also reports `gyro_bias_radps` (three values, rad/s, sensor frame), `bias_updates` and `bias_refused`. Expect `[0.00000,0.00000,0.00000]` and zero counts at boot; with the board lying still, `bias_updates` should rise about once every 2 s and the three values drift slowly (at most 0.002 rad/s each per second, clamped to 0.15 rad/s). `bias_refused` counts still windows whose mean was too fast to be rest.

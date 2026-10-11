@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include "GestureTracker.h"
 #include "TiltTracker.h"
+#include "RestBias.h"
 #include "SkiFrames.h"
 
 namespace openski::motion {
@@ -45,6 +46,11 @@ uint32_t headingCount();
 uint8_t recentHeadingTurns(HeadingTurn* output, uint8_t capacity);
 SkiHeartbeat takeSkiHeartbeat();
 bool takeSkiGapSeen();
+// Experimental rest-driven gyro bias (rad/s) subtracted from recogniser inputs only, on top of the
+// static calibration; no temperature compensation.
+void gyroBias(float out[3]);
+uint32_t biasUpdates();
+uint32_t biasRefused();
 // Recapture the neutral pose of both the tilt and ski recognisers from the next still second.
 void zeroMotion();
 void tick();

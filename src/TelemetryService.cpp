@@ -116,6 +116,14 @@ void handleMotion() {
            state.accelerationMagnitudeMps2);
   String response(body);
   response.remove(response.length()-1);
+  float bias[3];
+  motion::gyroBias(bias);
+  char biasBody[128];
+  snprintf(biasBody, sizeof(biasBody),
+           ",\"gyro_bias_radps\":[%.5f,%.5f,%.5f],\"bias_updates\":%lu,\"bias_refused\":%lu",
+           bias[0], bias[1], bias[2], static_cast<unsigned long>(motion::biasUpdates()),
+           static_cast<unsigned long>(motion::biasRefused()));
+  response += biasBody;
   response += ",\"recent_events\":[";
   motion::Event events[16];
   const uint8_t count = motion::recentEvents(events, 16);
