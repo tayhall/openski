@@ -215,3 +215,11 @@ Handheld bench run of the Android Bench tools against the ESP32-S3 (MPU-6050), w
 - Still noise (20:54:53, 60 s, 50.0 Hz, 0 gaps): gyro bias x −1.90, y +0.23, z +0.40 °/s; gyro noise 0.06 °/s; accelerometer noise 0.033 m/s². The bias matches the settled cold-start values above (x about −1.93, y +0.21, z +0.44 °/s), so it is the known turn-on bias and not new drift. Earlier exports left this section empty.
 
 **Axes (partly measured):** with the header pins and wires pointing up, +Z reads +10.04 m/s² (x −0.36, y −0.38), so +Z is the direction the right-angle header exits the board. +X toward the mounting-hole edge is from the operator and fits an earlier x +9.37 reading; +Y is derived by the right-hand rule and not measured. The board's Wi-Fi dropped out twice during the session.
+
+## 2026-10-08: S3 research acquisition OTA and smoke check
+
+Flashed the `esp32-s3-supermini-research` binary to `ski-s3` at 192.168.43.28 via authenticated OTA. Before upload the board reported IMU ready, recording false and zero retained records. OTA completed successfully; the restarted API reports build `60aa7f2-dirty 2026-10-08` and profile `openski_mpu6050_research_v1`, ready true: requested 100 Hz, ±16 g, ±1000 degrees/s and nominal 20 Hz gyro bandwidth. Ready includes acquisition-register read-back checks.
+
+A short HTTP smoke check counted 1,021 successful samples over approximately 10.165 s between request midpoints (about 100.4 Hz; request durations 0.187 s and 0.142 s, so this is an approximate rate). Read failures and near-rail counters remained zero. One >20 ms gap was already present at the first post-boot observation, maximum interval 20,039 microseconds; no additional gap appeared during the timed check. The cause of that early gap was not established.
+
+This verifies OTA restart, profile selection and basic acquisition health only. Scale/sign, noise, dynamic filter delay, flash/BLE load, recogniser timing and synchronised skiing validation remain outstanding. The classic ESP32 was unreachable and was not flashed.

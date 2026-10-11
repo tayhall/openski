@@ -3,6 +3,12 @@
 #include <stdint.h>
 
 namespace openski::imu {
+enum SampleQuality : uint8_t {
+  kAccelNearRail = 1,
+  kGyroNearRail = 2,
+  kTimestampGap = 4,
+  kTimestampWrap = 8,
+};
 struct Vec3 {
   float x;
   float y;
@@ -15,6 +21,7 @@ struct Sample {
   Vec3 accelMps2;
   Vec3 gyroRadps;
   float temperatureC;
+  uint8_t qualityFlags = 0;
 };
 
 enum class ReadResult {

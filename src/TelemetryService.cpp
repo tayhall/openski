@@ -9,6 +9,7 @@
 #include "AppConfig.h"
 #include "BluetoothService.h"
 #include "ImuService.h"
+#include "Mpu6050Profile.h"
 #include "MotionService.h"
 #include "RecorderService.h"
 #include "WifiService.h"
@@ -220,6 +221,42 @@ void handleImu() {
   server.send(200, "application/json", body);
 }
 
+void handleAcquisition() {
+  const auto& monitor = imu::monitor();
+  const auto& stats = monitor.stats();
+  char body[1800];
+  snprintf(body, sizeof(body),
+      "{\"schema_version\":1,\"profile_id\":\"%s\","
+      "\"research_baseline\":\"openski_pre_field_experiments_v0.1\","
+      "\"sensor\":\"%s\",\"ready\":%s,\"device\":\"%s\",\"build\":\"%s\","
+      "\"frame\":\"sensor\",\"acceleration_includes_gravity\":true,"
+      "\"raw_calibration_applied\":false,\"boot_side\":null,"
+      "\"sensor_to_boot_rotation\":null,\"calibration_reference\":null,"
+      "\"nominal_sample_rate_hz\":%u,\"accel_full_scale_g\":%u,"
+      "\"gyro_full_scale_deg_s\":%u,\"nominal_gyro_bandwidth_hz\":%u,"
+      "\"timestamp_unit\":\"us\",\"timestamp_bits\":32,"
+      "\"timestamp_reference\":\"device_read_completion\","
+      "\"accel_unit\":\"m/s2\",\"gyro_unit\":\"rad/s\","
+      "\"sample_count\":%lu,\"read_failures\":%lu,"
+      "\"gap_review_threshold_us\":20000,\"timestamp_gaps\":%lu,"
+      "\"timestamp_wraps\":%lu,\"last_interval_us\":%lu,\"max_interval_us\":%lu,"
+      "\"accel_near_rail_samples\":%lu,\"gyro_near_rail_samples\":%lu,"
+      "\"latest_quality_flags\":%u,\"has_sample\":%s,"
+      "\"quality_scope\":\"since_device_boot\",\"dual_boot_synchronised\":false,"
+      "\"validation_status\":\"bench_and_field_validation_required\"}",
+      imu::mpuProfile::kId, monitor.sensorName(), stats.ready ? "true" : "false",
+      config::kHostname, config::kBuildId,
+      imu::mpuProfile::kSampleRateHz, imu::mpuProfile::kAccelRangeG,
+      imu::mpuProfile::kGyroRangeDps, imu::mpuProfile::kNominalGyroBandwidthHz,
+      static_cast<unsigned long>(stats.samples), static_cast<unsigned long>(stats.readFailures),
+      static_cast<unsigned long>(stats.timestampGaps), static_cast<unsigned long>(stats.timestampWraps),
+      static_cast<unsigned long>(stats.lastIntervalUs), static_cast<unsigned long>(stats.maxIntervalUs),
+      static_cast<unsigned long>(stats.accelNearRailSamples),
+      static_cast<unsigned long>(stats.gyroNearRailSamples),
+      static_cast<unsigned>(monitor.latest().qualityFlags), monitor.hasSample() ? "true" : "false");
+  server.send(200, "application/json", body);
+}
+
 void handleNotFound() {
   server.send(404, "application/json", "{\"error\":\"not_found\"}");
 }
@@ -228,6 +265,7 @@ void handleNotFound() {
 void begin() {
   server.on("/", HTTP_GET, handleRoot);
   server.on("/api/v1/imu", HTTP_GET, handleImu);
+  server.on("/api/v1/acquisition", HTTP_GET, handleAcquisition);
   server.on("/api/v1/motion", HTTP_GET, handleMotion);
   server.on("/api/v1/motion/zero", HTTP_POST, handleZero);
   server.on("/api/v1/status", HTTP_GET, handleStatus);

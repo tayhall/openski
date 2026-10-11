@@ -130,8 +130,41 @@ void test_retry_keeps_trying_at_the_interval_while_the_sensor_stays_missing() {
   TEST_ASSERT_TRUE(monitor.retryBegin(4000, 2000));
 }
 
+void test_timing_quality_handles_wrap_and_strict_gap_threshold() {
+  FakeImu imu;
+  ImuMonitor monitor(&imu);
+  monitor.begin();
+  imu.nextSample.timestampUs = 0xfffffff0U;
+  monitor.poll();
+  imu.nextSample.timestampUs += 10000U;
+  monitor.poll();
+  TEST_ASSERT_EQUAL_UINT32(1, monitor.stats().timestampWraps);
+  TEST_ASSERT_EQUAL_UINT32(0, monitor.stats().timestampGaps);
+  TEST_ASSERT_EQUAL_UINT32(10000, monitor.stats().lastIntervalUs);
+  TEST_ASSERT_TRUE(monitor.latest().qualityFlags & openski::imu::kTimestampWrap);
+  imu.nextSample.timestampUs += 20000U;
+  monitor.poll();
+  TEST_ASSERT_EQUAL_UINT32(0, monitor.stats().timestampGaps);
+  imu.nextResult = ReadResult::kError;
+  monitor.poll();
+  imu.nextResult = ReadResult::kSample;
+  imu.nextSample.timestampUs += 20001U;
+  imu.nextSample.qualityFlags = openski::imu::kAccelNearRail | openski::imu::kGyroNearRail;
+  monitor.poll();
+  TEST_ASSERT_EQUAL_UINT32(1, monitor.stats().timestampGaps);
+  TEST_ASSERT_EQUAL_UINT32(20001, monitor.stats().maxIntervalUs);
+  TEST_ASSERT_EQUAL_UINT32(1, monitor.stats().accelNearRailSamples);
+  TEST_ASSERT_EQUAL_UINT32(1, monitor.stats().gyroNearRailSamples);
+  TEST_ASSERT_TRUE(monitor.latest().qualityFlags & openski::imu::kTimestampGap);
+  imu.nextSample.timestampUs += 10000U;
+  imu.nextSample.qualityFlags = 0;
+  monitor.poll();
+  TEST_ASSERT_EQUAL_UINT8(0, monitor.latest().qualityFlags);
+}
+
 int main() {
   UNITY_BEGIN();
+  RUN_TEST(test_timing_quality_handles_wrap_and_strict_gap_threshold);
   RUN_TEST(test_no_sensor_is_not_ready);
   RUN_TEST(test_begin_failure_is_not_ready_and_poll_is_ignored);
   RUN_TEST(test_sample_is_counted_and_kept_as_latest);

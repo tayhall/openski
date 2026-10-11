@@ -7,6 +7,12 @@ struct Stats {
   bool ready;
   uint32_t samples;
   uint32_t readFailures;
+  uint32_t timestampGaps;
+  uint32_t timestampWraps;
+  uint32_t accelNearRailSamples;
+  uint32_t gyroNearRailSamples;
+  uint32_t lastIntervalUs;
+  uint32_t maxIntervalUs;
 };
 
 // Polls an ImuSensor and tracks its health. A null sensor means no driver is
