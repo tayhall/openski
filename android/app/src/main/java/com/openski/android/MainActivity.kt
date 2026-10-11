@@ -65,6 +65,7 @@ class MainActivity : Activity() {
     private lateinit var skiCommand: TextView
     private val skiEventText = mutableMapOf<String, String>()
     private val skiStateText = mutableMapOf<String, String>()
+    private val headingTurnText = mutableMapOf<String, String>()
     private val liveOrientation=mutableMapOf<String,BootRoll>()
 
     private val serviceConnection = object : ServiceConnection {
@@ -127,6 +128,12 @@ class MainActivity : Activity() {
                 "${if (state.zeroed) "zeroed" else "not zeroed"} · roll " +
                 "${"%.0f".format(java.util.Locale.US, state.rollDegrees)}° pitch " +
                 "${"%.0f".format(java.util.Locale.US, state.pitchDegrees)}°"
+            renderSki()
+        }
+        override fun onHeadingTurn(side: String, turn: HeadingTurnFrame) = runOnUiThread {
+            headingTurnText[side] = "${"%+.0f".format(java.util.Locale.US, turn.changeDegrees)}° over " +
+                "${"%.1f".format(java.util.Locale.US, turn.durationMs / 1000f)} s, peak " +
+                "${"%.0f".format(java.util.Locale.US, turn.peakRateDps)}°/s (experimental candidate)"
             renderSki()
         }
         override fun onRecordingChanged(sessionId: String?, message: String) = runOnUiThread {
@@ -346,9 +353,10 @@ class MainActivity : Activity() {
     }
 
     private fun renderSki() {
-        val sides = (skiEventText.keys + skiStateText.keys).sorted()
+        val sides = (skiEventText.keys + skiStateText.keys + headingTurnText.keys).sorted()
         skiStatus.text = if (sides.isEmpty()) "No boot turn data yet." else sides.joinToString("\n") { side ->
-            "$side · ${skiStateText[side] ?: "no state yet"}\n   ${skiEventText[side] ?: "no half-turn yet"}"
+            "$side · ${skiStateText[side] ?: "no state yet"}\n   ${skiEventText[side] ?: "no half-turn yet"}" +
+                "\n   last heading turn: ${headingTurnText[side] ?: "none yet"}"
         }
     }
 

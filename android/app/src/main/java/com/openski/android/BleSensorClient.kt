@@ -21,6 +21,7 @@ class BleSensorClient(
     private val onMovement: (MovementEvent) -> Unit = {},
     private val onSkiEvent: (SkiEvent) -> Unit = {},
     private val onSkiState: (SkiState) -> Unit = {},
+    private val onHeadingTurn: (HeadingTurnFrame) -> Unit = {},
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private var gatt: BluetoothGatt? = null
@@ -134,6 +135,7 @@ class BleSensorClient(
                 is MovementEvent -> onMovement(frame)
                 is SkiEvent -> onSkiEvent(frame)
                 is SkiState -> onSkiState(frame)
+                is HeadingTurnFrame -> onHeadingTurn(frame)
                 null -> Unit
             }
             BATTERY_UUID -> onBattery(bytes.firstOrNull()?.toInt()?.and(255)?.takeIf { it <= 100 })

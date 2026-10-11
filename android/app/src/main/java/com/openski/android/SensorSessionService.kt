@@ -21,6 +21,7 @@ class SensorSessionService : Service() {
         fun onMovementEvent(side: String, event: MovementEvent) {}
         fun onSkiEvent(side: String, event: SkiEvent) {}
         fun onSkiState(side: String, state: SkiState) {}
+        fun onHeadingTurn(side: String, turn: HeadingTurnFrame) {}
     }
     inner class LocalBinder : Binder() { val service: SensorSessionService get() = this@SensorSessionService }
     private val binder = LocalBinder()
@@ -397,6 +398,7 @@ class SensorSessionService : Service() {
                 zeroTracker.frame(side, state.zeroed, System.currentTimeMillis())
                 listener?.onSkiState(side, SkierFrame.of(side, state))
             },
+            onHeadingTurn = { turn -> listener?.onHeadingTurn(side, turn) },
             onDisconnected = {
                 latestOrientation.remove(side)
                 listener?.onBootOrientation(side,null)

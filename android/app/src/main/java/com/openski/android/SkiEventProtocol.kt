@@ -7,11 +7,15 @@ import java.nio.ByteOrder
 sealed interface MotionFrame
 
 object MotionFrames {
-    /** Version 1 is the `tilt_v1` excursion, 2 a `ski_v0` half-turn, 3 the `ski_v0` state frame. */
+    /**
+     * Version 1 is the `tilt_v1` excursion, 2 a `ski_v0` half-turn, 3 the `ski_v0` state frame and
+     * 4 an experimental heading-turn candidate.
+     */
     fun decode(bytes: ByteArray): MotionFrame? = when (bytes.firstOrNull()?.toInt()) {
         1 -> MovementEvent.decode(bytes)
         2 -> SkiEvent.decode(bytes)
         3 -> SkiState.decode(bytes)
+        4 -> HeadingTurnFrame.decode(bytes)
         else -> null
     }
 }
@@ -71,6 +75,37 @@ data class SkiState(val sequence: Int, val timeMs: Long, val rollDegrees: Float,
             if (flags and 0xf8 != 0 || Math.abs(roll) > 90f || Math.abs(pitch) > 180f) return null
             return SkiState(sequence, time, roll, pitch, vibration, gyro,
                 flags and 1 != 0, flags and 2 != 0, flags and 4 != 0)
+        }
+    }
+}
+
+/**
+ * One heading-turn candidate from the firmware's experimental heading-rate tracker (docs/ble-protocol.md,
+ * frame version 4). Heading change comes from the gravity-referenced yaw rate in the sensor frame; it is
+ * a candidate, not a classified or validated ski turn. Positive means the heading rate was positive.
+ */
+data class HeadingTurnFrame(val sequence: Int, val startMs: Long, val durationMs: Int,
+    val peakRateDps: Float, val changeDegrees: Float, val positive: Boolean,
+    val skippedSamples: Boolean, val nearRail: Boolean) : MotionFrame {
+    companion object {
+        const val SIZE = 16
+        const val VERSION = 4
+
+        fun decode(bytes: ByteArray): HeadingTurnFrame? {
+            if (bytes.size != SIZE || bytes[0].toInt() != VERSION) return null
+            val b = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+            b.get()
+            val flags = b.get().toInt() and 255
+            val sequence = b.short.toInt() and 0xffff
+            val start = b.int.toLong() and 0xffff_ffffL
+            val duration = b.short.toInt() and 0xffff
+            val rate = b.short / 10f
+            val change = b.short / 100f
+            val reserved = b.short.toInt()
+            val positive = flags and 1 != 0
+            if (flags and 0xf8 != 0 || reserved != 0 || rate == 0f || positive != (rate > 0f)) return null
+            return HeadingTurnFrame(sequence, start, duration, rate, change, positive,
+                flags and 2 != 0, flags and 4 != 0)
         }
     }
 }
