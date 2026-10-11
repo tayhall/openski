@@ -1,6 +1,7 @@
 #include <unity.h>
 
 #include "ImuMonitor.h"
+#include "RecordFlags.h"
 
 using openski::imu::ImuMonitor;
 using openski::imu::ImuSensor;
@@ -162,9 +163,36 @@ void test_timing_quality_handles_wrap_and_strict_gap_threshold() {
   TEST_ASSERT_EQUAL_UINT8(0, monitor.latest().qualityFlags);
 }
 
+void test_record_flags_pack_into_the_low_timestamp_bits() {
+  using namespace openski::imu;
+  const uint32_t packed = packRecordTimestamp(1234567U, kRecordAccelNearRail | kRecordDroppedBefore);
+  TEST_ASSERT_EQUAL_UINT8(5, recordFlags(packed));
+  TEST_ASSERT_EQUAL_UINT32(1234567U & ~7U, recordTimestamp(packed));
+  TEST_ASSERT_EQUAL_UINT32(0xfffffff8U, recordTimestamp(packRecordTimestamp(0xffffffffU, 7)));
+  TEST_ASSERT_EQUAL_UINT8(0, recordFlags(packRecordTimestamp(7U, 0)));
+  TEST_ASSERT_EQUAL_UINT8(3, recordFlagsFromQuality(kAccelNearRail | kGyroNearRail | kTimestampGap));
+  TEST_ASSERT_EQUAL_UINT8(0, recordFlagsFromQuality(kTimestampGap | kTimestampWrap));
+}
+
+void test_record_dropped_before_flag_is_bit_two_and_keeps_timestamp_resolution() {
+  using namespace openski::imu;
+  const uint32_t packed = packRecordTimestamp(1000U, kRecordDroppedBefore);
+  TEST_ASSERT_EQUAL_UINT8(4, recordFlags(packed));
+  TEST_ASSERT_EQUAL_UINT32(1000U, recordTimestamp(packed));  // 1000 is a multiple of 8
+  // Flags never reach the timestamp bits above bit 2, for any flag byte.
+  const uint32_t noisy = packRecordTimestamp(1000U, 0xffU);
+  TEST_ASSERT_EQUAL_UINT8(7, recordFlags(noisy));
+  TEST_ASSERT_EQUAL_UINT32(1000U, recordTimestamp(noisy));
+  // Consecutive 10 ms samples stay ordered at 8 us resolution with and without flags.
+  TEST_ASSERT_TRUE(recordTimestamp(packRecordTimestamp(11000U, 7)) >
+                   recordTimestamp(packRecordTimestamp(10000U, 0)));
+}
+
 int main() {
   UNITY_BEGIN();
   RUN_TEST(test_timing_quality_handles_wrap_and_strict_gap_threshold);
+  RUN_TEST(test_record_flags_pack_into_the_low_timestamp_bits);
+  RUN_TEST(test_record_dropped_before_flag_is_bit_two_and_keeps_timestamp_resolution);
   RUN_TEST(test_no_sensor_is_not_ready);
   RUN_TEST(test_begin_failure_is_not_ready_and_poll_is_ignored);
   RUN_TEST(test_sample_is_counted_and_kept_as_latest);

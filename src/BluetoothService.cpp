@@ -23,10 +23,13 @@ constexpr char kStatusUuid[] = "b1e7a100-3c31-4d59-a2c8-1e9f2f810003";
 constexpr char kRecorderControlUuid[] = "b1e7a100-3c31-4d59-a2c8-1e9f2f810004";
 constexpr char kRecorderDataUuid[] = "b1e7a100-3c31-4d59-a2c8-1e9f2f810005";
 constexpr char kMovementEventUuid[] = "b1e7a100-3c31-4d59-a2c8-1e9f2f810006";
-constexpr uint8_t kProtocolVersion = 1;
+constexpr uint8_t kProtocolVersion = 1;  // status characteristic
+constexpr uint8_t kLiveProtocolVersion = 2;  // live frame: v1 plus quality byte at offset 19
 constexpr uint8_t kMovementEventVersion = 1;
-constexpr uint8_t kRecorderProtocolVersion = 2;
-constexpr size_t kLiveFrameSize = 19;
+constexpr uint8_t kRecorderProtocolVersion = 3;
+constexpr uint8_t kDownloadChunkMarker = 0xd1;  // records carry flags in the low timestamp bits
+// 20 bytes is the ATT payload of a default MTU of 23 (23 - 3), so the frame fits unnegotiated.
+constexpr size_t kLiveFrameSize = 20;
 constexpr size_t kStatusFrameSize = 12;
 constexpr size_t kMovementEventSize = 15;
 constexpr size_t kRecordSize = 16;
@@ -81,6 +84,10 @@ uint32_t downloadOffset = 0;
 uint16_t sequenceNumber = 0;
 uint32_t lastSentSampleTimestamp = 0;
 uint32_t lastNotifiedSampleCount = 0;
+// OR of the quality flags of every sample seen since the previous notification.
+uint8_t liveQuality = 0;
+uint32_t lastQualityTimestamp = 0;
+bool haveQualityTimestamp = false;
 unsigned long lastTransferMs = 0;
 portMUX_TYPE diagnosticsMux = portMUX_INITIALIZER_UNLOCKED;
 Diagnostics connectionDiagnostics;
@@ -165,17 +172,29 @@ void updateStatus() {
 }
 
 void notifyLatestSample() {
-  if (mode::production()) return;  // production: events and the state frame only
   const imu::ImuMonitor& monitor = imu::monitor();
-  if (!clientConnected || !monitor.hasSample() || liveCharacteristic == nullptr) return;
+  if (mode::production() || !clientConnected || !monitor.hasSample() || liveCharacteristic == nullptr) {
+    // No live notifications: drop pending quality so it is not attributed to a later frame.
+    liveQuality = 0;
+    haveQualityTimestamp = false;
+    return;
+  }
+
+  // Accumulate once per new sample (by timestamp), before decimation, so the skipped
+  // samples' flags reach the next notification.
+  const imu::Sample& sample = monitor.latest();
+  if (!haveQualityTimestamp || sample.timestampUs != lastQualityTimestamp) {
+    liveQuality |= sample.qualityFlags;
+    lastQualityTimestamp = sample.timestampUs;
+    haveQualityTimestamp = true;
+  }
 
   const uint32_t samples = monitor.stats().samples;
   if (samples - lastNotifiedSampleCount < kLiveDecimation) return;
-  const imu::Sample& sample = monitor.latest();
   if (sample.timestampUs == lastSentSampleTimestamp) return;
 
   uint8_t frame[kLiveFrameSize]{};
-  frame[0] = kProtocolVersion;
+  frame[0] = kLiveProtocolVersion;
   putUint16(frame + 1, sequenceNumber++);
   putUint32(frame + 3, sample.timestampUs / 1000U);
   putSigned16(frame + 7, quantize(sample.accelMps2.x, 100.0f));
@@ -184,10 +203,12 @@ void notifyLatestSample() {
   putSigned16(frame + 13, quantize(sample.gyroRadps.x, 1000.0f));
   putSigned16(frame + 15, quantize(sample.gyroRadps.y, 1000.0f));
   putSigned16(frame + 17, quantize(sample.gyroRadps.z, 1000.0f));
+  frame[19] = liveQuality & 0x0f;
 
   liveCharacteristic->setValue(frame, sizeof(frame));
   liveCharacteristic->notify();
   lastSentSampleTimestamp = sample.timestampUs;
+  liveQuality = 0;
   lastNotifiedSampleCount = samples;
 }
 
@@ -472,7 +493,7 @@ void notifyNextRecordChunk() {
     return;
   }
 
-  frame[0] = 0xd0;
+  frame[0] = kDownloadChunkMarker;
   frame[1] = static_cast<uint8_t>(downloadOffset & 0xff);
   frame[2] = static_cast<uint8_t>((downloadOffset >> 8) & 0xff);
   frame[3] = static_cast<uint8_t>((downloadOffset >> 16) & 0xff);

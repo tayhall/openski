@@ -13,11 +13,11 @@ The ESP32 acts as a BLE GATT peripheral. An Android app scans for `OpenSki-ski`,
 
 ## Live sample notification
 
-Each 19-byte frame uses little-endian fields and fits the default BLE ATT payload size:
+Each 20-byte frame uses little-endian fields and fits the default BLE ATT payload size (23-byte MTU minus 3 bytes of ATT header = 20). Live frame versions 1 (19 bytes, no quality byte) and 2 (20 bytes) both exist; the Android app decodes both. Current firmware sends version 2.
 
 | Offset | Size | Field | Encoding |
 | --- | ---: | --- | --- |
-| 0 | 1 | protocol version | `1` |
+| 0 | 1 | protocol version | `2` (`1` for the older 19-byte frame) |
 | 1 | 2 | sequence | unsigned, increments modulo 65536 |
 | 3 | 4 | timestamp | unsigned milliseconds from the ESP32 monotonic clock |
 | 7 | 2 | acceleration X | signed integer, value × 100 gives m/s² |
@@ -26,8 +26,9 @@ Each 19-byte frame uses little-endian fields and fits the default BLE ATT payloa
 | 13 | 2 | gyro X | signed integer, value × 1000 gives rad/s |
 | 15 | 2 | gyro Y | signed integer, value × 1000 gives rad/s |
 | 17 | 2 | gyro Z | signed integer, value × 1000 gives rad/s |
+| 19 | 1 | quality | OR of the quality flags of every IMU sample since the previous notification, including the samples skipped by decimation; bit 0 accelerometer near rail, bit 1 gyro near rail, bit 2 timestamp gap, bit 3 timestamp wrap; bits 4 to 7 `0` |
 
-Notifications carry every second IMU sample, a steady 50 Hz (an earlier time-based limit measured only about 38 Hz). The IMU continues sampling at 100 Hz; the Android client can use timestamps and sequence numbers to detect stream gaps. Temperature is available in the status characteristic.
+Notifications carry every second IMU sample, a steady 50 Hz (an earlier time-based limit measured only about 38 Hz). The IMU continues sampling at 100 Hz; the Android client can use timestamps and sequence numbers to detect stream gaps. Temperature is available in the status characteristic. The quality byte is cleared after each notification and while live notifications are off (production mode or no client), so it never describes samples from before the previous frame. The rail bits mean a raw axis lay within 8 counts of full scale; they are not proof that no clipping happened between reads (see [IMU data](imu-data.md)).
 
 ## Status characteristic
 
@@ -41,7 +42,7 @@ The 12-byte value is refreshed by the firmware:
 | 6 | 4 | read failures | unsigned I2C/read failures |
 | 10 | 2 | temperature | signed integer, value × 100 gives °C |
 
-The GATT identifiers and live frame version are shared between firmware and the Android client. The recorder protocol has its own version field and does not change the live sample frame.
+The GATT identifiers and live frame version are shared between firmware and the Android client. The status characteristic stays at version `1`. The recorder protocol has its own version field (now `3`) and the live frame has its own (now `2`).
 
 ## Movement event notification (experimental)
 
@@ -142,8 +143,15 @@ Subscribe to recorder-control notifications before sending commands. Before requ
 | Download | `05 offset[4]` | Send sample records beginning at a zero-based record offset |
 | Cancel download | `06` | Stop the current transfer |
 
-Every control response is 16 bytes: protocol version `2`, response opcode, result code, flags, sample count (`uint32`), dropped sample count (`uint32`), and maximum sample count (`uint32`). All multibyte fields are little-endian. Response opcode matches the command; `85` signals download completion or failure. Result codes are `0` success, `1` storage unavailable, `2` busy, `3` no saved session, `4` invalid offset, `5` flash read/write error, and `6` invalid command. Flag bits are storage ready (0), recording (1), session present (2), capacity reached (3), storage error (4), and download active (5).
+Every control response is 16 bytes: protocol version `3`, response opcode, result code, flags, sample count (`uint32`), dropped sample count (`uint32`), and maximum sample count (`uint32`). All multibyte fields are little-endian. Response opcode matches the command; `85` signals download completion or failure. Result codes are `0` success, `1` storage unavailable, `2` busy, `3` no saved session, `4` invalid offset, `5` flash read/write error, and `6` invalid command. Flag bits are storage ready (0), recording (1), session present (2), capacity reached (3), storage error (4), and download active (5).
 
-Each saved sample is 16 bytes: timestamp in microseconds since boot (`uint32`), acceleration X/Y/Z (`int16`, each divided by 100 gives m/s²), then gyro X/Y/Z (`int16`, each divided by 1000 gives rad/s). Download notifications begin with marker `D0` and a 24-bit little-endian first-record index, followed by one or more contiguous records. The firmware sizes each notification to the negotiated ATT MTU; default MTU carries one record. The Android app should verify each index, resume from the first missing record after a disconnect, and erase only after the complete session has been saved and validated.
+Each saved sample is 16 bytes: timestamp in microseconds since boot (`uint32`, low 3 bits are flags, so the resolution is 8 us), acceleration X/Y/Z (`int16`, each divided by 100 gives m/s²), then gyro X/Y/Z (`int16`, each divided by 1000 gives rad/s). Download notifications begin with marker `D1` (records carry the flags below; `D0` was the format-2 marker, which version 3 firmware no longer sends) and a 24-bit little-endian first-record index, followed by one or more contiguous records. The timestamp field is the sample time in microseconds with the low 3 bits replaced by flags; mask them off (`timestamp & ~7`) before using the time. Bit 0: accelerometer near rail. Bit 1: gyro near rail. Bit 2: one or more earlier samples were dropped immediately before this one (the recorder queue was full; the bit is set on the next record that was stored, because a flag on a dropped record would be lost with it). The rail flags mean a raw axis lay within 8 counts of full scale on that read; absence of the flag is not proof that clipping did not happen between reads.
+
+The firmware sizes each notification to the negotiated ATT MTU; default MTU carries one record. The Android app should verify each index, resume from the first missing record after a disconnect, and erase only after the complete session has been saved and validated.
 
 The two sensors keep independent sessions and counters. The Android app should store the left and right streams separately with their own timestamps; their clocks are relative to each sensor's boot and are not synchronized by this protocol.
+
+### Compatibility
+
+This is a breaking change for live streaming in both directions: an app built before live frame version 2 does not accept 20-byte frames or recorder protocol version 3, and a new app does not accept version 2 recorder responses from old firmware for recording or download. Neither pairing is supported; both sensors and the app should be updated together. Sessions already stored on the phone from version 2 firmware replay unchanged. The app fails closed on versions: a frame or response with a version it does not know is rejected rather than guessed at.
+
