@@ -14,7 +14,7 @@ object HeadingTurnAnalysis {
         rolls.sortedBy { it.timeMs }.forEach { r ->
             if (segment != null && r.segment != segment) detector.breakSegment()
             segment = r.segment
-            val flags = if (r.quality and 2 != 0) HeadingTurnDetector.FLAG_NEAR_RAIL else 0
+            val flags = if (r.quality and 3 != 0) HeadingTurnDetector.FLAG_NEAR_RAIL else 0
             detector.accept(r.timeMs, r.headingRateRadps, flags)?.let(turns::add)
         }
         return turns

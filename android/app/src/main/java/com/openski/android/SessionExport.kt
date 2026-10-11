@@ -128,7 +128,7 @@ object SessionExport {
                 .put("median_right_minus_left_return_ms",comparison.medianReturnLagMs ?: JSONObject.NULL))
             summary.put("quality",JSONArray().apply { analysis.quality.forEach { q -> put(JSONObject().put("side",q.side)
                 .put("rail_samples",q.railSamples).put("rail_percent",q.railPercent)
-                .put("rail_note","within 8 counts of full scale; not proof of absence of clipping")
+                .put("rail_note",RAIL_NOTE)
                 .put("dropped_before_samples",q.droppedBefore)) } })
             entry("analysis-summary.json") { it.write(summary.toString(2)) }
         }

@@ -5,6 +5,9 @@ import kotlin.math.*
 data class TimelinePoint(val side: String, val timeMs: Double, val sample: SensorSample, val source: String,
     val captureId: String? = null, val recordIndex: Int? = null, val sensorTimeUs: Long? = null,
     val receivedAtMs: Long? = null)
+/** Shared wording for the near-rail count; it is a heuristic, not a clipping detector. */
+const val RAIL_NOTE = "within 8 counts of full scale; not proof of absence of clipping"
+
 data class StreamQuality(val side: String, val liveSamples: Int, val flashSamples: Int, val coverage: Double,
     val gaps: Int, val longestGapMs: Double, val dropped: Int,
     /** Samples with an accelerometer or gyro value within 8 counts of full scale (not proof of clipping). */
