@@ -16,7 +16,9 @@ data class BootCalibration(val side: String, val timeMs: Double, val axis: Int, 
     val gravity: Vector3, val bias: Vector3, val forward: Vector3?=null)
 data class BootRoll(val side: String, val timeMs: Double, val degrees: Double, val driftSeconds: Double,
     val pitchDegrees: Double=0.0, val yawDegrees: Double=0.0, val segment: Int=0,
-    val rollRateRadps: Double=0.0, val pitchRateRadps: Double=0.0, val yawRateRadps: Double=0.0)
+    val rollRateRadps: Double=0.0, val pitchRateRadps: Double=0.0, val yawRateRadps: Double=0.0,
+    /** Rotation rate about the current vertical (omega . g), the experimental heading rate. */
+    val headingRateRadps: Double=0.0)
 
 private data class OrientationQuaternion(val w: Double, val x: Double, val y: Double, val z: Double) {
     operator fun times(q: OrientationQuaternion)=OrientationQuaternion(
@@ -139,7 +141,7 @@ object BootOrientation {
                     BootRoll(p.side,p.timeMs,Math.toDegrees(atan2(g.dot(lateral),g.dot(up))),
                         (p.timeMs-anchor)/1000,Math.toDegrees(atan2(-g.dot(forward),hypot(g.dot(lateral),g.dot(up)))),
                         Math.toDegrees(atan2(sin(yaw),cos(yaw))),segment,
-                        omega.dot(forward),omega.dot(lateral),omega.dot(up))
+                        omega.dot(forward),omega.dot(lateral),omega.dot(up),omega.dot(g))
                 else null
             }
         }

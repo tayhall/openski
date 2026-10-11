@@ -18,7 +18,7 @@ The Boots tab shows pairing and mounting and opens **Geek mode**: the original d
 - **Sessions:** dated session history and a useful empty state. Synthetic demos and indoor tests retain clear labels.
 - **Test lab:** prominent sensor-free demo, test/calibration workflow, guided sets and expandable observer markers.
 - **Replay:** motion timeline, calibration, labels/alignment and video. Calibrated recordings open on estimated boot roll; recordings without calibration open on acceleration.
-- **Analysis:** indoor movement summary, analysis settings, timing, roll profiles, dry-movement evaluation and boot comparisons. Methodological details are expandable.
+- **Analysis:** indoor movement summary, analysis settings, timing, roll profiles, dry-movement evaluation (with one line of experimental heading-rate candidates beside the roll-lobe count) and boot comparisons. Methodological details are expandable.
 - **Details:** metadata, equipment, recording quality, sampling, export and protected deletion.
 
 Tabs retain selection during rotation. Each tab has its own scroll container. Landscape headers become compact to preserve working space. The replay back control returns to the previous dashboard tab; selecting a detected movement opens Replay and seeks to its onset. Leaving Replay pauses video.

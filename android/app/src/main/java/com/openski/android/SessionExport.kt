@@ -93,6 +93,14 @@ object SessionExport {
                     w.write("$side,$direction,${m.positive},${m.startMs},${m.endMs},${m.endMs-m.startMs},${m.peakRoll},experimental_dry_roll\n")
                 } }
             }
+            val headingTurns=listOf("L","R").associateWith { side -> HeadingTurnAnalysis.detect(orientation.filter { it.side==side }) }
+            entry("heading-turns.csv") { w ->
+                w.write("side,direction,positive_heading_rate,start_ms,end_ms,duration_ms,peak_heading_rate_dps,heading_change_deg,detector\n")
+                headingTurns.forEach { (side,turns)->turns.forEach { t ->
+                    val direction=if(t.positive==positiveLeft(side)) "LEFT" else "RIGHT"
+                    w.write("$side,$direction,${t.positive},${t.startMs},${t.endMs},${t.endMs-t.startMs},${t.peakRateDps},${t.changeDegrees},experimental_heading_rate\n")
+                } }
+            }
             val summary=JSONObject().put("data_origin",session.origin)
                 .put("detector","experimental_dry_roll").put("entry_deg",8).put("neutral_deg",3)
                 .put("filter_time_constant_ms",100).put("label_tolerance_ms",500)
@@ -106,7 +114,13 @@ object SessionExport {
                     .put("unmatched_detections_in_label_window",evaluation.detections-evaluation.matched)
                     .put("mean_absolute_onset_error_ms",evaluation.meanAbsoluteErrorMs ?: JSONObject.NULL)
                     .put("mean_signed_onset_error_ms",evaluation.meanSignedErrorMs ?: JSONObject.NULL))
+                val heading=HeadingTurnAnalysis.summarise(headingTurns.getValue(side))
+                summary.getJSONObject(side).put("heading_turns",JSONObject().put("count",heading.count)
+                    .put("median_duration_ms",heading.medianDurationMs ?: JSONObject.NULL)
+                    .put("cadence_per_minute",heading.cadencePerMinute ?: JSONObject.NULL))
             }
+            summary.put("heading_detector","Experimental heading-rate turn candidates (rotation about the current vertical), not turn classification. " +
+                "The detector was benchmarked on calf-phone data at 10 Hz; transfer to boot-mounted sensors is unproven. Direction uses saved per-boot settings, default positive rate=LEFT.")
             val comparison=BootComparison.analyse(orientation.filter { it.side=="L" },orientation.filter { it.side=="R" },
                 detections.getValue("L"),detections.getValue("R"),positiveLeft("L"),positiveLeft("R"))
             summary.put("boot_comparison",JSONObject().put("angle_pairs",comparison.anglePairs)

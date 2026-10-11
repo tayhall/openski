@@ -255,6 +255,7 @@ class SessionDetailActivity : Activity() {
             val timing=SessionAnalysis.timing(result.timeline,reviewSide,axis)
             val dry=DrySkiAnalysis.detectTrials(bootRoll.filter { it.side==reviewSide },loaded.markers)
             reviewedMovements=dry.movements
+            val headingSummary=HeadingTurnAnalysis.summarise(HeadingTurnAnalysis.detect(bootRoll.filter { it.side==reviewSide }))
             val profileIntervals=if(session.testSession) dry.movements.map { CandidateInterval(it.startMs,it.endMs,it.positive) } else timing.intervals
             val profiles=BootOrientation.profiles(bootRoll.filter { it.side==reviewSide },profileIntervals)
             val ranges=DrySkiAnalysis.trialRanges(loaded.markers,(session.endedAtMs ?: System.currentTimeMillis()).toDouble())
@@ -272,6 +273,7 @@ class SessionDetailActivity : Activity() {
                 "${comparison.movementPairs} paired lean movements · median right-minus-left onset lag ${comparison.medianOnsetLagMs?.let { "${number(it)} ms" } ?: "—"}\n" +
                 "Median right-minus-left neutral return lag ${comparison.medianReturnLagMs?.let { "${number(it)} ms" } ?: "—"}"
             dryLabel.text="${dry.movements.size} completed lean movements · ${dry.transitions.size} returns through neutral\n" +
+                "Heading-rate candidates (experimental): ${headingSummary.count} turns, median ${headingSummary.medianDurationMs?.let { String.format(Locale.US,"%.1f",it/1000) } ?: "—"} s; roll-lobe candidates: ${dry.movements.size}\n" +
                 "Entry ≥8° · neutral ≤3° · minimum 0.3s · thresholds are test settings\n" +
                 (balance?.let { b ->
                     val left=if(positiveLeft) b.positiveDurationMs else b.negativeDurationMs
