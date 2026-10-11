@@ -22,12 +22,14 @@ class HeadingTracker {
   void update(uint32_t timeUs, float rateRadps, uint8_t flags = 0) {
     const float rate = rateRadps*kDegrees;
     if (hasTime_ && timeUs - lastUs_ > kGapUs) breakSegment();
-    if (!hasTime_ || !seeded_) {
+    const bool reseeded = !seeded_;
+    if (reseeded) {
       smooth_ = rate; base_ = rate; seeded_ = true;
       segmentStartUs_ = timeUs; area_ = 0; peak_ = 0; sign_ = 0;
       skipped_ = nearRail_ = false;
     }
-    const float dt = hasTime_ ? (timeUs - lastUs_)/1000000.0f : 0.0f;
+    // The reseeding sample (first, or first after a gap) takes no filter step so the SD survives a gap.
+    const float dt = reseeded ? 0.0f : (timeUs - lastUs_)/1000000.0f;
     hasTime_ = true; lastUs_ = timeUs;
     if (dt > 0) {
       smooth_ += dt/(kSmoothTauS + dt)*(rate - smooth_);
@@ -55,6 +57,7 @@ class HeadingTracker {
   void breakSegment() { seeded_ = false; sign_ = 0; }
 
   uint32_t count() const { return count_; }
+  // Counts only lobes that reach the amplitude threshold but last under 0.4 s.
   uint32_t rejected() const { return rejected_; }
   uint8_t recent(HeadingTurn* output, uint8_t capacity) const {
     const uint8_t available = count_ < 16 ? static_cast<uint8_t>(count_) : 16;
