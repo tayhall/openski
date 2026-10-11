@@ -101,7 +101,10 @@ object BootOrientation {
     }
 
     /** The same state machine powers real-time telemetry and saved-session replay. */
-    class Tracker(private val calibration: BootCalibration, awaitRest: Boolean=false) {
+    class Tracker(private val calibration: BootCalibration, awaitRest: Boolean=false,
+        /** Learn a slow extra gyro bias while demonstrably at rest ([RestBias]); tests may disable it. */
+        learnRestBias: Boolean=true) {
+        private val restBias=if(learnRestBias) RestBias() else null
         private val up=calibration.gravity
         private val forward=calibration.forward ?: (axis(calibration.axis)-up*up.dot(axis(calibration.axis))).unit()*calibration.sign.toDouble()
         private val lateral=up.cross(forward)
@@ -118,8 +121,11 @@ object BootOrientation {
             seen=true
             previous=p.timeMs
             if(dt>250 || dt<0) { orientation=null; restedMs=0.0; segment++ }
-            val omega=rotation(p.sample)-calibration.bias
             val accel=acceleration(p.sample)
+            val calibrated=rotation(p.sample)-calibration.bias
+            // The learner sees the gyro without its own estimate subtracted (no feedback loop).
+            restBias?.update(p.timeMs,accel,calibrated)
+            val omega=restBias?.let { calibrated-it.estimate } ?: calibrated
             val stationary=omega.norm()<0.08 && accel.norm() in 9.3..10.3
             restedMs=if(stationary) restedMs+dt.coerceIn(0.0,100.0) else 0.0
             orientation=orientation?.let { (it*OrientationQuaternion.increment(omega,dt.coerceIn(0.0,250.0)/1000)).unit() }

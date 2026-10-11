@@ -33,6 +33,19 @@ class BootOrientationTest {
         val estimated=BootOrientation.estimate(biased+moving+recovery,calibration)
         assertTrue(estimated.any { it.timeMs>=8000 })
     }
+    @Test fun learnedRestBiasShrinksDriftFromAnOffsetThatAppearedAfterCalibration() {
+        val calibration=BootOrientation.calibrate(rest,"L",0.0,0,1)!!
+        // Offset on all three axes (norm 0.052, still "stationary" to the tracker) that was not present at
+        // calibration. Gravity re-alignment pins roll and pitch, so the visible drift is heading (yaw).
+        val still=(1..3000).map { i -> point(2000+i*20.0).let { p ->
+            p.copy(sample=p.sample.copy(gyroX=0.03f,gyroY=0.03f,gyroZ=0.03f)) } }
+        val learned=BootOrientation.Tracker(calibration).let { t -> still.mapNotNull(t::accept) }
+        val fixed=BootOrientation.Tracker(calibration,learnRestBias=false).let { t -> still.mapNotNull(t::accept) }
+        val learnedDrift=abs(learned.last().yawDegrees)
+        val fixedDrift=abs(fixed.last().yawDegrees)
+        assertTrue("without learning yaw drifts ($fixedDrift)",fixedDrift>50.0)
+        assertTrue("learned $learnedDrift vs fixed $fixedDrift",learnedDrift*5<=fixedDrift)
+    }
     @Test fun estimatesPitchAndRelativeYawInTheBootFrame() {
         val calibration=BootOrientation.calibrate(rest,"L",0.0,0,1)!!
         val pitch=(1..100).map { point(2000+it*20.0).let { p -> p.copy(sample=p.sample.copy(gyroY=(PI/6).toFloat(),accelZ=12f)) } }
