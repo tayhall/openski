@@ -30,6 +30,12 @@ class HeadingTracker {
     }
     // The reseeding sample (first, or first after a gap) takes no filter step so the SD survives a gap.
     const float dt = reseeded ? 0.0f : (timeUs - lastUs_)/1000000.0f;
+    if (!hasFirst_) { firstUs_ = timeUs; hasFirst_ = true; }
+    else if (hasTime_) {  // saturating time since the first sample, to tell boot from a clock wrap
+      const uint32_t step = timeUs - lastUs_;
+      elapsedUs_ = step > UINT32_MAX - elapsedUs_ ? UINT32_MAX : elapsedUs_ + step;
+    }
+    if (reseeded) segmentElapsedUs_ = elapsedUs_;
     hasTime_ = true; lastUs_ = timeUs;
     if (dt > 0) {
       smooth_ += dt/(kSmoothTauS + dt)*(rate - smooth_);
@@ -44,6 +50,7 @@ class HeadingTracker {
     if (s != sign_) {
       close(timeUs);
       sign_ = s; segmentStartUs_ = timeUs; area_ = 0; peak_ = 0;
+      segmentElapsedUs_ = elapsedUs_;
       skipped_ = nearRail_ = false;
     }
     area_ += x*dt;
@@ -81,7 +88,9 @@ class HeadingTracker {
     if (duration < static_cast<uint32_t>(kMinDurationS*1000000.0f)) { ++rejected_; return; }
     HeadingTurn turn;
     turn.sequence = ++count_;
-    turn.startUs = segmentStartUs_ - delay;
+    // A lobe that began less than the filter delay after the first sample would shift before the data;
+    // clamp to the first sample rather than wrap the unsigned clock.
+    turn.startUs = segmentElapsedUs_ < delay ? firstUs_ : segmentStartUs_ - delay;
     turn.endUs = timeUs - delay;
     turn.positive = sign_ > 0;
     turn.peakRateDps = peak_;
@@ -91,6 +100,8 @@ class HeadingTracker {
     history_[(count_ - 1) % 16] = turn;
   }
 
+  bool hasFirst_ = false;
+  uint32_t firstUs_ = 0, elapsedUs_ = 0, segmentElapsedUs_ = 0;
   bool hasTime_ = false, seeded_ = false, skipped_ = false, nearRail_ = false;
   uint32_t lastUs_ = 0, segmentStartUs_ = 0, count_ = 0, rejected_ = 0;
   int sign_ = 0;

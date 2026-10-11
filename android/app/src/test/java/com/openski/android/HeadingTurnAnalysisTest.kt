@@ -72,6 +72,40 @@ class HeadingTurnAnalysisTest {
         }
     }
 
+    @Test fun impactGatedSamplesAreSkippedLikeTheFirmware() {
+        fun roll(t: Double, rate: Double, gated: Boolean = false) =
+            BootRoll("L", t, 0.0, 0.0, headingRateRadps = rate, gated = gated)
+        // A spike lands inside a positive lobe; the firmware never feeds it to the filters.
+        val spikes = setOf(60, 61, 62)
+        fun stream(dropSpikes: Boolean, markGated: Boolean): List<BootRoll> {
+            val rolls = ArrayList<BootRoll>()
+            var t = 0.0
+            repeat(50) { rolls += roll(t, -1.0); t += 20.0 }
+            repeat(125) { i ->
+                val spike = i in spikes
+                if (!(spike && dropSpikes)) rolls += roll(t, if (spike) -14.0 else 1.0, spike && markGated)
+                t += 20.0
+            }
+            repeat(50) { rolls += roll(t, -1.0); t += 20.0 }
+            repeat(75) { rolls += roll(t, 1.0); t += 20.0 }
+            return rolls
+        }
+        val reference = HeadingTurnAnalysis.detect(stream(dropSpikes = true, markGated = false))
+        val gated = HeadingTurnAnalysis.detect(stream(dropSpikes = false, markGated = true))
+        val ungated = HeadingTurnAnalysis.detect(stream(dropSpikes = false, markGated = false))
+        assertTrue(reference.isNotEmpty())
+        assertEquals(reference, gated.map { it.copy(skippedSamples = false) })
+        assertTrue(gated.any { it.skippedSamples })
+        assertNotEquals("the spike must matter when it is not gated", reference, ungated)
+    }
+
+    @Test fun impactGateMatchesFirmwareLimits() {
+        assertTrue(BootOrientation.impactGated(2.6 * 9.80665, 0.0))
+        assertTrue(BootOrientation.impactGated(0.2 * 9.80665, 0.0))
+        assertTrue(BootOrientation.impactGated(9.80665, 12.5))
+        assertFalse(BootOrientation.impactGated(9.80665, 3.0))
+    }
+
     @Test fun aSegmentChangeDoesNotEmitATurnSpanningIt() {
         fun roll(t: Double, rate: Double, segment: Int) = BootRoll("L", t, 0.0, 0.0, segment = segment, headingRateRadps = rate)
         val rolls = ArrayList<BootRoll>()

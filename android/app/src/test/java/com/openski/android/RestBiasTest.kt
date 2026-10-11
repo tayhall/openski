@@ -23,6 +23,13 @@ class RestBiasTest {
         assertEquals(0,broken.updates)
         assertEquals(0.0,broken.estimate.x,0.0)
     }
+    @Test fun aBackwardsTimestampClosesTheWindow() {
+        val r=RestBias()
+        feedRest(r,1000.0,1.0,0.02)                  // window open since 1000 ms, last sample 1990
+        r.update(1500.0,v(0.0,0.0,g),v(0.02))        // clock realigned backwards
+        feedRest(r,1510.0,1.8,0.02)                  // 1.8 s after the realignment: not yet 2 s
+        assertEquals(0,r.updates)
+    }
     private fun v(x: Double,y: Double=0.0,z: Double=0.0)=Vector3(x,y,z)
     /** 100 Hz at rest (gravity on z) with a constant gyro offset on x and optional noise; returns the new time. */
     private fun feedRest(r: RestBias,t: Double,seconds: Double,offsetX: Double,noiseAmp: Double=0.0): Double {

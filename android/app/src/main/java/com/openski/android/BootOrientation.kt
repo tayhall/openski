@@ -20,7 +20,9 @@ data class BootRoll(val side: String, val timeMs: Double, val degrees: Double, v
     /** Rotation rate about the current vertical (omega . g), the experimental heading rate. */
     val headingRateRadps: Double=0.0,
     /** Signal-quality bits of the sample this estimate came from (see [SensorSample.quality]). */
-    val quality: Int=0)
+    val quality: Int=0,
+    /** True when the firmware's impact/free-fall/over-rate gate would have skipped this sample for heading. */
+    val gated: Boolean=false)
 
 private data class OrientationQuaternion(val w: Double, val x: Double, val y: Double, val z: Double) {
     operator fun times(q: OrientationQuaternion)=OrientationQuaternion(
@@ -102,6 +104,13 @@ object BootOrientation {
             .mapNotNull(tracker::accept)
     }
 
+    /**
+     * Mirror of the SkiTracker gate (kImpactG 2.5, kFreeFallG 0.3, kMaxRateRadps 12): such samples carry no
+     * usable vertical or rate, so the firmware leaves the heading filters untouched and replay must too.
+     */
+    fun impactGated(accelMagnitude: Double, gyroMagnitude: Double): Boolean =
+        accelMagnitude>2.5*9.80665 || accelMagnitude<0.3*9.80665 || gyroMagnitude>12.0
+
     /** The same state machine powers real-time telemetry and saved-session replay. */
     class Tracker(private val calibration: BootCalibration, awaitRest: Boolean=false,
         /** Learn a slow extra gyro bias while demonstrably at rest ([RestBias]); tests may disable it. */
@@ -152,7 +161,8 @@ object BootOrientation {
                     BootRoll(p.side,p.timeMs,Math.toDegrees(atan2(g.dot(lateral),g.dot(up))),
                         (p.timeMs-anchor)/1000,Math.toDegrees(atan2(-g.dot(forward),hypot(g.dot(lateral),g.dot(up)))),
                         Math.toDegrees(atan2(sin(yaw),cos(yaw))),segment,
-                        omega.dot(forward),omega.dot(lateral),omega.dot(up),omega.dot(g),p.sample.quality)
+                        omega.dot(forward),omega.dot(lateral),omega.dot(up),omega.dot(g),p.sample.quality,
+                        gated=impactGated(accel.norm(),omega.norm()))
                 else null
             }
         }

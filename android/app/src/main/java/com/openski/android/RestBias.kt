@@ -13,6 +13,8 @@ import kotlin.math.sqrt
 class RestBias {
     private val estimateArr=DoubleArray(3)
     private val sum=DoubleArray(3)
+    private val aBuf=DoubleArray(3); private val gBuf=DoubleArray(3)
+    private var cached=Vector3(0.0,0.0,0.0)
     private val gMin=DoubleArray(3); private val gMax=DoubleArray(3)
     private val aMin=DoubleArray(3); private val aMax=DoubleArray(3)
     private var startMs=0.0; private var lastMs=0.0; private var n=0
@@ -20,16 +22,17 @@ class RestBias {
 
     var updates=0; private set
     var refused=0; private set
-    val estimate: Vector3 get()=Vector3(estimateArr[0],estimateArr[1],estimateArr[2])
+    val estimate: Vector3 get()=cached
     /** True while an eligible window is open and no sample in it reached the gyro limit (not "still for 2 s"). */
     val resting: Boolean get()=open && !overLimit
 
     fun update(timeMs: Double,accel: Vector3,gyro: Vector3) {
         val total=accel.x+accel.y+accel.z+gyro.x+gyro.y+gyro.z
         if(!total.isFinite()) { closeWindow(); return }
-        if(open && timeMs-lastMs>MAX_STEP_MS) closeWindow()
-        val a=doubleArrayOf(accel.x,accel.y,accel.z)
-        val g=doubleArrayOf(gyro.x,gyro.y,gyro.z)
+        if(open && (timeMs<lastMs || timeMs-lastMs>MAX_STEP_MS)) closeWindow()
+        val a=aBuf; val g=gBuf
+        a[0]=accel.x; a[1]=accel.y; a[2]=accel.z
+        g[0]=gyro.x; g[1]=gyro.y; g[2]=gyro.z
         val amag=sqrt(a[0]*a[0]+a[1]*a[1]+a[2]*a[2])
         if(abs(amag-GRAVITY)/GRAVITY>=STILL_ACCEL_FRACTION) { closeWindow(); return }
         if(!open) beginWindow(timeMs,a,g)
@@ -91,6 +94,7 @@ class RestBias {
                 val d=(target[i]-estimateArr[i]).coerceIn(-maxStep,maxStep)
                 estimateArr[i]=(estimateArr[i]+d).coerceIn(-CLAMP_RADPS,CLAMP_RADPS)
             }
+            cached=Vector3(estimateArr[0],estimateArr[1],estimateArr[2])
             updates++
         }
         closeWindow()

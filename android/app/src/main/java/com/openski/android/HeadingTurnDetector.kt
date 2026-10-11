@@ -38,6 +38,8 @@ class HeadingTurnDetector {
     private var skipped = false
     private var nearRail = false
     private var lastMs = 0.0
+    private var firstMs = 0.0
+    private var hasFirst = false
     private var segmentStartMs = 0.0
     private var sign = 0
     private var smooth = 0.0
@@ -61,6 +63,7 @@ class HeadingTurnDetector {
         }
         // The reseeding sample takes no filter step, so the SD survives a gap.
         val dt = if (reseeded) 0.0 else (timeMs - lastMs) / 1000.0
+        if (!hasFirst) { firstMs = timeMs; hasFirst = true }
         hasTime = true; lastMs = timeMs
         if (dt > 0) {
             smooth += dt / (SMOOTH_TAU_S + dt) * (rate - smooth)
@@ -97,7 +100,7 @@ class HeadingTurnDetector {
         val delayMs = SMOOTH_TAU_S * 1000.0
         if (timeMs - segmentStartMs < MIN_DURATION_MS) { rejected++; return null }
         return HeadingTurn(
-            startMs = segmentStartMs - delayMs,
+            startMs = maxOf(segmentStartMs - delayMs, firstMs),
             endMs = timeMs - delayMs,
             positive = sign > 0,
             peakRateDps = peak,

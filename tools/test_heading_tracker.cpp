@@ -103,6 +103,15 @@ int runTests() {
     for (uint8_t i = 0; i < n; ++i) { skipped |= turns[i].skippedSamples; rail |= turns[i].nearRail; }
     check(skipped && rail, "quality flags are carried");
   }
+  {  // A lobe that starts at the first sample is not shifted before the data (no unsigned underflow).
+    HeadingTracker h; uint32_t t = 100000U;
+    feedSine(h, t, 8.0f, 60.0f, 4.0f);
+    HeadingTurn turns[16];
+    const uint8_t n = h.recent(turns, 16);
+    check(n > 0, "turns found from boot");
+    check(turns[0].startUs == 100000U, "first lobe starts at the first sample, not 71 minutes earlier");
+    for (uint8_t i = 1; i < n; ++i) check(turns[i].startUs > turns[i-1].startUs, "later starts are later");
+  }
   {  // The 32-bit microsecond clock may wrap mid-run.
     HeadingTracker h; uint32_t t = 4294967295U - 3000000U;
     feedSine(h, t, 16.0f, 60.0f, 4.0f);

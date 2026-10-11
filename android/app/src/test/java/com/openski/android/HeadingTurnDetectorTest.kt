@@ -60,6 +60,17 @@ class HeadingTurnDetectorTest {
         assertTrue("fixture has turns", series.sumOf { it.turns.size } > 20)
     }
 
+    @Test fun aLobeStartingAtTheFirstSampleIsNotShiftedBeforeTheData() {
+        val d = HeadingTurnDetector()
+        val turns = ArrayList<HeadingTurn>()
+        var t = 5000.0
+        d.accept(t, 0.0)?.let(turns::add); t += 10.0
+        repeat(100) { d.accept(t, 1.0)?.let(turns::add); t += 10.0 }
+        repeat(200) { d.accept(t, -1.0)?.let(turns::add); t += 10.0 }
+        assertTrue(turns.isNotEmpty())
+        assertTrue("start ${turns[0].startMs}", turns[0].startMs >= 5000.0)
+    }
+
     @Test fun standingStillEmitsNothing() {
         val d = HeadingTurnDetector()
         var seed = 7L
