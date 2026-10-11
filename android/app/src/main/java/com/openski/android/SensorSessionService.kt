@@ -609,7 +609,11 @@ class SensorSessionService : Service() {
         }
         armTransferTimeout(side)
         io.execute {
-            try { store.saveDownload(transfer.capture.id, chunk) }
+            try {
+                store.saveDownload(transfer.capture.id, chunk)
+                // The validator guarantees one format per transfer, and a restarted transfer begins at record 0.
+                if (chunk.firstIndex == 0) store.setRecordFormat(transfer.capture.id, if (chunk.withFlags) 3 else 2)
+            }
             catch (error: Exception) { mainHandler.post { if (!destroyed) storageError(error) } }
         }
         if (transfer.validator.next % 500 < chunk.records.size || transfer.validator.next == transfer.validator.expected) {
