@@ -118,6 +118,17 @@ object SessionExport {
                     .put("median_duration_ms",heading.medianDurationMs ?: JSONObject.NULL)
                     .put("cadence_per_minute",heading.cadencePerMinute ?: JSONObject.NULL))
             }
+            val correctedTimeline=analysis.timeline.corrected(correction)
+            calibrations.forEach { c ->
+                val slip=MountSlipMonitor.check(correctedTimeline,c)
+                summary.optJSONObject(c.side)?.put("mount_slip",JSONObject().put("available",slip.available)
+                    .put("baseline_windows",slip.baselineWindows).put("windows_checked",slip.windowsChecked)
+                    .put("flagged_windows",slip.flags.size).put("first_flag_ms",slip.firstFlagMs ?: JSONObject.NULL)
+                    .put("max_axis_deviation_deg",slip.maxAxisDeviationDeg ?: JSONObject.NULL)
+                    .put("max_force_shift_g",slip.maxForceShiftG ?: JSONObject.NULL))
+            }
+            summary.put("mount_slip_note","Replay check against the run's own baseline (gyro roll axis and mean horizontal force). " +
+                "Simulation only: flags yaw slip of 8 degrees or more reliably and tilt slip under 15 degrees unreliably. A flag means re-calibrate, not a measured slip angle.")
             summary.put("heading_detector","Experimental heading-rate turn candidates (rotation about the current vertical), not turn classification. " +
                 "The detector was benchmarked on calf-phone data at 10 Hz; transfer to boot-mounted sensors is unproven. Direction: positive heading rate (counter-clockwise from above) = LEFT, independent of per-boot roll settings.")
             val comparison=BootComparison.analyse(rollBySide["L"].orEmpty(),rollBySide["R"].orEmpty(),

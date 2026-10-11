@@ -1,0 +1,47 @@
+{
+  "id": "moguls",
+  "chip": "DRILL 5  \u00b7  MOGULS",
+  "title": "Skiing bumps",
+  "subtitle": "Seen from the front, and what your boots will show",
+  "steps": [
+    "Look ahead and choose your line.",
+    "Bend your legs to absorb each bump, then stretch into the trough.",
+    "Keep your upper body calm and facing downhill."
+  ],
+  "motion": {
+    "cycle_period_s": 2.1,
+    "cycles": 6,
+    "peak_flatness_k": 0.8,
+    "inside_boot_amp": 0.9,
+    "turn_variation": 0.22,
+    "amplitude": 0.65,
+    "absorption_m": 0.14,
+    "absorption_phase": 0.5,
+    "knee_rest_deg": 24,
+    "knee_per_tilt_deg": 26,
+    "absorption_flex_deg": 34,
+    "heading_deg": 24,
+    "track_width_m": 0.05
+  },
+  "callouts": [
+    {
+      "n": 1,
+      "boot": "R",
+      "t_cycles": 0.75,
+      "text": "Uneven humps: every bump is different, so every turn is."
+    },
+    {
+      "n": 2,
+      "boot": "mid",
+      "t_cycles": 1.0,
+      "text": "Tilt stays modest: quick turns with a lot of absorbing."
+    },
+    {
+      "n": 3,
+      "boot": "mid",
+      "t_cycles": 2.25,
+      "text": "Note: the skier bends and stretches with the bumps, which boot tilt alone doesn't show."
+    }
+  ],
+  "footnote": "Illustration of a typical shape, not a target. Tilt is relative, not degrees."
+}

@@ -97,6 +97,12 @@ object BootOrientation {
         return calibration.copy(forward=(direction-calibration.gravity*direction.dot(calibration.gravity)).unit())
     }
 
+    /** The boot's forward direction in sensor coordinates: the learned one, else the chosen axis projected flat. */
+    internal fun forwardOf(calibration: BootCalibration): Vector3 {
+        val up=calibration.gravity
+        return calibration.forward ?: (axis(calibration.axis)-up*up.dot(axis(calibration.axis))).unit()*calibration.sign.toDouble()
+    }
+
     /** Propagate gravity in sensor coordinates using all gyro axes. Correct only at detected rest. */
     fun estimate(points: List<TimelinePoint>, calibration: BootCalibration): List<BootRoll> {
         val tracker=Tracker(calibration)
@@ -117,7 +123,7 @@ object BootOrientation {
         learnRestBias: Boolean=true) {
         private val restBias=if(learnRestBias) RestBias() else null
         private val up=calibration.gravity
-        private val forward=calibration.forward ?: (axis(calibration.axis)-up*up.dot(axis(calibration.axis))).unit()*calibration.sign.toDouble()
+        private val forward=forwardOf(calibration)
         private val lateral=up.cross(forward)
         private var orientation: OrientationQuaternion?=if(awaitRest) null else OrientationQuaternion.identity
         private var previous=calibration.timeMs

@@ -18,6 +18,7 @@ class SessionDetailActivity : Activity() {
     private lateinit var id: String
     private var data: SessionData? = null
     private var analysis: AnalysisResult? = null
+    private var mountSlip: Map<String, MountSlipResult> = emptyMap()
     private var video: VideoView? = null
     private var chart: MotionChart? = null
     private var seek: SeekBar? = null
@@ -50,7 +51,11 @@ class SessionDetailActivity : Activity() {
                 val calibrations=loaded?.let { item -> LocalSessionStore(this).use { it.calibrations(item.session) } }.orEmpty()
                 val corrector=ProgressStore(this)
                 val bootRoll=if(result==null) emptyList() else calibrations.flatMap { BootOrientation.estimate(result.timeline.corrected(corrector::correctionForSide),it) }
-                runOnUiThread { if (!isDestroyed && !isFinishing) {
+                val slip=if(result==null) emptyMap() else {
+                    val corrected=result.timeline.corrected(corrector::correctionForSide)
+                    calibrations.associate { it.side to MountSlipMonitor.check(corrected,it) }
+                }
+                runOnUiThread { mountSlip=slip; if (!isDestroyed && !isFinishing) {
                     if (loaded == null) { finish(); return@runOnUiThread }
                     data = loaded; analysis = result; render(loaded, result!!,calibrations,bootRoll)
                 } }
@@ -278,6 +283,7 @@ class SessionDetailActivity : Activity() {
             dryLabel.text="${dry.movements.size} completed lean movements · ${dry.transitions.size} returns through neutral\n" +
                 "Heading-rate candidates (experimental): ${headingSummary.count} turns, median ${headingSummary.medianDurationMs?.let { String.format(Locale.US,"%.1f",it/1000) } ?: "—"} s; roll-lobe candidates: ${dry.movements.size}\n" +
                 "Entry ≥8° · neutral ≤3° · minimum 0.3s · thresholds are test settings\n" +
+                (mountSlip[reviewSide]?.let { MountSlipMonitor.describe(it)+"\n" } ?: "") +
                 (balance?.let { b ->
                     val left=if(positiveLeft) b.positiveDurationMs else b.negativeDurationMs
                     val right=if(positiveLeft) b.negativeDurationMs else b.positiveDurationMs

@@ -1,0 +1,44 @@
+{
+  "id": "parallel-turns",
+  "chip": "DRILL 3  \u00b7  PARALLEL TURNS",
+  "title": "Basic parallel turns",
+  "subtitle": "Seen from the front, and what your boots will show",
+  "steps": [
+    "Start with your skis parallel and about hip-width apart.",
+    "Tip both skis onto their edges together.",
+    "Finish each turn before you start the next."
+  ],
+  "motion": {
+    "cycle_period_s": 3.4,
+    "cycles": 4,
+    "peak_flatness_k": 1.0,
+    "inside_boot_amp": 0.92,
+    "turn_variation": 0.07,
+    "amplitude": 0.65,
+    "knee_rest_deg": 18,
+    "knee_per_tilt_deg": 30,
+    "heading_deg": 28,
+    "track_width_m": 0.05
+  },
+  "callouts": [
+    {
+      "n": 1,
+      "boot": "R",
+      "t_cycles": 0.75,
+      "text": "Smaller, rounder humps than carving: lighter edging."
+    },
+    {
+      "n": 2,
+      "boot": "mid",
+      "t_cycles": 1.0,
+      "text": "Both boots stay close together through the turn."
+    },
+    {
+      "n": 3,
+      "boot": "mid",
+      "t_cycles": 2.25,
+      "text": "Matching left and right humps show an even turn on both sides."
+    }
+  ],
+  "footnote": "Illustration of a typical shape, not a target. Tilt is relative, not degrees."
+}
