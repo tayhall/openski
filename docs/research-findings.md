@@ -56,15 +56,17 @@ Not a POC change. The proof of concept keeps the MPU-6050 and ESP32. The researc
 - LSM6DSOX figures and some vendor pages could not be retrieved; prices are snapshots.
 - Edge angle from a boot IMU is a proxy for cuff tilt, not ski edge angle.
 - The turn benchmark used a calf-worn phone at 10 Hz, not a boot IMU.
-- Cold behaviour of the candidate chips and batteries is unverified. Li-ion must not be charged below 0 C.
+- Cold behaviour of the candidate chips and batteries is unverified. Li-ion must not be charged below 0 C (INFERRED: general knowledge, not from the research repo).
 
-## What this repo implemented from it
+## What this repo does with it
 
-Design: `docs/superpowers/specs/2026-10-11-research-findings-integration-design.md`. The plan is split into four sub-projects, in order.
+Design: `docs/superpowers/specs/2026-10-11-research-findings-integration-design.md`. The plan was split into four sub-projects, in order, and all four are built.
 
 1. Docs fold-in: this document and the targeted edits to the analysis, POC plan and roadmap docs. No code.
-2. Heading-rate turn signal: an additive `HeadingTracker` and wire frame version 4, replayed on Android as a second candidate set next to roll-lobe timing. Half-turn detection and the coach are unchanged.
-3. Rest-driven gyro bias: bounded bias update while still, applied to recogniser inputs only.
-4. Signal quality and protocol v3: near-rail, gap and drop flags carried into flash records, live frames, storage and exports.
+2. Heading-rate turn signal (built): an additive `HeadingTracker` and wire frame version 4, replayed on Android as a second candidate set next to roll-lobe timing, with `heading-turns.csv` in exports. Half-turn detection and the coach are unchanged.
+3. Rest-driven gyro bias (built): `RestBias`, a bounded bias update while still, applied to recogniser inputs only and exposed on `/api/v1/motion`. The Kotlin orientation tracker learns the same bias in replay.
+4. Signal quality and protocol v3 (built): near-rail, gap and drop flags carried into flash records, live frames (v2), storage (database version 9) and exports.
+
+Causal check status: the causal heading-rate detector has not yet been scored against public data. The SkiC data is not on this machine, so no F1 or by-level figure exists for the C++ detector; the figures in this document are the research repo's own and describe its Python detector. Only the firmware-to-Kotlin parity fixture and synthetic tests have been run.
 
 Related: `docs/technique-research-integration.md` (the earlier technique-research snapshot), `docs/ski-analysis.md`, `docs/poc-plan.md`.
