@@ -255,11 +255,12 @@ class SessionDetailActivity : Activity() {
         fun candidates() {
             val found=SessionAnalysis.candidates(result.timeline,reviewSide,axis)
             val timing=SessionAnalysis.timing(result.timeline,reviewSide,axis)
-            val dry=DrySkiAnalysis.detectTrials(bootRoll.filter { it.side==reviewSide },loaded.markers)
+            val reviewRoll=bootRoll.filter { it.side==reviewSide }
+            val dry=DrySkiAnalysis.detectTrials(reviewRoll,loaded.markers)
             reviewedMovements=dry.movements
-            val headingSummary=HeadingTurnAnalysis.summarise(HeadingTurnAnalysis.detect(bootRoll.filter { it.side==reviewSide }))
+            val headingSummary=HeadingTurnAnalysis.summarise(HeadingTurnAnalysis.detect(reviewRoll))
             val profileIntervals=if(session.testSession) dry.movements.map { CandidateInterval(it.startMs,it.endMs,it.positive) } else timing.intervals
-            val profiles=BootOrientation.profiles(bootRoll.filter { it.side==reviewSide },profileIntervals)
+            val profiles=BootOrientation.profiles(reviewRoll,profileIntervals)
             val ranges=DrySkiAnalysis.trialRanges(loaded.markers,(session.endedAtMs ?: System.currentTimeMillis()).toDouble())
             val trialLabels=loaded.markers.filter { m -> ranges.any { (start,end)->m.timeMs>=start && m.timeMs<end } }
             val evaluation=DrySkiAnalysis.evaluate(trialLabels,dry,reviewSide,positiveLeft)

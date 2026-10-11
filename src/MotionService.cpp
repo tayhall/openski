@@ -7,6 +7,8 @@
 #include <esp_timer.h>
 
 namespace openski::motion {
+static_assert(SkiTracker::kRailQualityMask == imu::kRailQualityMask,
+              "SkiTracker rail mask must match imu::SampleQuality");
 namespace {
 Status result;
 uint32_t lastTimestamp = 0;

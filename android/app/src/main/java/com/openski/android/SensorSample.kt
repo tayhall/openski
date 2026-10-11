@@ -20,6 +20,11 @@ data class SensorSample(
         const val FRAME_SIZE = 19
         const val FRAME_SIZE_V2 = 20
         const val QUALITY_MASK = 0x0f
+        /** Quality bit values (firmware imu::SampleQuality, plus the flash-only dropped-before bit). */
+        const val QUALITY_ACCEL_RAIL = 1
+        const val QUALITY_GYRO_RAIL = 2
+        const val QUALITY_RAIL_MASK = QUALITY_ACCEL_RAIL or QUALITY_GYRO_RAIL
+        const val QUALITY_DROPPED_BEFORE = 16
 
         fun decode(bytes: ByteArray): SensorSample? {
             val version = if (bytes.isNotEmpty()) bytes[0].toInt() else return null

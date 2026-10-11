@@ -137,7 +137,7 @@ object BootOrientation {
             // The learner sees the gyro without its own estimate subtracted (no feedback loop).
             // A near-rail sample (accelerometer 1, gyro 2) is untrusted: it splits the rest-bias window and
             // restarts the 2 s rest timer so no correction is applied across it.
-            val nearRail=p.sample.quality and 3!=0
+            val nearRail=p.sample.quality and SensorSample.QUALITY_RAIL_MASK!=0
             if(nearRail) restBias?.interrupt() else restBias?.update(p.timeMs,accel,calibrated)
             val omega=restBias?.let { calibrated-it.estimate } ?: calibrated
             val stationary=omega.norm()<0.08 && accel.norm() in 9.3..10.3

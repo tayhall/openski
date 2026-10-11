@@ -31,6 +31,8 @@ class SkiTracker {
  public:
   static constexpr float kGravity = 9.80665f;
   static constexpr float kDegrees = 57.2957795f;
+  // Accelerometer and gyro near-rail bits of the sample quality byte (imu::kRailQualityMask).
+  static constexpr uint8_t kRailQualityMask = 0x03;
 
   explicit SkiTracker(Mounting mounting) : map_(mounting) {}
 
@@ -76,7 +78,7 @@ class SkiTracker {
     // Heading rate is the gyro component along world-up; positive is right-handed rotation about
     // world-up. It needs no neutral pose, so it runs before zero().
     uint8_t headingFlags = 0;
-    if (quality & 0x03) headingFlags |= HeadingTracker::kNearRail;
+    if (quality & kRailQualityMask) headingFlags |= HeadingTracker::kNearRail;
     heading_.update(t, gx*up_[0] + gy*up_[1] + gz*up_[2], headingFlags);
     if (!neutralReady_) { trackNeutral(t, rate, error); return; }
     measure(dt);

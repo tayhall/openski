@@ -397,6 +397,14 @@ class DrillActivity : Activity(), SensorSessionService.Listener {
                     }.ifEmpty { "No boots are paired yet." }
                     if (live.isNotEmpty()) chooseBoot(if ("L" in live) "L" else live.first())
                 }
+                Phase.MOUNTING -> {
+                    // The boot dropped while the picker was open: close it and go back to waiting.
+                    if (side !in liveBoots()) {
+                        mountingDialog?.dismiss()
+                        mountingDialog = null
+                        connect()
+                    }
+                }
                 Phase.HOLDING -> {
                     val remaining = holdUntil - System.currentTimeMillis()
                     counterView?.text = ((remaining + 999) / 1000).coerceIn(0, 3).toString()

@@ -10,10 +10,13 @@ namespace openski::imu {
 constexpr uint8_t kRecordFlagMask = 0x07;
 
 enum RecordFlag : uint8_t {
-  kRecordAccelNearRail = 1,
-  kRecordGyroNearRail = 2,
+  kRecordAccelNearRail = kAccelNearRail,
+  kRecordGyroNearRail = kGyroNearRail,
   kRecordDroppedBefore = 4,  // one or more earlier samples were dropped immediately before this one
 };
+// The flash rail bits are the live quality bits, so they are stored and compared unchanged.
+static_assert(kRecordAccelNearRail == 1 && kRecordGyroNearRail == 2, "wire format: rail bits 0 and 1");
+static_assert((kRailQualityMask & kRecordDroppedBefore) == 0, "dropped-before must not alias a rail bit");
 
 inline uint32_t packRecordTimestamp(uint32_t us, uint8_t flags) {
   return (us & ~static_cast<uint32_t>(kRecordFlagMask)) | (flags & kRecordFlagMask);
@@ -29,6 +32,6 @@ inline uint8_t recordFlags(uint32_t packed) {
 
 // Only the rail bits are stored per record; timing quality is recoverable from timestamps.
 inline uint8_t recordFlagsFromQuality(uint8_t quality) {
-  return quality & (kAccelNearRail | kGyroNearRail);
+  return quality & kRailQualityMask;
 }
 }  // namespace openski::imu

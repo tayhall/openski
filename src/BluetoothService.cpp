@@ -203,7 +203,7 @@ void notifyLatestSample() {
   putSigned16(frame + 13, quantize(sample.gyroRadps.x, 1000.0f));
   putSigned16(frame + 15, quantize(sample.gyroRadps.y, 1000.0f));
   putSigned16(frame + 17, quantize(sample.gyroRadps.z, 1000.0f));
-  frame[19] = liveQuality & 0x0f;
+  frame[19] = liveQuality & imu::kSampleQualityMask;
 
   liveCharacteristic->setValue(frame, sizeof(frame));
   liveCharacteristic->notify();

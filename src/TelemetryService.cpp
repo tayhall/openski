@@ -5,11 +5,13 @@
 #include <WiFi.h>
 #include <esp_timer.h>
 #include <esp_system.h>
+#include <string.h>
 
 #include "AppConfig.h"
 #include "BluetoothService.h"
 #include "ImuService.h"
 #include "Mpu6050Profile.h"
+#include "SensorCalibration.h"
 #include "MotionService.h"
 #include "RecorderService.h"
 #include "WifiService.h"
@@ -250,13 +252,20 @@ void handleImu() {
 void handleAcquisition() {
   const auto& monitor = imu::monitor();
   const auto& stats = monitor.stats();
-  char body[1800];
+  // The recogniser calibration is a fixed per-unit constant set; flag when it was measured under a
+  // different acquisition profile than the one compiled in (e.g. legacy 8 g / 42 Hz vs research 16 g / 20 Hz).
+  const char* measuredProfile = calibration::kMeasuredAcquisitionProfile;
+  const bool calibrationNone = strcmp(measuredProfile, "none") == 0;
+  const bool calibrationMatches = calibrationNone || strcmp(measuredProfile, imu::mpuProfile::kId) == 0;
+  char body[2100];
   snprintf(body, sizeof(body),
       "{\"schema_version\":1,\"profile_id\":\"%s\","
       "\"research_baseline\":\"openski_pre_field_experiments_v0.1\","
       "\"sensor\":\"%s\",\"ready\":%s,\"device\":\"%s\",\"build\":\"%s\","
       "\"frame\":\"sensor\",\"acceleration_includes_gravity\":true,"
-      "\"raw_calibration_applied\":false,\"boot_side\":null,"
+      "\"raw_calibration_applied\":false,"
+      "\"recogniser_calibration_profile\":\"%s\",\"recogniser_calibration_matches_profile\":%s,"
+      "\"boot_side\":null,"
       "\"sensor_to_boot_rotation\":null,\"calibration_reference\":null,"
       "\"nominal_sample_rate_hz\":%u,\"accel_full_scale_g\":%u,"
       "\"gyro_full_scale_deg_s\":%u,\"nominal_gyro_bandwidth_hz\":%u,"
@@ -271,7 +280,7 @@ void handleAcquisition() {
       "\"quality_scope\":\"since_device_boot\",\"dual_boot_synchronised\":false,"
       "\"validation_status\":\"bench_and_field_validation_required\"}",
       imu::mpuProfile::kId, monitor.sensorName(), stats.ready ? "true" : "false",
-      config::kHostname, config::kBuildId,
+      config::kHostname, config::kBuildId, measuredProfile, calibrationMatches ? "true" : "false",
       imu::mpuProfile::kSampleRateHz, imu::mpuProfile::kAccelRangeG,
       imu::mpuProfile::kGyroRangeDps, imu::mpuProfile::kNominalGyroBandwidthHz,
       static_cast<unsigned long>(stats.samples), static_cast<unsigned long>(stats.readFailures),

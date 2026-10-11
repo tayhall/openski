@@ -9,6 +9,8 @@ enum SampleQuality : uint8_t {
   kTimestampGap = 4,
   kTimestampWrap = 8,
 };
+constexpr uint8_t kRailQualityMask = kAccelNearRail | kGyroNearRail;
+constexpr uint8_t kSampleQualityMask = 0x0f;  // bits carried by the live frame's quality byte
 struct Vec3 {
   float x;
   float y;

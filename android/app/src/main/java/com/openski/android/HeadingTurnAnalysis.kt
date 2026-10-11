@@ -20,11 +20,13 @@ object HeadingTurnAnalysis {
         val detector = HeadingTurnDetector()
         val turns = ArrayList<HeadingTurn>()
         var segment: Int? = null
-        rolls.sortedBy { it.timeMs }.forEach { r ->
+        // BootOrientation output is already time-ordered; only sort when it is not (merged calibrations).
+        val ordered = if (rolls.zipWithNext().all { (a, b) -> a.timeMs <= b.timeMs }) rolls else rolls.sortedBy { it.timeMs }
+        ordered.forEach { r ->
             if (segment != null && r.segment != segment) detector.breakSegment()
             segment = r.segment
             if (r.gated) { detector.skip(); return@forEach }
-            val flags = if (r.quality and 3 != 0) HeadingTurnDetector.FLAG_NEAR_RAIL else 0
+            val flags = if (r.quality and SensorSample.QUALITY_RAIL_MASK != 0) HeadingTurnDetector.FLAG_NEAR_RAIL else 0
             detector.accept(r.timeMs, r.headingRateRadps, flags)?.let(turns::add)
         }
         return turns

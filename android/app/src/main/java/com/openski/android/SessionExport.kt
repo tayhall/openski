@@ -82,7 +82,8 @@ object SessionExport {
                 w.write("side,time_ms,battery_percent,battery_observed_at_ms,rssi_dbm,rssi_observed_at_ms\n")
                 data.health.forEach { h -> w.write("${h.side},${h.timeMs},${h.battery ?: ""},${h.batteryAtMs ?: ""},${h.rssi ?: ""},${h.rssiAtMs ?: ""}\n") }
             }
-            val detections=listOf("L","R").associateWith { side -> DrySkiAnalysis.detectTrials(orientation.filter { it.side==side },data.markers) }
+            val rollBySide=orientation.groupBy { it.side }
+            val detections=listOf("L","R").associateWith { side -> DrySkiAnalysis.detectTrials(rollBySide[side].orEmpty(),data.markers) }
             fun positiveLeft(side: String)=settings.optJSONObject(side)?.optBoolean("positive_left",true) ?: true
             entry("detected-movements.csv") { w ->
                 w.write("side,direction,positive_roll,start_ms,end_ms,edged_duration_ms,peak_estimated_boot_roll_deg,detector\n")
@@ -91,7 +92,7 @@ object SessionExport {
                     w.write("$side,$direction,${m.positive},${m.startMs},${m.endMs},${m.endMs-m.startMs},${m.peakRoll},experimental_dry_roll\n")
                 } }
             }
-            val headingTurns=listOf("L","R").associateWith { side -> HeadingTurnAnalysis.detect(orientation.filter { it.side==side }) }
+            val headingTurns=listOf("L","R").associateWith { side -> HeadingTurnAnalysis.detect(rollBySide[side].orEmpty()) }
             entry("heading-turns.csv") { w ->
                 w.write("side,direction,positive_heading_rate,start_ms,end_ms,duration_ms,peak_heading_rate_dps,heading_change_deg,detector\n")
                 headingTurns.forEach { (side,turns)->turns.forEach { t ->
@@ -119,7 +120,7 @@ object SessionExport {
             }
             summary.put("heading_detector","Experimental heading-rate turn candidates (rotation about the current vertical), not turn classification. " +
                 "The detector was benchmarked on calf-phone data at 10 Hz; transfer to boot-mounted sensors is unproven. Direction: positive heading rate (counter-clockwise from above) = LEFT, independent of per-boot roll settings.")
-            val comparison=BootComparison.analyse(orientation.filter { it.side=="L" },orientation.filter { it.side=="R" },
+            val comparison=BootComparison.analyse(rollBySide["L"].orEmpty(),rollBySide["R"].orEmpty(),
                 detections.getValue("L"),detections.getValue("R"),positiveLeft("L"),positiveLeft("R"))
             summary.put("boot_comparison",JSONObject().put("angle_pairs",comparison.anglePairs)
                 .put("mean_roll_difference_deg",comparison.meanRollDifferenceDeg ?: JSONObject.NULL)

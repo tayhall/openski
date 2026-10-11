@@ -34,13 +34,17 @@ data class FlashRecord(val timestampUs: Long, val sample: SensorSample, val raw:
         /** [withFlags] is true only for version-3 records (marker 0xd1), whose low three timestamp bits are flags:
          *  bit 0 accelerometer near rail, bit 1 gyro near rail, bit 2 earlier samples dropped immediately before
          *  (mapped to quality 16). Legacy records must never be masked. */
+        /** Flash-record flag bit 2 (low bits of the stored timestamp); bits 0 and 1 equal the live rail bits. */
+        private const val FLASH_DROPPED_BEFORE = 4
+
         fun decode(raw: ByteArray, withFlags: Boolean = false): FlashRecord? {
             if (raw.size != 16) return null
             val b = ByteBuffer.wrap(raw).order(ByteOrder.LITTLE_ENDIAN)
             val stored = b.int.toLong() and 0xffff_ffffL
             val flags = if (withFlags) (stored and 7L).toInt() else 0
             val us = if (withFlags) stored and 7L.inv() else stored
-            val quality = (flags and 3) or (if (flags and 4 != 0) 16 else 0)
+            val quality = (flags and SensorSample.QUALITY_RAIL_MASK) or
+                (if (flags and FLASH_DROPPED_BEFORE != 0) SensorSample.QUALITY_DROPPED_BEFORE else 0)
             return FlashRecord(us, SensorSample(-1, us / 1000,
                 b.short / 100f, b.short / 100f, b.short / 100f,
                 b.short / 1000f, b.short / 1000f, b.short / 1000f, quality), raw.copyOf())

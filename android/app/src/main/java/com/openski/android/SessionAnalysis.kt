@@ -150,7 +150,7 @@ object SessionAnalysis {
             StreamQuality(side, live.count { it.side == side }, flash.count { it.side == side },
                 (covered / duration).coerceIn(0.0, 1.0), gaps, longest,
                 data.captures.filter { it.side == side }.sumOf { it.dropped },
-                points.count { it.sample.quality and 3 != 0 }, points.count { it.sample.quality and 16 != 0 }, points.size)
+                points.count { it.sample.quality and SensorSample.QUALITY_RAIL_MASK != 0 }, points.count { it.sample.quality and SensorSample.QUALITY_DROPPED_BEFORE != 0 }, points.size)
         }
         return AnalysisResult(raw, effective, quality, if(data.session.origin=="synthetic")
             "Synthetic sensor clocks and sample timestamps; coverage describes generated input, not a measured Bluetooth connection."
