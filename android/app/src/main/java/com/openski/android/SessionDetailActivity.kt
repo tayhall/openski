@@ -50,11 +50,9 @@ class SessionDetailActivity : Activity() {
                 val result = loaded?.let(SessionAnalysis::build)
                 val calibrations=loaded?.let { item -> LocalSessionStore(this).use { it.calibrations(item.session) } }.orEmpty()
                 val corrector=ProgressStore(this)
-                val bootRoll=if(result==null) emptyList() else calibrations.flatMap { BootOrientation.estimate(result.timeline.corrected(corrector::correctionForSide),it) }
-                val slip=if(result==null) emptyMap() else {
-                    val corrected=result.timeline.corrected(corrector::correctionForSide)
-                    calibrations.associate { it.side to MountSlipMonitor.check(corrected,it) }
-                }
+                val corrected=result?.timeline?.corrected(corrector::correctionForSide)
+                val bootRoll=if(corrected==null) emptyList() else calibrations.flatMap { BootOrientation.estimate(corrected,it) }
+                val slip=if(corrected==null) emptyMap() else MountSlipMonitor.checkSides(corrected,calibrations)
                 runOnUiThread { mountSlip=slip; if (!isDestroyed && !isFinishing) {
                     if (loaded == null) { finish(); return@runOnUiThread }
                     data = loaded; analysis = result; render(loaded, result!!,calibrations,bootRoll)

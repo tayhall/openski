@@ -41,7 +41,8 @@ object SessionExport {
                 .put("estimated_coverage", q.coverage).put("gaps_over_100ms", q.gaps).put("longest_gap_ms", q.longestGapMs)
                 .put("rail_samples", q.railSamples).put("rail_percent", q.railPercent)
                 .put("dropped_before_samples", q.droppedBefore)) } })
-        val orientation=calibrations.flatMap { BootOrientation.estimate(analysis.timeline.corrected(correction),it) }
+        val correctedTimeline=analysis.timeline.corrected(correction)
+        val orientation=calibrations.flatMap { BootOrientation.estimate(correctedTimeline,it) }
         ZipOutputStream(output).use { zip ->
             fun entry(name: String, body: (java.io.Writer) -> Unit) {
                 zip.putNextEntry(ZipEntry(name))
@@ -118,17 +119,24 @@ object SessionExport {
                     .put("median_duration_ms",heading.medianDurationMs ?: JSONObject.NULL)
                     .put("cadence_per_minute",heading.cadencePerMinute ?: JSONObject.NULL))
             }
-            val correctedTimeline=analysis.timeline.corrected(correction)
-            calibrations.forEach { c ->
-                val slip=MountSlipMonitor.check(correctedTimeline,c)
-                summary.optJSONObject(c.side)?.put("mount_slip",JSONObject().put("available",slip.available)
-                    .put("baseline_windows",slip.baselineWindows).put("windows_checked",slip.windowsChecked)
-                    .put("flagged_windows",slip.flags.size).put("first_flag_ms",slip.firstFlagMs ?: JSONObject.NULL)
-                    .put("max_axis_deviation_deg",slip.maxAxisDeviationDeg ?: JSONObject.NULL)
-                    .put("max_force_shift_g",slip.maxForceShiftG ?: JSONObject.NULL))
+            val slips=MountSlipMonitor.checkSides(correctedTimeline,calibrations)
+            listOf("L","R").forEach { side ->
+                val slip=slips[side]
+                val sideJson=summary.optJSONObject(side) ?: JSONObject().also { summary.put(side,it) }
+                // Always present, so a consumer can tell "no calibration" or "no baseline" from "no slip".
+                sideJson.put("mount_slip",if(slip==null) JSONObject().put("available",false).put("reason","no boot calibration saved")
+                    else JSONObject().put("available",slip.available).put("reason",slip.reason ?: JSONObject.NULL)
+                        .put("calibration_ms",slip.calibrationMs)
+                        .put("baseline_windows",slip.baselineWindows).put("windows_checked",slip.windowsChecked)
+                        .put("windows_skipped_other_activity",slip.windowsSkipped)
+                        .put("flagged_windows",slip.flags.size).put("first_flag_ms",slip.firstFlagMs ?: JSONObject.NULL)
+                        .put("first_flag_after_calibration_ms",slip.firstFlagAfterCalibrationMs ?: JSONObject.NULL)
+                        .put("max_axis_deviation_deg",slip.maxAxisDeviationDeg ?: JSONObject.NULL)
+                        .put("max_force_shift_g",slip.maxForceShiftG ?: JSONObject.NULL))
             }
-            summary.put("mount_slip_note","Replay check against the run's own baseline (gyro roll axis and mean horizontal force). " +
-                "Simulation only: flags yaw slip of 8 degrees or more reliably and tilt slip under 15 degrees unreliably. A flag means re-calibrate, not a measured slip angle.")
+            summary.put("mount_slip_note","Replay check of the latest calibration of each boot against the run's own baseline (gyro roll axis and " +
+                "mean horizontal force); needs two consecutive moving windows to flag and ignores windows whose motion is not turning-like. " +
+                "Simulation only: flags yaw slip of 8 to 45 degrees reliably and tilt slip under 15 degrees unreliably. A flag means re-calibrate, not a measured slip angle.")
             summary.put("heading_detector","Experimental heading-rate turn candidates (rotation about the current vertical), not turn classification. " +
                 "The detector was benchmarked on calf-phone data at 10 Hz; transfer to boot-mounted sensors is unproven. Direction: positive heading rate (counter-clockwise from above) = LEFT, independent of per-boot roll settings.")
             val comparison=BootComparison.analyse(rollBySide["L"].orEmpty(),rollBySide["R"].orEmpty(),

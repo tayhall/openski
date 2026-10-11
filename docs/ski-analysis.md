@@ -63,7 +63,13 @@ Normalised profiles interpolate absolute boot roll at 21 bins from 0–100% of v
 
 ### Mount-slip check (experimental, replay only)
 
-`MountSlipMonitor` (Kotlin, ported from the research repo's `MountMonitor`) asks whether the strap or sensor moved after calibration. In the calibrated boot frame it compares, per 4 s window (2 s step), the principal horizontal gyro axis and the mean horizontal specific force with the run's own baseline: the first five windows with real turning motion (horizontal gyro RMS of at least 0.1 rad/s). A window is flagged when the axis moved more than 8 degrees, or the mean force moved more than max(0.10 g, twice the baseline spread). Windows without that motion are not checked, near-rail samples and windows with gaps over 250 ms are excluded, and a session with no turning baseline reports "unavailable". Result: one line in the Analysis tab and a per-boot `mount_slip` object plus `mount_slip_note` in `analysis-summary.json`.
+`MountSlipMonitor` (Kotlin, ported from the research repo's `MountMonitor`) asks whether the strap or sensor moved after calibration. In the calibrated boot frame it compares, per 4 s window (2 s step), the principal horizontal gyro axis (window mean removed, so a constant bias is not motion) and the mean horizontal specific force with the run's own baseline.
+
+- **Baseline:** the first five windows with turning motion about the forward axis (horizontal gyro RMS of at least 0.1 rad/s and principal axis within 30 degrees of forward), so walking or a lift ride after calibration cannot set it. Without five such windows the check reports "unavailable".
+- **Checked windows:** those with motion whose axis is within 45 degrees of the baseline. Moving windows further away are another activity (walking pitches about the lateral axis) and are counted as skipped. The cost is that a yaw slip over 45 degrees is not flagged either.
+- **Flag:** the axis moved more than 8 degrees, or the mean force moved more than max(0.15 g, twice the baseline spread), in two consecutive checked windows. Persistence keeps a load or terrain transient from flagging, and delays a real flag by one step.
+- **Frame:** only the latest calibration of each boot is used, from its time to the end of the session. Near-rail samples and windows with gaps over 250 ms are excluded.
+- **Output:** one line on the Analysis tab (time is after calibration) and a `mount_slip` object per boot in `analysis-summary.json`, always present, with `available:false` and a reason when there is no calibration or no baseline.
 
 Evidence: the research repo's simulation flagged 8 degrees of yaw slip 6 of 6 (about 9 s after it happened), 25 to 40 degrees within 2 s, but 15 degrees about the forward or lateral axis only 2 to 3 of 6. Our unit tests use synthetic signals too. It is not validated on a boot, it does not measure the slip angle, and the live path and coach do not use it. Treat a flag as "re-calibrate before trusting roll".
 
