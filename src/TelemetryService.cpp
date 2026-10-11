@@ -286,9 +286,50 @@ void handleAcquisition() {
 void handleNotFound() {
   server.send(404, "application/json", "{\"error\":\"not_found\"}");
 }
+
+#if defined(OPENSKI_ADC_DIAGNOSTIC) && defined(CONFIG_IDF_TARGET_ESP32S3)
+void handleAdcDiagnostic() {
+  if (recorder::status().recording || bluetooth::connected()) {
+    server.send(409, "application/json", "{\"error\":\"stop_recording_and_disconnect_ble_before_adc_scan\"}");
+    return;
+  }
+  // ADC1 GPIO1..10 only. Never touch IMU I2C pins, USB, boot straps,
+  // flash/PSRAM pins or ADC2 while Wi-Fi is active. No outputs or pulls.
+  const uint8_t pins[] = {1, 2, 4, 5, 6, 7, 10};
+  analogReadResolution(12);
+  String json = "{\"method\":\"unused_adc1_scan_v1\",\"battery_voltage_v\":null,"
+                "\"charge_percent\":null,\"interpretation\":\"unverified_pin_voltages\","
+                "\"attenuation\":\"11db\",\"samples_per_pin\":16,\"pins\":[";
+  bool first = true;
+  for (uint8_t pin : pins) {
+    if (pin == config::kImuSdaPin || pin == config::kImuSclPin) continue;
+    analogSetPinAttenuation(pin, ADC_11db);
+    analogRead(pin);  // Discard initial conversion after channel setup.
+    uint32_t rawSum = 0, mvSum = 0, minMv = UINT32_MAX, maxMv = 0;
+    for (int i = 0; i < 16; ++i) {
+      rawSum += analogRead(pin);
+      const uint32_t mv = analogReadMilliVolts(pin);
+      mvSum += mv;
+      if (mv < minMv) minMv = mv;
+      if (mv > maxMv) maxMv = mv;
+    }
+    char item[180];
+    snprintf(item, sizeof(item), "%s{\"gpio\":%u,\"mean_raw\":%.1f,\"mean_mv\":%.1f,\"min_mv\":%lu,\"max_mv\":%lu}",
+             first ? "" : ",", static_cast<unsigned>(pin), rawSum / 16.0f, mvSum / 16.0f,
+             static_cast<unsigned long>(minMv), static_cast<unsigned long>(maxMv));
+    json += item;
+    first = false;
+  }
+  json += "]}";
+  server.send(200, "application/json", json);
+}
+#endif
 }  // namespace
 
 void begin() {
+#if defined(OPENSKI_ADC_DIAGNOSTIC) && defined(CONFIG_IDF_TARGET_ESP32S3)
+  server.on("/api/v1/diagnostics/adc", HTTP_GET, handleAdcDiagnostic);
+#endif
   server.on("/", HTTP_GET, handleRoot);
   server.on("/api/v1/imu", HTTP_GET, handleImu);
   server.on("/api/v1/acquisition", HTTP_GET, handleAcquisition);
