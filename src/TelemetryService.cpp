@@ -82,6 +82,24 @@ String skiJson() {
              e.peakRollDegrees, e.peakRateDps, e.pitchDegrees, e.outsideEnvelope ? "true" : "false");
     json += body;
   }
+  char headingHead[128];
+  snprintf(headingHead, sizeof(headingHead),
+           "],\"heading_count\":%lu,\"heading_rejected\":%lu,\"heading_turns\":[",
+           static_cast<unsigned long>(ski.headingCount), static_cast<unsigned long>(ski.headingRejected));
+  json += headingHead;
+  motion::HeadingTurn turns[16];
+  const uint8_t turnCount = motion::recentHeadingTurns(turns, 16);
+  for (uint8_t i = 0; i < turnCount; ++i) {
+    const auto& t = turns[i];
+    char body[288];
+    snprintf(body, sizeof(body),
+             "%s{\"sequence\":%lu,\"start_ms\":%lu,\"end_ms\":%lu,\"positive\":%s,"
+             "\"peak_rate_dps\":%.1f,\"change_deg\":%.2f,\"skipped\":%s,\"near_rail\":%s}",
+             i ? "," : "", static_cast<unsigned long>(t.sequence), static_cast<unsigned long>(t.startUs/1000),
+             static_cast<unsigned long>(t.endUs/1000), t.positive ? "true" : "false", t.peakRateDps,
+             t.changeDegrees, t.skippedSamples ? "true" : "false", t.nearRail ? "true" : "false");
+    json += body;
+  }
   json += "]}";
   return json;
 }

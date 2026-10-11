@@ -39,7 +39,7 @@ void tick() {
                     sample.gyroRadps.z-cal::kGyroBiasRadps[2]};
   gestures.update(sample.timestampUs, g.x, g.y, g.z);
   tilt.update(sample.timestampUs, a.x, a.y, a.z, g.x, g.y, g.z);
-  ski.update(sample.timestampUs, a.x, a.y, a.z, g.x, g.y, g.z);
+  ski.update(sample.timestampUs, a.x, a.y, a.z, g.x, g.y, g.z, sample.qualityFlags);
   const float speed = sqrtf(g.x*g.x + g.y*g.y + g.z*g.z);
   const float magnitude = sqrtf(a.x*a.x + a.y*a.y + a.z*a.z);
   if (!referenceReady) { restReference = a; referenceReady = true; }
@@ -119,9 +119,13 @@ SkiStatus skiStatus() {
   snapshot.count = ski.count();
   snapshot.rejected = ski.rejected();
   snapshot.gaps = ski.gaps();
+  snapshot.headingCount = ski.headingCount();
+  snapshot.headingRejected = ski.headingRejected();
   return snapshot;
 }
 uint8_t recentSkiEvents(SkiEvent* output, uint8_t capacity) { return ski.recent(output, capacity); }
+uint32_t headingCount() { return ski.headingCount(); }
+uint8_t recentHeadingTurns(HeadingTurn* output, uint8_t capacity) { return ski.recentHeading(output, capacity); }
 SkiHeartbeat takeSkiHeartbeat() { return ski.takeHeartbeat(); }
 bool takeSkiGapSeen() { return ski.takeGapSeen(); }
 void zeroMotion() { tilt.zero(); ski.zero(); }

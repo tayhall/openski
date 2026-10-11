@@ -66,6 +66,7 @@ NimBLECharacteristic* liveCharacteristic = nullptr;
 NimBLECharacteristic* movementCharacteristic = nullptr;
 uint32_t lastMovementSequence = 0;
 uint32_t lastSkiSequence = 0;
+uint32_t lastHeadingSequence = 0;
 unsigned long lastHeartbeatMs = 0;
 uint16_t heartbeatSequence = 0;
 NimBLECharacteristic* statusCharacteristic = nullptr;
@@ -246,6 +247,27 @@ bool notifySkiEvents() {
     return true;
   }
   lastSkiSequence = ski.count;  // the missed events fell out of the history
+  return false;
+}
+
+// One notification per completed heading-rate lobe (version 4 frame), same replay rule as half-turns.
+bool notifyHeadingTurns() {
+  if (movementCharacteristic == nullptr) return false;
+  const uint32_t count = motion::headingCount();
+  if (!clientConnected || count < lastHeadingSequence) { lastHeadingSequence = count; return false; }
+  if (count == lastHeadingSequence) return false;
+  motion::HeadingTurn turns[16];
+  const uint8_t n = motion::recentHeadingTurns(turns, 16);
+  for (uint8_t i = 0; i < n; ++i) {
+    if (turns[i].sequence <= lastHeadingSequence) continue;
+    uint8_t frame[motion::kHeadingTurnSize];
+    motion::encodeHeadingTurn(turns[i], frame);
+    movementCharacteristic->setValue(frame, sizeof(frame));
+    movementCharacteristic->notify();
+    lastHeadingSequence = turns[i].sequence;
+    return true;
+  }
+  lastHeadingSequence = count;  // the missed turns fell out of the history
   return false;
 }
 
@@ -512,9 +534,9 @@ void tick() {
   processControlRequests();
   if (statusCharacteristic != nullptr) updateStatus();
   notifyLatestSample();
-  // One frame on the movement characteristic per loop: half-turns first, then tilt events,
+  // One frame on the movement characteristic per loop: half-turns first, then heading turns, then tilt events,
   // then the once-a-second state frame.
-  if (!notifySkiEvents() && !notifyMovementEvents()) notifyHeartbeat();
+  if (!notifySkiEvents() && !notifyHeadingTurns() && !notifyMovementEvents()) notifyHeartbeat();
   notifyNextRecordChunk();
 }
 }  // namespace openski::bluetooth
