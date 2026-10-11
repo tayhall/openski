@@ -1,0 +1,73 @@
+{
+  "schema_version": "0.1.0",
+  "status": "research_candidates_not_validated_coaching_rules",
+  "coordinate_contract": "../docs/sensor-integration.md",
+  "common_requirements": [
+    "Device acquisition timestamps, units, calibration and sensor-to-boot mounting transform.",
+    "Explicit event-definition and method versions; packet-loss, clipping and clock-quality flags.",
+    "Task, terrain and available speed context; unknown context stays unknown.",
+    "No performance thresholds, composite score or technique diagnosis is authorised by this registry."
+  ],
+  "metrics": [
+    {
+      "metric_id": "boot_roll_rate_rad_s",
+      "unit": "rad/s",
+      "minimum_configuration": "single_boot_imu",
+      "definition": "Gyroscope angular velocity about boot-frame +X, after sensor-to-boot rotation and supported bias correction. Retain the time series, side and quality mask.",
+      "measurement_status": "calibrated_sensor_quantity",
+      "interpretation_status": "skiing_meaning_requires_validation",
+      "unavailable_when": ["Mounting transform or units unknown", "Sensor clipping or invalid samples"],
+      "not_equivalent_to": ["Ski edge angle", "Anatomical ankle flexion", "Pressure release", "Whole-body inclination"],
+      "validation": "Bench-check scale, sign and mounting; evaluate dynamic recordings against an independent motion reference.",
+      "evidence_links": ["S05", "F010", "F032"]
+    },
+    {
+      "metric_id": "turn_duration_s",
+      "unit": "s",
+      "minimum_configuration": "single_boot_imu_candidate",
+      "definition": "Difference between consecutive accepted alternating boundary timestamps under one versioned turn-boundary definition. This is one turn interval; same-side boundaries span a two-turn cycle and must have a different label.",
+      "measurement_status": "event_derived_candidate",
+      "interpretation_status": "descriptive_only_until_validated",
+      "unavailable_when": ["A boundary is missing or ambiguous", "Clock discontinuity or invalid data spans the interval"],
+      "not_equivalent_to": ["Time between arbitrary gyro zero crossings", "Universal true edge-change time"],
+      "validation": "Compare missed/extra events and timestamp errors with independent same-definition annotations, separately by task and single/dual sensor configuration.",
+      "evidence_links": ["S05", "F009", "F016", "F033"]
+    },
+    {
+      "metric_id": "boot_reversal_lag_s",
+      "unit": "s",
+      "minimum_configuration": "synchronised_dual_boot_imus",
+      "definition": "Right-boot event timestamp minus left-boot event timestamp for a uniquely matched transition, using the same operational event definition and session clock. Preserve signed lag and clock/event uncertainty.",
+      "measurement_status": "event_derived_candidate",
+      "interpretation_status": "descriptive_only_until_validated",
+      "unavailable_when": ["Only one boot instrumented", "Events cannot be uniquely paired", "Synchronisation uncertainty prevents meaningful lag interpretation"],
+      "not_equivalent_to": ["Load-transfer lag", "A technique error", "An ideal zero-lag requirement"],
+      "validation": "Validate clocks and bilateral event matching independently. Do not tune a coaching threshold from these public videos.",
+      "evidence_links": ["F001", "F006", "F021"]
+    },
+    {
+      "metric_id": "peak_rate_phase_fraction",
+      "unit": "fraction",
+      "minimum_configuration": "single_boot_imu_with_validated_boundaries",
+      "definition": "Within an accepted turn interval, (time of maximum absolute boot +X angular rate minus interval start) divided by interval duration. Specify filtering, tie handling and peak uncertainty in the method version. Retain peak sign separately.",
+      "measurement_status": "event_derived_candidate",
+      "interpretation_status": "hypothesis_no_preferred_phase",
+      "unavailable_when": ["Invalid turn interval", "Dropout/clipping may hide the peak", "Peak timing is unresolved"],
+      "not_equivalent_to": ["Phase of maximum ski edge angle", "Edge-grip onset", "Peak outside-ski pressure"],
+      "validation": "Compare repeatability and independent task/outcome labels. Assessment level and turn task may require different interpretations.",
+      "evidence_links": ["F003", "F020", "F021", "F031"]
+    },
+    {
+      "metric_id": "turn_duration_variability",
+      "unit": "ratio",
+      "minimum_configuration": "single_boot_imu_with_validated_turn_detection",
+      "definition": "Sample standard deviation of accepted individual-turn durations divided by their mean, within a declared constant-rhythm task window. Retain durations, sample count, exclusion reasons and mean; fewer than two accepted durations is undefined.",
+      "measurement_status": "summary_candidate",
+      "interpretation_status": "descriptive_consistency_not_skill_score",
+      "unavailable_when": ["Intended task changes rhythm or turn shape", "Too few valid turns", "Detection failures make the selected sample misleading"],
+      "not_equivalent_to": ["Overall skiing quality", "Proof of left/right symmetry"],
+      "validation": "Establish detection reliability first, then test within matched tasks. Funnel drills and terrain-driven variation are separate contexts.",
+      "evidence_links": ["F010", "F012", "F013", "F024"]
+    }
+  ]
+}

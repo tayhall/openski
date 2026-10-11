@@ -1,0 +1,109 @@
+{
+  "schema_version": "0.1.0",
+  "status": "initial_evidence_catalogue",
+  "source_registry": "source-catalogue.csv",
+  "concepts": [
+    {
+      "id": "task_specific_effectiveness",
+      "claim_type": "published_guidance",
+      "claim": "Movement choices and assessment depend on the intended skiing task and outcome.",
+      "source_ids": ["S01"],
+      "source_locator": "Parallel-turn assessment activities and variations",
+      "context": ["parallel_turns", "instructor_assessment"],
+      "candidate_observations": ["turn_shape", "speed_control", "turn_timing"],
+      "sensor_transfer": "Record intended task separately from descriptive sensor features.",
+      "limitations": ["Assessment guidance is not an experimentally validated scoring function."],
+      "validation_status": "not_validated_for_openski"
+    },
+    {
+      "id": "outside_ski_support",
+      "claim_type": "published_guidance",
+      "claim": "Outside-ski support is a coaching concept in parallel skiing and athlete development.",
+      "source_ids": ["S01", "S04"],
+      "source_locator": "Short-radius parallel turns; train-to-train technical guidance",
+      "context": ["parallel_turns", "race_development"],
+      "candidate_observations": ["bilateral_insole_load_trajectory"],
+      "sensor_transfer": "Bilateral pressure sensing may investigate loading; boot inclination does not measure support force.",
+      "limitations": ["Visible posture cannot establish load distribution.", "Insole measurements omit some boot-cuff force transmission."],
+      "validation_status": "not_validated_for_openski"
+    },
+    {
+      "id": "boot_gyro_turn_detection",
+      "claim_type": "published_research",
+      "claim": "A dual-boot gyroscope method detected carved turns in field testing, with style-dependent limitations.",
+      "source_ids": ["S05"],
+      "source_locator": "Methods, results and discussion",
+      "context": ["carving", "drifted_turns", "snowplough"],
+      "candidate_observations": ["turn_switch_candidates", "turn_duration_s"],
+      "sensor_transfer": "Prioritise replication with raw angular rates and independently annotated events.",
+      "limitations": ["Published validity does not establish single-boot MPU6050 validity.", "Detection and event-time accuracy are different outcomes."],
+      "validation_status": "not_validated_for_openski"
+    },
+    {
+      "id": "angulation_context",
+      "claim_type": "published_guidance",
+      "claim": "An angulation drill uses deliberately exaggerated body movements to explore lateral balance.",
+      "source_ids": ["S13"],
+      "source_locator": "Goal and coaching points",
+      "context": ["angulation_drill"],
+      "candidate_observations": ["torso_leg_angulation_apparent_2d_deg"],
+      "sensor_transfer": "No direct boot-only measurement of torso-leg angulation.",
+      "limitations": ["Drill hand positions must not become general technique targets.", "The projected proxy is not an anatomical hip angle."],
+      "validation_status": "not_validated_for_openski"
+    },
+    {
+      "id": "mixed_ski_motion",
+      "claim_type": "published_research",
+      "claim": "Ski motion can include carving and skidding within the same turn.",
+      "source_ids": ["S09"],
+      "source_locator": "Ski motion and carving/skidding discussion",
+      "context": ["slalom_racing"],
+      "candidate_observations": ["phase_specific_ski_motion_labels"],
+      "sensor_transfer": "Keep mixed and unknown labels; a boot inclination peak alone cannot establish a clean carve.",
+      "limitations": ["Race observations require separate validation for recreational skiing."],
+      "validation_status": "not_validated_for_openski"
+    },
+    {
+      "id": "score_discrimination_limits",
+      "claim_type": "published_research",
+      "claim": "A reference-based motion-quality scoring study did not discriminate all tested skill-group pairs.",
+      "source_ids": ["S08"],
+      "source_locator": "Abstract results and conclusion",
+      "context": ["experimental_reference_scoring"],
+      "candidate_observations": ["descriptive_waveform_distributions"],
+      "sensor_transfer": "Evaluate descriptive metrics and independent outcomes before developing a composite score.",
+      "limitations": ["Similarity to a selected reference group is not proof of effective technique."],
+      "validation_status": "not_validated_for_openski"
+    },
+    {
+      "id": "bilateral_transition_lag",
+      "claim_type": "hypothesis",
+      "claim": "Bilateral boot reversal lag may describe coordination within matched parallel-turn tasks.",
+      "source_ids": ["S05"],
+      "source_locator": "Research motivation from bilateral sensing; this specific coaching claim is not established by the source",
+      "context": ["matched_parallel_turn_tasks"],
+      "candidate_observations": ["boot_reversal_lag_s"],
+      "sensor_transfer": "Requires two synchronised boot streams and consistent event definitions.",
+      "limitations": ["Zero lag is not an established ideal.", "Clock error can imitate coordination differences.", "Task and terrain can justify asymmetric movement."],
+      "validation_status": "hypothesis_requires_testing"
+    }
+  ],
+  "error_hypotheses": [
+    {
+      "id": "abrupt_upper_body_motion",
+      "claim_type": "hypothesis",
+      "description": "Large upper-body changes may merit coach review when they coincide with an unintended turn outcome.",
+      "automatic_diagnosis_allowed": false,
+      "required_evidence": ["camera_motion_review", "task_context", "independent_coach_annotation", "observed_outcome"],
+      "limitations": ["Pose derivatives amplify noise.", "Terrain absorption and tactical movements can be appropriate.", "Boot sensors cannot identify upper-body causes."]
+    },
+    {
+      "id": "inconsistent_turn_timing",
+      "claim_type": "hypothesis",
+      "description": "Timing variability may be informative during an explicitly constant-rhythm task.",
+      "automatic_diagnosis_allowed": false,
+      "required_evidence": ["verified_turn_detection", "matched_terrain", "constant_rhythm_task", "event_uncertainty"],
+      "limitations": ["Variable rhythm is often intentional.", "Missed turn events inflate apparent variability."]
+    }
+  ]
+}

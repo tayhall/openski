@@ -1,0 +1,11 @@
+# Source catalogue status
+
+[The CSV catalogue](source-catalogue.csv) contains 50 resources, including 20 initial technical sources and 30 individually identified YouTube videos. It is a discovery and qualitative-review catalogue, not 50 fully appraised or processable videos. The [visual-study notes](youtube-viewing-notes.md), [coverage audit](coverage.json) and [viewing audit](viewing-audit.json) distinguish selected playback inspection from preview/description review. Unknown publication dates are blank. Review depth is explicit; evidence categories describe source type rather than guaranteeing accuracy. Some publisher full-text requests failed and author metadata remains incomplete for S11 and S20.
+
+New additions include four historical [US Ski & Snowboard drill plans](https://my.usskiandsnowboard.org/aip/alpine/level-100-updates). The organisation itself marks this material as older content and points readers to updated resources. The plans are useful for defining controlled experimental tasks and distinguishing an exaggerated drill from normal skiing. They do not establish ideal joint angles or universal sequencing.
+
+The [monocular-method study](https://doi.org/10.3390/s19194323) is especially relevant to the validation programme because it explicitly compares monocular estimates against calibrated video stereophotogrammetry. It is not evidence that current MediaPipe outputs have the same accuracy. The [pan-tilt camera study](https://arxiv.org/abs/1908.11676) provides a route toward camera-motion-aware reconstruction using multiple cameras; this exceeds the initial single-camera pipeline.
+
+The [official certification video-series hub](https://thesnowpros.org/get-certified/alpine/) is a useful next source-selection location. Individual clips still need title, creator, exact segment, perspective, context and permission review. The legacy US Ski & Snowboard turn-model video URL redirected to the organisation homepage during this pass, so it was not counted as a verified clip.
+
+All third-party media processing rights remain unknown. `not_applicable` for software documentation does not imply a model licence has been reviewed. Public article access and publication licences do not automatically cover associated footage, derivatives or training.

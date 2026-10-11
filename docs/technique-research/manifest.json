@@ -1,0 +1,120 @@
+{
+  "snapshot_date": "2026-10-08",
+  "interface_version": "0.1.0",
+  "snapshot_revision": 2,
+  "status": "qualitative_and_provisional_research_no_validated_coaching_rules",
+  "video_sources": 30,
+  "qualitative_findings": 33,
+  "manual_image_estimates": 8,
+  "provisional_parameters": 17,
+  "files": [
+    {
+      "path": "docs/openski-handoff.md",
+      "sha256": "aa854dceb3c34547285cf3e89c5f0f9c0d3683a4ee4b8c83000553509024ee4c"
+    },
+    {
+      "path": "docs/sensor-integration.md",
+      "sha256": "2f83b917e9f707a65ca8cc5dd0d136103f2c0862ac93ed755be98e7f4815b780"
+    },
+    {
+      "path": "docs/scoring-recommendations.md",
+      "sha256": "6be9e6a27fa5e783202465fe7827bfb5b3abf7f794be11ac490c3bb25a152917"
+    },
+    {
+      "path": "docs/validation-protocol.md",
+      "sha256": "203e18938df33a5ba3628275c8fa7d624cb9fb9835986a74a5b65e578c3f84aa"
+    },
+    {
+      "path": "docs/project-status.md",
+      "sha256": "7f48b9cd62a83206a4f718ecbb230d57352bfc6cd7b09e3aec9762e40e796b0e"
+    },
+    {
+      "path": "docs/pipeline.md",
+      "sha256": "8e07d91d6861057390f055ab690a6ca36ad4931786d9ae899b7c8f9116939c30"
+    },
+    {
+      "path": "integration/metric-registry.json",
+      "sha256": "fb29ff897cd89e9c48ec9c7635c2224d2b23b2ab035a08e39e0af6ade259d1d2"
+    },
+    {
+      "path": "research/technique-findings.json",
+      "sha256": "f671663256849cb30d5bc6825a039d1426c4f4e646e5f7163557d99a4b2eb001"
+    },
+    {
+      "path": "research/knowledge-base.json",
+      "sha256": "5883ccc1c1cd8120f6a9626742297713ff5b84cedd9cdd50bb4e3b5703d63d5f"
+    },
+    {
+      "path": "research/source-catalogue.csv",
+      "sha256": "f26f8efff814be12be8b29c57562911741facc6b9c55ed4e71d98ec7bac6245f"
+    },
+    {
+      "path": "research/catalogue-notes.md",
+      "sha256": "bbbce300a6344554ad01d8d5f08da2d7a3c738b96450d5453021898c55b8b63c"
+    },
+    {
+      "path": "research/coverage.json",
+      "sha256": "6eb6028c6d2596187159e4941ccdaf3bb3298fc7173cc1cd7c592c63fb6f3e56"
+    },
+    {
+      "path": "research/youtube-observations.json",
+      "sha256": "992eae57277bf1017333b4b2fe4f7daa07124fcab9c52d7d442dfea014108dc3"
+    },
+    {
+      "path": "research/viewing-audit.json",
+      "sha256": "3f841aee548613588a34961c89e69ec980999fe9487273e270286a6c807990a0"
+    },
+    {
+      "path": "research/youtube-viewing-notes.md",
+      "sha256": "9d021f7e74a2f50cc337faef296d7ae737587f372cf4550c54e7cd8189a2fea4"
+    },
+    {
+      "path": "research/initial-research.md",
+      "sha256": "9f0bca1297071fb8178e32e652ca3290fd24137852b21b4daefcf35ecf921846"
+    },
+    {
+      "path": "schemas/technique-findings.schema.json",
+      "sha256": "e54ba76865a088e02d459d833756fa6f0df8c35376e6815d710144f73a639d50"
+    },
+    {
+      "path": "schemas/turn.schema.json",
+      "sha256": "818c9f640aa84e7eb27234e2fb69c94c63f6bc654dbafe7c7da91a4bbeb841a7"
+    },
+    {
+      "path": "examples/unmeasured-turn.json",
+      "sha256": "ffb3b78b947dcc0a81feb6f97bb419d6e0d0494ecf4eccaf76ac5e48216b5a96"
+    },
+    {
+      "path": "examples/recording-manifest.json",
+      "sha256": "58ffdfb4ac502537f3a3e5f864e468943f06314983b74c5594700f7ed0008962"
+    },
+    {
+      "path": "examples/reviewed-boundaries.json",
+      "sha256": "a8d2892d9afae58c2c9d9f8c370077cc0a05f2b7c98f58be04f3a9df4f8a37c5"
+    },
+    {
+      "path": "docs/provisional-interpretation.md",
+      "sha256": "c4d171ec49bf79741ddd925e57aaf31e5bd6ec64a5b7d5ca861eb86601032003"
+    },
+    {
+      "path": "integration/provisional-parameters.json",
+      "sha256": "95b46ff76bace7ad13fa7374081500d5d8524f3f8e4f13ef22cd3ab198f65042"
+    },
+    {
+      "path": "schemas/provisional-parameters.schema.json",
+      "sha256": "8b024f4099ece20e084f6826119b66da2e8a66be659e9c3b474e77ca1425bc2b"
+    },
+    {
+      "path": "schemas/provisional-video-estimates.schema.json",
+      "sha256": "31e641334a2478a749e9126fabeb8a9bc2b81d0ea436b3616449e0e825eca792"
+    },
+    {
+      "path": "research/manual-angle-annotations.json",
+      "sha256": "3a19b06916786d3ed748ce19b496f12b3d5e2776b0468554d77533fb7e1c348a"
+    },
+    {
+      "path": "research/provisional-video-estimates.json",
+      "sha256": "0ebdc1e49d64ac8d0c71b2deb4fc17c946178ccf23486886801fbcb9ac46d8db"
+    }
+  ]
+}

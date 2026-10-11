@@ -1,0 +1,107 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "OpenSki research turn record",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "record_id", "record_status", "source", "recording_id", "method_id", "context", "turn", "measurements", "limitations"],
+  "properties": {
+    "schema_version": {"const": "0.1.0"},
+    "record_id": {"type": "string", "minLength": 1},
+    "record_status": {"enum": ["unmeasured_example", "exploratory_observation", "validated_measurement"]},
+    "source": {
+      "type": "object", "additionalProperties": false,
+      "required": ["source_id", "url", "title", "attribution", "published_at", "accessed_at", "evidence_kind", "permission"],
+      "properties": {
+        "source_id": {"type": "string", "minLength": 1},
+        "url": {"type": ["string", "null"], "format": "uri"},
+        "title": {"type": "string"},
+        "attribution": {"type": ["string", "null"]},
+        "published_at": {"type": ["string", "null"]},
+        "accessed_at": {"type": "string", "format": "date"},
+        "evidence_kind": {"enum": ["published_guidance", "primary_research", "review", "video_observation", "hypothesis", "example"]},
+        "permission": {
+          "type": "object", "additionalProperties": false,
+          "required": ["status", "evidence", "processing_allowed", "derivative_retention_allowed", "training_allowed"],
+          "properties": {
+            "status": {"enum": ["unknown", "owned", "licensed", "written_permission", "prohibited"]},
+            "evidence": {"type": ["string", "null"]},
+            "processing_allowed": {"type": ["boolean", "null"]},
+            "derivative_retention_allowed": {"type": ["boolean", "null"]},
+            "training_allowed": {"type": ["boolean", "null"]}
+          }
+        }
+      }
+    },
+    "recording_id": {"type": ["string", "null"]},
+    "method_id": {"type": ["string", "null"]},
+    "context": {
+      "type": "object", "additionalProperties": false,
+      "required": ["technique", "task", "camera_view", "camera_calibrated", "terrain", "speed_m_s", "label_basis"],
+      "properties": {
+        "technique": {"enum": ["beginner_parallel", "intermediate_parallel", "advanced_carving", "controlled_skidded", "racing", "mixed", "unknown"]},
+        "task": {"type": ["string", "null"]},
+        "camera_view": {"enum": ["frontal", "rear", "side", "oblique", "moving", "mixed", "unknown"]},
+        "camera_calibrated": {"type": ["boolean", "null"]},
+        "terrain": {"type": ["string", "null"]},
+        "speed_m_s": {"type": ["number", "null"], "minimum": 0},
+        "label_basis": {"type": ["string", "null"]}
+      }
+    },
+    "turn": {
+      "type": "object", "additionalProperties": false,
+      "required": ["direction", "direction_basis", "start_s", "end_s", "boundary_definition", "partial", "events"],
+      "properties": {
+        "direction": {"enum": ["left", "right", "unknown"]},
+        "direction_basis": {"type": ["string", "null"]},
+        "start_s": {"type": ["number", "null"], "minimum": 0},
+        "end_s": {"type": ["number", "null"], "minimum": 0},
+        "boundary_definition": {"type": ["string", "null"]},
+        "partial": {"type": ["boolean", "null"]},
+        "events": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["event", "time_s", "uncertainty_s", "observable", "basis"],
+            "properties": {
+              "event": {"enum": ["initiation", "engagement", "development", "maximum_observed_inclination", "maximum_observed_angulation", "release", "transition", "boot_reversal", "load_transfer", "trajectory_switch"]},
+              "time_s": {"type": ["number", "null"], "minimum": 0},
+              "uncertainty_s": {"type": ["number", "null"], "minimum": 0},
+              "observable": {"type": ["boolean", "null"]},
+              "basis": {"type": ["string", "null"]}
+            }
+          }
+        }
+      }
+    },
+    "measurements": {
+      "type": "array",
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["metric_id", "value", "unit", "side", "coordinate_space", "reference_axis", "method", "statistic", "quality"],
+        "properties": {
+          "metric_id": {"type": "string", "minLength": 1},
+          "value": {"type": ["number", "null"]},
+          "unit": {"enum": ["deg", "deg/s", "s", "fraction", "N", "kPa", "dimensionless"]},
+          "side": {"enum": ["left", "right", "bilateral", "not_applicable", "unknown"]},
+          "coordinate_space": {"enum": ["image_2d_pixels", "model_estimated_3d", "calibrated_3d", "boot_sensor", "insole", "time", "not_applicable"]},
+          "reference_axis": {"type": ["string", "null"]},
+          "method": {"type": ["string", "null"]},
+          "statistic": {"enum": ["sample", "mean", "median", "minimum", "maximum", "range", "duration", "phase_lag", "variability"]},
+          "quality": {
+            "type": "object", "additionalProperties": false,
+            "required": ["valid_fraction", "confidence", "confidence_method", "uncertainty", "flags", "validation_id"],
+            "properties": {
+              "valid_fraction": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+              "confidence": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+              "confidence_method": {"type": ["string", "null"]},
+              "uncertainty": {"type": ["number", "null"], "minimum": 0, "description": "In the metric unit; interpretation must be specified in method metadata."},
+              "flags": {"type": "array", "items": {"type": "string"}},
+              "validation_id": {"type": ["string", "null"]}
+            }
+          }
+        }
+      }
+    },
+    "limitations": {"type": "array", "items": {"type": "string"}}
+  }
+}

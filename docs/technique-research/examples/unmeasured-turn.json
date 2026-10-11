@@ -1,0 +1,60 @@
+{
+  "schema_version": "0.1.0",
+  "record_id": "example-unmeasured",
+  "record_status": "unmeasured_example",
+  "source": {
+    "source_id": "example-no-source",
+    "url": null,
+    "title": "Structure example; no footage processed",
+    "attribution": null,
+    "published_at": null,
+    "accessed_at": "2026-10-08",
+    "evidence_kind": "example",
+    "permission": {
+      "status": "unknown",
+      "evidence": null,
+      "processing_allowed": null,
+      "derivative_retention_allowed": null,
+      "training_allowed": null
+    }
+  },
+  "recording_id": null,
+  "method_id": null,
+  "context": {
+    "technique": "unknown",
+    "task": null,
+    "camera_view": "unknown",
+    "camera_calibrated": null,
+    "terrain": null,
+    "speed_m_s": null,
+    "label_basis": null
+  },
+  "turn": {
+    "direction": "unknown",
+    "direction_basis": null,
+    "start_s": null,
+    "end_s": null,
+    "boundary_definition": null,
+    "partial": null,
+    "events": []
+  },
+  "measurements": [{
+    "metric_id": "knee_flexion_apparent_2d_deg",
+    "value": null,
+    "unit": "deg",
+    "side": "left",
+    "coordinate_space": "image_2d_pixels",
+    "reference_axis": null,
+    "method": "Proposed: 180 minus projected hip-knee-ankle included angle",
+    "statistic": "maximum",
+    "quality": {
+      "valid_fraction": null,
+      "confidence": null,
+      "confidence_method": null,
+      "uncertainty": null,
+      "flags": ["unmeasured", "unvalidated"],
+      "validation_id": null
+    }
+  }],
+  "limitations": ["No measured values. Not anatomical ground truth or reference data."]
+}
