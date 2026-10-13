@@ -120,6 +120,10 @@ class SessionDetailActivity : Activity() {
         val runPage=if(loaded.run!=null) reviewPage() else null
         runPage?.let { page ->
             loaded.run?.let { page.addView(RunComparisonCard.build(this,RunComparisons.build(it,session.origin=="synthetic")),LinearLayout.LayoutParams(-1,-2).apply { bottomMargin=dp(14) }) }
+            loaded.run?.let { run ->
+                val report=RunTrack.report(session.origin=="synthetic",run.info?.gps==true,RunTrack.summarize(run.track))
+                page.addView(RunTrackCard.build(this,report),LinearLayout.LayoutParams(-1,-2).apply { bottomMargin=dp(14) })
+            }
         }
         val pages=listOfNotNull(runPage,replayPage,analysisPage,detailsPage)
         val replayIndex=if(runPage!=null) 1 else 0

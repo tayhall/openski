@@ -1,5 +1,6 @@
 package com.openski.android
 
+import android.Manifest
 import android.app.Activity
 import android.content.ComponentName
 import android.content.Context
@@ -56,6 +57,22 @@ class RunActivity : Activity() {
     private var turnsView: TextView? = null
     private var verdictView: TextView? = null
     private var progressViews = mapOf<String, TextView>()
+    private val gpsSettings by lazy { GpsSettings(this) }
+    private var lastFix: GpsFix? = null
+    private var gpsView: TextView? = null
+    private var pendingStart = false
+    private val probe by lazy { GpsListener(this) { fix -> lastFix = fix; gpsView?.text = gpsStatus().label() } }
+
+    private fun gpsStatus(): GpsStatus {
+        val fix = lastFix
+        return GpsStatusRule.decide(gpsSettings.enabled, probe.permitted, probe.providerOn,
+            fix?.let { System.currentTimeMillis() - it.timeMs }, fix?.accuracyM)
+    }
+
+    /** Listens only while the Ready screen is showing, so the row can say "ready" before the run starts. */
+    private fun syncProbe() {
+        if (gpsSettings.enabled && state?.phase == RunPhase.READY) probe.start() else probe.stop()
+    }
 
     private val refresh = object : Runnable {
         override fun run() {
@@ -91,6 +108,7 @@ class RunActivity : Activity() {
 
     override fun onStop() {
         handler.removeCallbacks(refresh)
+        probe.stop()
         service?.setRunListener(null)
         if (bound) { unbindService(connection); bound = false }
         service = null
@@ -119,9 +137,11 @@ class RunActivity : Activity() {
     private fun apply(update: RunState) {
         modeLabel = modeSummary()
         val signature = listOf(update.phase, update.message, update.readiness.reason, update.zeroTimedOut, update.zeroed,
-            update.banner, modeLabel, update.summary != null, update.demo, update.connected, update.earbuds).joinToString("|")
+            update.banner, modeLabel, update.summary != null, update.demo, update.connected, update.earbuds,
+            gpsStatus().state, gpsSettings.enabled).joinToString("|")
         val previous = state
         state = update
+        syncProbe()
         if (signature != structure) {
             structure = signature
             render(update)
@@ -145,6 +165,7 @@ class RunActivity : Activity() {
         turnsView?.text = "${s.turns.values.sum()} turns"
         verdictView?.text = verdictLine(s)
         progressViews.forEach { (side, view) -> view.text = progressLine(side, s) }
+        gpsView?.text = gpsStatus().label()
     }
 
     private fun verdictLine(s: RunState) = when (s.lastVerdict?.verdict) {
@@ -157,7 +178,7 @@ class RunActivity : Activity() {
     private fun progressLine(side: String, s: RunState) = "${name(side)} boot · ${s.saveProgress[side]?.let { "$it%" } ?: "waiting"}"
 
     private fun render(s: RunState) {
-        timerView = null; turnsView = null; verdictView = null; progressViews = emptyMap()
+        timerView = null; turnsView = null; verdictView = null; progressViews = emptyMap(); gpsView = null
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             val inset = Snow.dp(this@RunActivity, 20)
@@ -185,9 +206,15 @@ class RunActivity : Activity() {
             status.add(t("${mark(ok)}  ${name(side)} boot · ${if (ok) "connected" else "not connected"}", Snow.Type.STRONG), top = if (index == 0) 0 else 10)
         }
         status.add(t("${mark(s.earbuds)}  Earbuds · ${if (s.earbuds) "connected" else "not connected"}", Snow.Type.STRONG), top = 10)
+        gpsView = t(gpsStatus().label(), Snow.Type.STRONG).also { status.add(it, top = 10) }
         column.add(status, bottom = 12)
         column.add(Snow.button(this, "Boot mode: $modeLabel · tap to switch", Snow.ButtonKind.SECONDARY) {
             service?.setOnSnowMode(modeLabel != "On snow")
+        }, bottom = 10)
+        column.add(Snow.button(this, "GPS for runs: ${if (gpsSettings.enabled) "On" else "Off"} · tap to switch", Snow.ButtonKind.SECONDARY) {
+            gpsSettings.enabled = !gpsSettings.enabled
+            lastFix = null
+            structure = ""; state?.let { apply(it) }
         }, bottom = 10)
         column.add(Snow.button(this, "Coaching: ${CoachSettingsStore(this).settings.targetLabel()}", Snow.ButtonKind.SECONDARY) {
             startActivity(Intent(this, CoachingActivity::class.java))
@@ -203,10 +230,23 @@ class RunActivity : Activity() {
         column.add(Snow.button(this, "Try with demo boots", Snow.ButtonKind.QUIET) { tryStart(true) })
     }
 
-    /** Starts a run and shows the reason on this screen if it could not start. */
+    /** Starts a run and shows the reason on this screen if it could not start. Asks for location once, first. */
     private fun tryStart(demo: Boolean) {
+        if (!demo && gpsSettings.enabled && !probe.permitted && !gpsSettings.asked) {
+            gpsSettings.asked = true
+            pendingStart = true
+            requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), REQUEST_LOCATION)
+            return
+        }
         notice = service?.startRun(demo)
         if (notice != null) { structure = ""; state?.let { apply(it) } }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode != REQUEST_LOCATION || !pendingStart) return
+        pendingStart = false
+        tryStart(false)   // a refusal is fine: the run goes ahead without GPS and the row says why
     }
 
     private fun zeroing(column: LinearLayout, s: RunState) {
@@ -260,6 +300,7 @@ class RunActivity : Activity() {
             if (summary.gapSeconds > 0) card.add(t("A boot lost its link for ${summary.gapSeconds} s; turns in that time are missing.", Snow.Type.BODY), top = 6)
             card.add(t("This compares dry-ski boot roll with a training target. It is not an on-snow technique score.", Snow.Type.CAPTION, Snow.INK_SOFT), top = 10)
             column.add(card, top = 16, bottom = 16)
+            column.add(RunTrackCard.build(this, RunTrack.report(s.demo, summary.gps, summary.track)), bottom = 16)
         }
         val comparisonHolder = FrameLayout(this)
         column.add(comparisonHolder, bottom = 16)
@@ -273,4 +314,6 @@ class RunActivity : Activity() {
             startActivity(Intent(this, MainActivity::class.java))
         })
     }
+
+    private companion object { const val REQUEST_LOCATION = 41 }
 }
