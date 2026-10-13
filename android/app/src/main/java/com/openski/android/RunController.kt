@@ -29,6 +29,22 @@ interface RunBoots {
     fun storageOk(): Boolean
 }
 
+/** Phone location for a run. The service implements it; tests fake it. */
+interface RunLocation {
+    /** The skier's switch: whether runs should record GPS. */
+    val enabled: Boolean
+    /** Starts listening while the app is on screen. False if it cannot (permission refused, location off). */
+    fun start(): Boolean
+    /** Safe to call more than once. */
+    fun stop()
+}
+
+object NoLocation : RunLocation {
+    override val enabled = false
+    override fun start() = false
+    override fun stop() = Unit
+}
+
 data class RunGap(val side: String, val startMs: Long, val endMs: Long)
 data class RunStartInfo(
     val startedAtMs: Long, val demo: Boolean, val target: CoachTarget, val targetLabel: String,
@@ -43,6 +59,7 @@ interface RunSink {
     fun halfTurn(side: String, event: SkiEvent, receivedMs: Long)
     fun verdict(side: String, verdict: CoachVerdict, atMs: Long)
     fun ended(info: RunEndInfo)
+    fun fix(fix: GpsFix) {}
 }
 
 data class Readiness(val ok: Boolean, val reason: String?)
@@ -50,6 +67,7 @@ data class Readiness(val ok: Boolean, val reason: String?)
 data class RunSummary(
     val durationMs: Long, val endedBy: RunEnd, val turns: Map<String, Int>,
     val matched: Int, val offTarget: Int, val unclear: Int, val rawDataCapped: Boolean, val gapSeconds: Int,
+    val gps: Boolean = false, val track: TrackSummary? = null,
 )
 
 data class RunState(
@@ -64,7 +82,10 @@ data class RunState(
  * phone and database are reached through [RunBoots] and [RunSink]. It compares dry-ski boot roll with a training
  * target and says nothing about on-snow technique.
  */
-class RunController(private val boots: RunBoots, private val sink: RunSink, private val coach: () -> CoachSettings) {
+class RunController(
+    private val boots: RunBoots, private val sink: RunSink, private val location: RunLocation = NoLocation,
+    private val coach: () -> CoachSettings,
+) {
     private var phase = RunPhase.READY
     private var demo = false
     private var message = ""
@@ -88,6 +109,8 @@ class RunController(private val boots: RunBoots, private val sink: RunSink, priv
     private var summary: RunSummary? = null
     private var resumedAt = 0L
     private val pendingRestore = mutableSetOf<String>()
+    private var gpsOn = false
+    private val fixes = mutableListOf<GpsFix>()
 
     fun readiness(forDemo: Boolean = false): Readiness {
         if (!forDemo) {
@@ -126,6 +149,10 @@ class RunController(private val boots: RunBoots, private val sink: RunSink, priv
                 boots.zero(side)
             }
         }
+        // GPS starts now, while the skier is looking at the screen: Android only grants location to a service that
+        // began tracking while the app was visible, and the phone may be in a pocket by the time zeroing ends.
+        fixes.clear()
+        gpsOn = !demoRun && location.enabled && location.start()
         zeroStartedAt = nowMs
         zeroTimedOut = false
         phase = RunPhase.ZEROING
@@ -136,6 +163,7 @@ class RunController(private val boots: RunBoots, private val sink: RunSink, priv
     fun cancel() {
         if (phase != RunPhase.ZEROING) return
         restoreMode()
+        location.stop(); gpsOn = false
         phase = RunPhase.READY
         message = ""
     }
@@ -190,6 +218,13 @@ class RunController(private val boots: RunBoots, private val sink: RunSink, priv
             Verdict.NONE -> unclear++
         }
         sink.verdict(side, verdict, nowMs)
+    }
+
+    /** A phone location reading. Kept only while the run is running and GPS started for it. */
+    fun onFix(fix: GpsFix) {
+        if (phase != RunPhase.RUNNING || !gpsOn) return
+        fixes.add(fix)
+        sink.fix(fix)
     }
 
     /** Advances the time-based transitions. Call about twice a second. */
@@ -252,13 +287,14 @@ class RunController(private val boots: RunBoots, private val sink: RunSink, priv
         val problem = boots.beginSession(demo)
         if (problem != null) {
             message = problem
+            location.stop(); gpsOn = false
             restoreMode()
             phase = RunPhase.READY
             return
         }
         val settings = coach().normalised()
         sink.started(RunStartInfo(nowMs, demo, settings.target(), settings.targetLabel(), settings.windowSize,
-            settings.coachBoot.name, modeBefore))
+            settings.coachBoot.name, modeBefore, gps = gpsOn))
         runStartedAt = nowMs
         phase = RunPhase.RUNNING
         message = ""
@@ -268,6 +304,7 @@ class RunController(private val boots: RunBoots, private val sink: RunSink, priv
         gapStart.toMap().forEach { (side, start) -> gaps.add(RunGap(side, start, nowMs)) }
         gapStart.clear()
         boots.endSession()
+        location.stop()
         endedAt = nowMs
         endedBy = reason
         savingStartedAt = nowMs
@@ -280,7 +317,8 @@ class RunController(private val boots: RunBoots, private val sink: RunSink, priv
         if (saved) restoreMode()
         this.message = message
         summary = RunSummary(endedAt - runStartedAt, endedBy, turns.toMap(), matched, offTarget, unclear,
-            !demo && SIDES.any { boots.flashFull(it) }, gaps.sumOf { it.endMs - it.startMs }.div(1000).toInt())
+            !demo && SIDES.any { boots.flashFull(it) }, gaps.sumOf { it.endMs - it.startMs }.div(1000).toInt(),
+            gpsOn, if (gpsOn) RunTrack.summarize(fixes) else null)
         phase = RunPhase.DONE
     }
 

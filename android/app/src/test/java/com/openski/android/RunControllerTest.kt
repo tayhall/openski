@@ -44,10 +44,21 @@ class RunControllerTest {
         val turns = mutableListOf<Triple<String, Int, Long>>()
         val verdicts = mutableListOf<Pair<String, Verdict>>()
         val ended = mutableListOf<RunEndInfo>()
+        val fixes = mutableListOf<GpsFix>()
+        override fun fix(fix: GpsFix) { fixes.add(fix) }
         override fun started(info: RunStartInfo) { started.add(info) }
         override fun halfTurn(side: String, event: SkiEvent, receivedMs: Long) { turns.add(Triple(side, event.sequence, receivedMs)) }
         override fun verdict(side: String, verdict: CoachVerdict, atMs: Long) { verdicts.add(side to verdict.verdict) }
         override fun ended(info: RunEndInfo) { ended.add(info) }
+    }
+
+    private class FakeLocation : RunLocation {
+        override var enabled = true
+        var canStart = true
+        var starts = 0
+        var stops = 0
+        override fun start(): Boolean { starts++; return canStart }
+        override fun stop() { stops++ }
     }
 
     private val boots = FakeBoots()
@@ -447,5 +458,88 @@ class RunControllerTest {
         boots.calls.clear()
         run.setOnSnowMode(false)          // zeroing: ignored
         assertTrue(boots.calls.isEmpty())
+    }
+
+    // GPS ---------------------------------------------------------------------------------------------------
+
+    private fun fix(seconds: Int) = GpsFix(seconds * 1000L, 46.0 + seconds * 0.0001, 7.0, null, 8.0, 5f, null)
+
+    private fun gpsRun(location: FakeLocation) = RunController(boots, sink, location) { CoachSettings() }
+
+    @Test fun gpsStartsWithTheRunStopsWhenItEndsAndFeedsTheSummary() {
+        val location = FakeLocation()
+        val controller = gpsRun(location)
+        assertNull(controller.start(0))
+        assertEquals(1, location.starts)                       // started while the app is still on screen
+        controller.onFix(fix(0))                               // during zeroing: ignored
+        boots.zeroedSides.addAll(listOf("L", "R"))
+        controller.tick(1000)
+        assertTrue(sink.started.single().gps)
+        (1..5).forEach { controller.onFix(fix(it)) }
+        assertEquals(5, sink.fixes.size)
+        controller.stop(10_000)
+        assertEquals(1, location.stops)
+        boots.saved = true
+        controller.tick(11_000)
+        val summary = controller.state(11_000).summary!!
+        assertTrue(summary.gps)
+        assertEquals(5, summary.track!!.usableFixes)
+    }
+
+    @Test fun aDemoRunNeverStartsGps() {
+        val location = FakeLocation()
+        val controller = gpsRun(location)
+        assertNull(controller.start(0, demoRun = true))
+        controller.tick(1000)
+        controller.onFix(fix(1))
+        assertEquals(0, location.starts)
+        assertTrue(sink.fixes.isEmpty())
+        assertFalse(sink.started.single().gps)
+    }
+
+    @Test fun theSwitchOffMeansGpsIsNotStarted() {
+        val location = FakeLocation().apply { enabled = false }
+        val controller = gpsRun(location)
+        assertNull(controller.start(0))
+        assertEquals(0, location.starts)
+        boots.zeroedSides.addAll(listOf("L", "R"))
+        controller.tick(1000)
+        assertFalse(sink.started.single().gps)
+    }
+
+    @Test fun refusedPermissionStillRunsAndRecordsNothing() {
+        val location = FakeLocation().apply { canStart = false }
+        val controller = gpsRun(location)
+        assertNull(controller.start(0))
+        boots.zeroedSides.addAll(listOf("L", "R"))
+        controller.tick(1000)
+        controller.onFix(fix(2))
+        assertFalse(sink.started.single().gps)
+        assertTrue(sink.fixes.isEmpty())
+        controller.stop(5000)
+        boots.saved = true
+        controller.tick(6000)
+        val summary = controller.state(6000).summary!!
+        assertFalse(summary.gps)
+        assertNull(summary.track)
+    }
+
+    @Test fun cancellingWhileZeroingStopsGps() {
+        val location = FakeLocation()
+        val controller = gpsRun(location)
+        assertNull(controller.start(0))
+        controller.cancel()
+        assertEquals(1, location.stops)
+    }
+
+    @Test fun aRunThatCannotBeginStopsGps() {
+        val location = FakeLocation()
+        val controller = gpsRun(location)
+        assertNull(controller.start(0))
+        boots.beginReason = "Could not start recording."
+        boots.zeroedSides.addAll(listOf("L", "R"))
+        controller.tick(1000)
+        assertEquals(RunPhase.READY, controller.state(1000).phase)
+        assertEquals(1, location.stops)
     }
 }
