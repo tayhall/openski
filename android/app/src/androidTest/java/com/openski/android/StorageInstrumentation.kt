@@ -31,6 +31,8 @@ class StorageInstrumentation : Instrumentation() {
                             ${if(version>=5) ",test_session INTEGER NOT NULL DEFAULT 0" else ""}
                             ${if(version>=6) ",origin TEXT NOT NULL DEFAULT 'sensor'" else ""})""")
                         db.execSQL("CREATE TABLE samples(session_id TEXT,side TEXT)")
+                        // A genuine version 2+ database already has the recording tables; the version-9 upgrade alters captures.
+                        db.execSQL("CREATE TABLE captures(id TEXT PRIMARY KEY,session_id TEXT NOT NULL,side TEXT NOT NULL,address TEXT NOT NULL,started_at_ms INTEGER NOT NULL,state TEXT NOT NULL,expected INTEGER NOT NULL DEFAULT 0,dropped INTEGER NOT NULL DEFAULT 0,error TEXT NOT NULL DEFAULT '')")
                         db.execSQL("INSERT INTO sessions(id,started_at_ms,title) VALUES('preserved',100000,'Existing run')")
                         if(version>=3) db.execSQL("UPDATE sessions SET equipment='Existing skis'")
                         db.version=version
@@ -103,6 +105,9 @@ class StorageInstrumentation : Instrumentation() {
                     db.execSQL("INSERT INTO captures VALUES('legacy','q8','L','AA:01',100000,'verified',1,0,'')")
                     val legacy=java.nio.ByteBuffer.allocate(16).order(java.nio.ByteOrder.LITTLE_ENDIAN).putInt(0x0000_0105).array()
                     db.execSQL("INSERT INTO flash_samples VALUES('legacy',0,?)",arrayOf<Any>(legacy))
+                    // The first open built the latest schema; remove the version-10 parts so the reopen upgrades 8 -> 9 -> 10 cleanly.
+                    db.execSQL("DROP TABLE run_track")
+                    db.execSQL("ALTER TABLE run_info DROP COLUMN gps")
                     db.version=8
                 }
                 LocalSessionStore(context,qualityMigration).use { store ->
@@ -133,6 +138,30 @@ class StorageInstrumentation : Instrumentation() {
                     flagged.flash.single().record.let { check(it.timestampUs==0x100L && it.sample.quality==17) { "Flagged record not decoded" } }
                 }
             } finally { context.deleteDatabase(qualityMigration) }
+            // Version 9 -> 10: phone GPS for runs. A genuine upgrade: build the latest schema, remove the version-10 parts, set 9.
+            val gpsMigration="openski-migration-9-${UUID.randomUUID()}.db"
+            try {
+                LocalSessionStore(context,gpsMigration).use { it.writableDatabase.version }
+                val gpsPath=context.getDatabasePath(gpsMigration)
+                SQLiteDatabase.openDatabase(gpsPath.path,null,SQLiteDatabase.OPEN_READWRITE).use { db ->
+                    db.execSQL("DROP TABLE run_track")
+                    db.execSQL("ALTER TABLE run_info DROP COLUMN gps")
+                    db.version=9
+                }
+                LocalSessionStore(context,gpsMigration).use { store ->
+                    val id=UUID.randomUUID().toString()
+                    store.createSession(id,1_000L,kind="run")
+                    store.saveRunStart(id,RunStartInfo(1_000L,false,CoachTarget(2.0,20.0),"Custom",4,"AUTO",mapOf("L" to false,"R" to false),gps=true))
+                    store.addRunFix(id,GpsFix(2_000L,46.0,7.0,2100.0,3.5,6f,4f))
+                    store.addRunFix(id,GpsFix(3_000L,46.0001,7.0,null,null,8f,null))
+                    val run=store.runData(id)
+                    check(run.info?.gps==true) { "gps flag not stored" }
+                    check(run.track.size==2 && run.track[0].altM==2100.0 && run.track[1].altM==null) { "track round trip" }
+                    store.finishSession(id,4_000L)
+                    check(store.deleteSession(id)) { "run delete" }
+                    check(store.readableDatabase.rawQuery("SELECT COUNT(*) FROM run_track WHERE session_id=?",arrayOf(id)).use { it.moveToFirst() && it.getInt(0)==0 }) { "track not deleted with the session" }
+                }
+            } finally { context.deleteDatabase(gpsMigration) }
             val path=context.getDatabasePath(name)
             path.parentFile!!.mkdirs()
             SQLiteDatabase.openOrCreateDatabase(path,null).use { db ->
@@ -241,7 +270,7 @@ class StorageInstrumentation : Instrumentation() {
             }
             context.deleteDatabase(name)
             DrillMountingRegression.run(this)
-            finish(Activity.RESULT_OK,Bundle().apply { putString("stream","PASS: v1–v6 migration, demo creation, saved review settings, calibration, test labels, health, session edits, staged recovery validation, retained copy, ZIP export and protected deletion\n") })
+            finish(Activity.RESULT_OK,Bundle().apply { putString("stream","PASS: v1–v6 migration, demo creation, saved review settings, calibration, test labels, health, session edits, staged recovery validation, retained copy, ZIP export and protected deletion, v9->v10 run GPS track\n") })
         } catch(error: Throwable) {
             targetContext.deleteDatabase(name)
             finish(Activity.RESULT_CANCELED,Bundle().apply { putString("stream","FAIL: ${android.util.Log.getStackTraceString(error)}\n") })
