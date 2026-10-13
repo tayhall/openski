@@ -82,7 +82,7 @@ Observed on the Pixel 9a emulator with a demo run (8 October 2026): the card on 
 
 Observed on the Pixel 9a emulator (13 October 2026): the Ready screen's GPS row reads "GPS needs location permission" with the permission revoked and "GPS ready · accuracy 5 m" after granting it and sending `adb emu geo fix`; the switch toggles the row to "GPS off"; a demo run's Done card reads "No GPS in demo runs"; no crash. A real GPS run needs a phone outdoors and real boots.
 
-1. Fresh install, tap Start run: the location prompt appears once; refusing it still starts the run and the Done card says "GPS was off for this run".
+1. Fresh install, tap Start run: the location prompt appears once; refusing it still starts the run and the Done card says "No GPS for this run".
 2. With permission, outdoors: the Ready row goes from "waiting for signal" to "GPS ready".
 3. Lock the phone and pocket it during zeroing and the run: the Done card still shows distance and top speed (this exercises the foreground location type started while visible).
 4. The notification text never mentions location.

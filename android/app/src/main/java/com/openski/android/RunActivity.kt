@@ -59,14 +59,15 @@ class RunActivity : Activity() {
     private var progressViews = mapOf<String, TextView>()
     private val gpsSettings by lazy { GpsSettings(this) }
     private var lastFix: GpsFix? = null
+    private var lastFixAt = 0L   // phone uptime when it arrived, so a wrong clock cannot make it look stale
     private var gpsView: TextView? = null
     private var pendingStart = false
-    private val probe by lazy { GpsListener(this) { fix -> lastFix = fix; gpsView?.text = gpsStatus().label() } }
+    private val probe by lazy { GpsListener(this) { fix -> lastFix = fix; lastFixAt = android.os.SystemClock.elapsedRealtime(); gpsView?.text = gpsStatus().label() } }
 
     private fun gpsStatus(): GpsStatus {
         val fix = lastFix
         return GpsStatusRule.decide(gpsSettings.enabled, probe.permitted, probe.providerOn,
-            fix?.let { System.currentTimeMillis() - it.timeMs }, fix?.accuracyM)
+            fix?.let { android.os.SystemClock.elapsedRealtime() - lastFixAt }, fix?.accuracyM)
     }
 
     /** Listens only while the Ready screen is showing, so the row can say "ready" before the run starts. */

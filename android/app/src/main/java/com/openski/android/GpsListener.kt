@@ -23,6 +23,11 @@ class GpsListener(private val context: Context, private val onFix: (GpsFix) -> U
                 if (location.hasVerticalAccuracy()) location.verticalAccuracyMeters else null,
                 System.currentTimeMillis()))
         }
+        // Before Android 11 these have no default body, so the platform would throw AbstractMethodError without them.
+        override fun onProviderEnabled(provider: String) {}
+        override fun onProviderDisabled(provider: String) {}
+        @Deprecated("Never called on Android 12 and later")
+        override fun onStatusChanged(provider: String?, status: Int, extras: android.os.Bundle?) {}
     }
 
     val permitted: Boolean

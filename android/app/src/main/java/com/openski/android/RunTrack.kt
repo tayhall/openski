@@ -51,14 +51,25 @@ object RunTrack {
     /** Readings in time order, without poor accuracy, repeated or backwards times, or impossible jumps. */
     fun usable(fixes: List<GpsFix>): List<GpsFix> {
         val kept = ArrayList<GpsFix>()
+        var held: GpsFix? = null   // the last fix refused as a jump, in case the kept fix was the outlier
         for (fix in fixes.sortedBy { it.timeMs }) {
-            if (!fix.lat.isFinite() || !fix.lon.isFinite() || fix.accuracyM > MAX_ACCURACY_M) continue
+            if (!fix.lat.isFinite() || !fix.lon.isFinite() || !(fix.accuracyM <= MAX_ACCURACY_M)) continue
             val previous = kept.lastOrNull()
             if (previous != null) {
                 val dtMs = fix.timeMs - previous.timeMs
                 if (dtMs <= 0) continue
-                if (dtMs <= MAX_GAP_MS && distanceM(previous, fix) / (dtMs / 1000.0) > MAX_JUMP_MPS) continue
+                if (dtMs <= MAX_GAP_MS && distanceM(previous, fix) / (dtMs / 1000.0) > MAX_JUMP_MPS) {
+                    val earlier = held
+                    val gapMs = if (earlier != null) fix.timeMs - earlier.timeMs else 0L
+                    if (earlier != null && gapMs in 1..MAX_GAP_MS && distanceM(earlier, fix) / (gapMs / 1000.0) <= MAX_JUMP_MPS) {
+                        // Two readings agree with each other but not with the kept one: the kept one was the outlier.
+                        kept.removeAt(kept.lastIndex)
+                        kept.add(earlier); kept.add(fix); held = null
+                    } else held = fix
+                    continue
+                }
             }
+            held = null
             kept.add(fix)
         }
         return kept
@@ -124,7 +135,7 @@ object RunTrack {
 
     fun report(demo: Boolean, gpsOn: Boolean, summary: TrackSummary?): TrackReport = when {
         demo -> TrackReport("No GPS in demo runs", emptyList(), NOTE)
-        !gpsOn -> TrackReport("GPS was off for this run", emptyList(), NOTE)
+        !gpsOn -> TrackReport("No GPS for this run", emptyList(), NOTE)
         summary == null || summary.usableFixes == 0 -> TrackReport("No GPS fix during this run", emptyList(), NOTE)
         else -> TrackReport("On the hill", listOf(
             "Distance" to distanceText(summary.distanceM),

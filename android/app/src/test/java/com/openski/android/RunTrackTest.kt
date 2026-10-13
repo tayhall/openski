@@ -47,6 +47,14 @@ class RunTrackTest {
         assertEquals(590.0, s.distanceM, 12.0)
     }
 
+    @Test fun anOutlierAsTheFirstFixDoesNotThrowAwayTheGoodOnesAfterIt() {
+        val good = line(20, 10.0, startMs = 1000)
+        val fixes = listOf(GpsFix(0, 46.05, 7.05, null, null, 10f, null)) + good
+        val s = RunTrack.summarize(fixes)
+        assertEquals(20, s.usableFixes)
+        assertEquals(190.0, s.distanceM, 4.0)
+    }
+
     @Test fun duplicateAndBackwardsTimestampsAreDroppedWithoutCrashing() {
         val fixes = line(10, 10.0).toMutableList()
         fixes.add(fixes[5].copy())                       // same time as an earlier fix
@@ -98,7 +106,7 @@ class RunTrackTest {
 
     @Test fun reportExplainsWhyThereAreNoNumbers() {
         assertEquals("No GPS in demo runs", RunTrack.report(true, false, null).headline)
-        assertEquals("GPS was off for this run", RunTrack.report(false, false, null).headline)
+        assertEquals("No GPS for this run", RunTrack.report(false, false, null).headline)
         assertEquals("No GPS fix during this run", RunTrack.report(false, true, null).headline)
         val empty = TrackSummary(0.0, null, null, 0, null, 0, 12)
         assertEquals("No GPS fix during this run", RunTrack.report(false, true, empty).headline)
