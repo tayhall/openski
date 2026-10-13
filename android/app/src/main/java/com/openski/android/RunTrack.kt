@@ -19,6 +19,8 @@ data class GpsFix(
 data class TrackSummary(
     val distanceM: Double, val topSpeedMps: Double?, val avgSpeedMps: Double?, val movingSeconds: Int,
     val verticalDropM: Double?, val usableFixes: Int, val totalFixes: Int,
+    /** Seconds between usable fixes that were too far apart to join, so their distance is not counted. */
+    val gapSeconds: Int = 0,
 )
 
 /** What a card shows: a headline, label/value rows (empty when there is nothing to show) and a closing note. */
@@ -41,7 +43,8 @@ object RunTrack {
     /** A reading whose phone reported no accuracy is given a hopeless one so the filter drops it. */
     fun fixFrom(timeMs: Long, lat: Double, lon: Double, altM: Double?, speedMps: Float?, accuracyM: Float?,
                 verticalAccuracyM: Float?, nowMs: Long) = GpsFix(
-        if (timeMs > 0) timeMs else nowMs, lat, lon, altM, speedMps?.toDouble(), accuracyM ?: 999f, verticalAccuracyM)
+        if (timeMs > 0) timeMs else nowMs, lat, lon, altM, speedMps?.toDouble(),
+        accuracyM?.takeIf { it.isFinite() } ?: 999f, verticalAccuracyM)
 
     private fun distanceM(a: GpsFix, b: GpsFix): Double {
         val p1 = Math.toRadians(a.lat); val p2 = Math.toRadians(b.lat)
@@ -93,16 +96,18 @@ object RunTrack {
         val speed = speeds(kept)
         var distance = 0.0
         var movingMs = 0L
+        var gapMs = 0L
         for (i in 1 until kept.size) {
             val dtMs = kept[i].timeMs - kept[i - 1].timeMs
-            if (dtMs > MAX_GAP_MS || speed[i] < MOVING_MPS) continue
+            if (dtMs > MAX_GAP_MS) { gapMs += dtMs; continue }
+            if (speed[i] < MOVING_MPS) continue
             distance += distanceM(kept[i - 1], kept[i])
             movingMs += dtMs
         }
         return TrackSummary(
             distance, topSpeed(kept, speed),
             if (movingMs > 0) distance / (movingMs / 1000.0) else null,
-            (movingMs / 1000.0).roundToInt(), verticalDrop(kept), kept.size, fixes.size)
+            (movingMs / 1000.0).roundToInt(), verticalDrop(kept), kept.size, fixes.size, (gapMs / 1000.0).roundToInt())
     }
 
     /** The highest speed that stayed at or above that value for [TOP_SPEED_HOLD_MS], so one noisy fix cannot set it. */
@@ -123,20 +128,27 @@ object RunTrack {
     }
 
     private fun verticalDrop(kept: List<GpsFix>): Double? {
-        val altitudes = kept.filter { it.altM != null && it.verticalAccuracyM?.let { v -> v <= MAX_VERTICAL_ACCURACY_M } == true }.map { it.altM!! }
+        val altitudes = kept.filter {
+            it.altM != null && it.altM.isFinite() && it.verticalAccuracyM?.let { v -> v <= MAX_VERTICAL_ACCURACY_M } == true
+        }.map { it.altM!! }
         if (altitudes.size < MIN_ALTITUDE_FIXES) return null
         val smooth = altitudes.indices.map { i ->
             altitudes.subList(max(0, i - SMOOTH_WIDTH / 2), min(altitudes.size, i + SMOOTH_WIDTH / 2 + 1)).average()
         }
-        return max(0.0, smooth.first() - smooth.min())
+        // The largest fall from an earlier point to a later one, so a climb before the descent is not counted.
+        var peak = smooth.first()
+        var drop = 0.0
+        for (a in smooth) { peak = max(peak, a); drop = max(drop, peak - a) }
+        return drop
     }
 
     private fun distanceText(m: Double) = if (m < 1000) "${m.roundToInt()} m" else String.format(Locale.US, "%.2f km", m / 1000)
     private fun speedText(mps: Double?) = if (mps == null) "not available" else "${(mps * 3.6).roundToInt()} km/h"
 
-    fun report(demo: Boolean, gpsOn: Boolean, summary: TrackSummary?): TrackReport = when {
+    /** [problem] is the headline to show when GPS did not start, if the run recorded why. */
+    fun report(demo: Boolean, gpsOn: Boolean, summary: TrackSummary?, problem: String? = null): TrackReport = when {
         demo -> TrackReport("No GPS in demo runs", emptyList(), NOTE)
-        !gpsOn -> TrackReport("No GPS for this run", emptyList(), NOTE)
+        !gpsOn -> TrackReport(problem ?: "No GPS for this run", emptyList(), NOTE)
         summary == null || summary.usableFixes == 0 -> TrackReport("No GPS fix during this run", emptyList(), NOTE)
         else -> TrackReport("On the hill", listOf(
             "Distance" to distanceText(summary.distanceM),
@@ -144,6 +156,6 @@ object RunTrack {
             "Average speed" to speedText(summary.avgSpeedMps),
             "Vertical drop" to (summary.verticalDropM?.let { "${it.roundToInt()} m" } ?: "not available"),
             "Fixes" to "${summary.usableFixes} of ${summary.totalFixes} usable",
-        ), NOTE)
+        ) + (if (summary.gapSeconds > 0) listOf("Without signal" to "${summary.gapSeconds} s, not counted") else emptyList()), NOTE)
     }
 }

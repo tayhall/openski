@@ -23,7 +23,7 @@ object GpsStatusRule {
         !enabled -> GpsStatus(GpsState.OFF)
         !permitted -> GpsStatus(GpsState.NO_PERMISSION)
         !providerOn -> GpsStatus(GpsState.LOCATION_OFF)
-        lastFixAgeMs == null || accuracyM == null || lastFixAgeMs > FRESH_MS || accuracyM > RunTrack.MAX_ACCURACY_M ->
+        lastFixAgeMs == null || accuracyM == null || accuracyM.isNaN() || lastFixAgeMs > FRESH_MS || accuracyM > RunTrack.MAX_ACCURACY_M ->
             GpsStatus(GpsState.WAITING)
         else -> GpsStatus(GpsState.READY, accuracyM.roundToInt())
     }

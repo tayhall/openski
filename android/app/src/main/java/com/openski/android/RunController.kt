@@ -37,6 +37,8 @@ interface RunLocation {
     fun start(): Boolean
     /** Safe to call more than once. */
     fun stop()
+    /** Why [start] failed, in words for the skier, or null when unknown. */
+    val problem: String? get() = null
 }
 
 object NoLocation : RunLocation {
@@ -67,7 +69,7 @@ data class Readiness(val ok: Boolean, val reason: String?)
 data class RunSummary(
     val durationMs: Long, val endedBy: RunEnd, val turns: Map<String, Int>,
     val matched: Int, val offTarget: Int, val unclear: Int, val rawDataCapped: Boolean, val gapSeconds: Int,
-    val gps: Boolean = false, val track: TrackSummary? = null,
+    val gps: Boolean = false, val track: TrackSummary? = null, val gpsProblem: String? = null,
 )
 
 data class RunState(
@@ -110,6 +112,18 @@ class RunController(
     private var resumedAt = 0L
     private val pendingRestore = mutableSetOf<String>()
     private var gpsOn = false
+    private var gpsProblem: String? = null
+
+    /** Starts the phone's GPS if the skier wants it, and records in words why not when it will not start. */
+    private fun startGps(): Boolean {
+        val started = !demo && location.enabled && location.start()
+        gpsProblem = when {
+            demo || started -> null
+            !location.enabled -> "GPS was switched off for this run"
+            else -> location.problem?.let { "No GPS: $it" }
+        }
+        return started
+    }
     private val fixes = mutableListOf<GpsFix>()
 
     fun readiness(forDemo: Boolean = false): Readiness {
@@ -152,7 +166,7 @@ class RunController(
         // GPS starts now, while the skier is looking at the screen: Android only grants location to a service that
         // began tracking while the app was visible, and the phone may be in a pocket by the time zeroing ends.
         fixes.clear()
-        gpsOn = !demoRun && location.enabled && location.start()
+        gpsOn = startGps()
         zeroStartedAt = nowMs
         zeroTimedOut = false
         phase = RunPhase.ZEROING
@@ -173,7 +187,7 @@ class RunController(
         SIDES.filterNot { boots.zeroed(it) }.forEach { boots.zero(it) }
         zeroStartedAt = nowMs
         zeroTimedOut = false
-        gpsOn = !demo && location.enabled && location.start()   // the skier is looking at the screen again
+        gpsOn = startGps()   // the skier is looking at the screen again
         message = "Stand upright. Hold still."
     }
 
@@ -288,7 +302,7 @@ class RunController(
 
     private fun beginRun(nowMs: Long) {
         // The boots zeroed after the timeout stopped GPS: try once more, best effort (it may be refused in a pocket).
-        if (!gpsOn && zeroTimedOut && !demo && location.enabled) gpsOn = location.start()
+        if (!gpsOn && zeroTimedOut && !demo && location.enabled) gpsOn = startGps()
         val problem = boots.beginSession(demo)
         if (problem != null) {
             message = problem
@@ -323,7 +337,7 @@ class RunController(
         this.message = message
         summary = RunSummary(endedAt - runStartedAt, endedBy, turns.toMap(), matched, offTarget, unclear,
             !demo && SIDES.any { boots.flashFull(it) }, gaps.sumOf { it.endMs - it.startMs }.div(1000).toInt(),
-            gpsOn, if (gpsOn) RunTrack.summarize(fixes) else null)
+            gpsOn, if (gpsOn) RunTrack.summarize(fixes) else null, if (gpsOn) null else gpsProblem)
         phase = RunPhase.DONE
     }
 

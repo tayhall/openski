@@ -44,6 +44,15 @@ class MountSlipMonitorTest {
         assertFalse(result.flagged)
     }
 
+    @Test fun shortBurstsSeparatedByLongHolesDoNotMakeAWindow() {
+        // One second of samples every four: each four-second window holds about 100 samples and no internal gap
+        // over 250 ms, but only a quarter of it is data, so its mean and axis are not trustworthy.
+        val bursts = (0 until 20).map { segment(2000.0 + 4000.0 * it, 1.0, fs = 100.0) }
+        val result = check(*bursts.toTypedArray())
+        assertFalse(result.available)
+        assertFalse(result.flagged)
+    }
+
     @Test fun yawSlipOfFifteenDegreesIsFlaggedSoonAfterItHappens() {
         val result = check(segment(2000.0, 60.0, slipAtMs = 30_000.0, yawDeg = 15.0))
         assertTrue(result.flagged)

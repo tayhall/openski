@@ -176,6 +176,12 @@ class SensorSessionService : Service() {
             }
             return true
         }
+        override val problem: String?
+            get() = when {
+                !gps.permitted -> "location permission not granted"
+                !gps.providerOn -> "location is off on this phone"
+                else -> null
+            }
         override fun stop() {
             gps.stop()
             if (gpsTracking) {
@@ -1003,6 +1009,7 @@ class SensorSessionService : Service() {
     private fun storageError(error: Exception) {
         if (storageFailed) return
         storageFailed = true
+        runLocation.stop()   // fixes could no longer be written, so do not keep the location indicator on
         val id = activeSessionId
         activeSessionId = null
         // Stop accepting new samples, retain sensor backups and any pending RAM batch.

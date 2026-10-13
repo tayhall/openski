@@ -104,6 +104,37 @@ class RunTrackTest {
         assertNull(RunTrack.summarize(withAlt(9, 5f)).verticalDropM)
     }
 
+    @Test fun aClimbBeforeTheDescentIsNotCountedAsDrop() {
+        val up = line(20, 10.0).mapIndexed { i, f ->
+            val alt = if (i < 10) 1900.0 + 10.0 * i else 1990.0 - 5.0 * (i - 10)
+            f.copy(altM = alt, verticalAccuracyM = 5f)
+        }
+        // Rises 90 m, then falls 45 m: the fall is what was skied. The five-point smoothing trims the peak and the
+        // last point, leaving about 35 m (first-minus-minimum would have said 0).
+        assertEquals(35.0, RunTrack.summarize(up).verticalDropM!!, 2.0)
+    }
+
+    @Test fun nonFiniteReadingsAreIgnoredNotCrashing() {
+        val nan = RunTrack.fixFrom(1000, 46.0, 7.0, Double.NaN, Float.NaN, Float.NaN, Float.NaN, nowMs = 5)
+        assertEquals(0, RunTrack.summarize(listOf(nan)).usableFixes)
+        val fixes = line(20, 10.0).mapIndexed { i, f -> if (i == 5) f.copy(altM = Double.NaN, verticalAccuracyM = 5f) else f.copy(altM = 2000.0 - i, verticalAccuracyM = 5f) }
+        assertFalse(RunTrack.summarize(fixes).verticalDropM!!.isNaN())
+    }
+
+    @Test fun aSignalGapIsReportedSoTheShortDistanceIsExplained() {
+        val first = line(30, 10.0)
+        val second = line(30, 10.0, startMs = 89_000, startLat = 46.0 + 10.0 * 89 / metresPerDegreeLat)
+        val s = RunTrack.summarize(first + second)
+        assertEquals(60, s.gapSeconds)
+        val r = RunTrack.report(false, true, s)
+        assertTrue(r.rows.any { it.first == "Without signal" && it.second.startsWith("60 s") })
+    }
+
+    @Test fun theReportUsesTheRecordedReasonWhenThereIsOne() {
+        assertEquals("No GPS: location permission not granted",
+            RunTrack.report(false, false, null, "No GPS: location permission not granted").headline)
+    }
+
     @Test fun altitudeFromPoorVerticalAccuracyIsNotUsed() {
         val poor = line(20, 10.0).mapIndexed { i, f -> f.copy(altM = 2000.0 - 5.0 * i, verticalAccuracyM = 200f) }
         assertNull(RunTrack.summarize(poor).verticalDropM)

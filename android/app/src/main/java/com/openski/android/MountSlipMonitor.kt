@@ -110,7 +110,9 @@ object MountSlipMonitor {
                 if (hi < lo) hi = lo
                 while (hi < n && t[hi] < start + WINDOW_MS) hi++
                 val count = hi - lo
-                if (count >= MIN_SAMPLES && (lo + 1 until hi).none { t[it] - t[it - 1] > MAX_GAP_MS }) {
+                // The window must be covered to both edges, not just free of holes inside it.
+                val covered = count >= MIN_SAMPLES && t[lo] - start <= MAX_GAP_MS && start + WINDOW_MS - t[hi - 1] <= MAX_GAP_MS
+                if (covered && (lo + 1 until hi).none { t[it] - t[it - 1] > MAX_GAP_MS }) {
                     var mf = 0.0; var ml = 0.0; var mgf = 0.0; var mgl = 0.0
                     for (i in lo until hi) { mf += af[i]; ml += al[i]; mgf += gf[i]; mgl += gl[i] }
                     mf /= count; ml /= count; mgf /= count; mgl /= count
