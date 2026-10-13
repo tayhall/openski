@@ -90,6 +90,9 @@ class SensorSessionService : Service() {
     @Volatile private var runCaptures: List<SensorCapture> = emptyList()
     private var runSidesAtStart = setOf<String>()
     private var runListener: ((RunState) -> Unit)? = null
+    /** True only while a run's GPS is tracking; the foreground type includes location only then. */
+    private var gpsTracking = false
+    private val gps by lazy { GpsListener(this) { fix -> runController.onFix(fix) } }
     private val runBoots = object : RunBoots {
         override fun connected(side: String) = clients[side]?.isReady == true
         override fun productionMode(side: String): Boolean? = if (side in modeSeen) side in productionSides else null
@@ -160,6 +163,19 @@ class SensorSessionService : Service() {
             CoachSettingsStore(this@SensorSessionService).settings.allowPhoneSpeaker
         override fun storageOk() = StatFs(filesDir.absolutePath).availableBytes >= 20L * 1024 * 1024
     }
+    private val runLocation = object : RunLocation {
+        override val enabled: Boolean get() = GpsSettings(this@SensorSessionService).enabled
+        override fun start(): Boolean {
+            if (!gps.start()) return false
+            gpsTracking = true
+            ensureForeground()   // re-announce the foreground service with the location type now that tracking is on
+            return true
+        }
+        override fun stop() {
+            gps.stop()
+            if (gpsTracking) { gpsTracking = false; if (foreground) ensureForeground() }
+        }
+    }
     private val runSink = object : RunSink {
         private fun write(block: (String) -> Unit) {
             val id = runSessionId ?: return
@@ -169,8 +185,9 @@ class SensorSessionService : Service() {
         override fun halfTurn(side: String, event: SkiEvent, receivedMs: Long) = write { store.addRunEvent(it, side, event, receivedMs) }
         override fun verdict(side: String, verdict: CoachVerdict, atMs: Long) = write { store.addRunVerdict(it, side, verdict, atMs) }
         override fun ended(info: RunEndInfo) = write { store.saveRunEnd(it, info) }
+        override fun fix(fix: GpsFix) = write { store.addRunFix(it, fix) }
     }
-    private val runController: RunController by lazy { RunController(runBoots, runSink) { CoachSettingsStore(this).settings } }
+    private val runController: RunController by lazy { RunController(runBoots, runSink, runLocation) { CoachSettingsStore(this).settings } }
     private val runTick = object : Runnable {
         override fun run() {
             val now = System.currentTimeMillis()
@@ -1079,7 +1096,13 @@ class SensorSessionService : Service() {
 
     private fun ensureForeground() {
         val message = notificationText()
-        startForeground(NOTIFICATION_ID, notification(message))
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            // Same types the manifest gave before, so nothing else changes; location is added only while a run tracks GPS.
+            var type = android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE or
+                android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK
+            if (gpsTracking) type = type or android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+            startForeground(NOTIFICATION_ID, notification(message), type)
+        } else startForeground(NOTIFICATION_ID, notification(message))
         lastNotificationMessage = message
         foreground = true
     }
@@ -1123,6 +1146,7 @@ class SensorSessionService : Service() {
         destroyed = true
         mainHandler.removeCallbacks(runTick)
         stopCoaching()
+        gps.stop()
         mainHandler.removeCallbacks(tick)
         listOf("L", "R").forEach { invalidate(it) }
         reconnectTasks.values.forEach(mainHandler::removeCallbacks)
