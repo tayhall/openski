@@ -258,7 +258,8 @@ class HomeActivity : Activity() {
     private fun path() = page {
         val progress = store.progress()
         add(t("Your path", Snow.Type.HERO), bottom = 4)
-        add(t("Pass a drill with one star to open the next.", Snow.Type.BODY, Snow.INK_SOFT), bottom = 20)
+        add(t("Pass a drill with one star to open the next.", Snow.Type.BODY, Snow.INK_SOFT), bottom = 12)
+        add(Snow.button(this@HomeActivity, "Technique videos", Snow.ButtonKind.SECONDARY) { TechniqueVideos.open(this@HomeActivity) }, bottom = 20)
         Piste.entries.forEach { piste ->
             val reachable = piste.ordinal >= store.experience.startsOn.ordinal
             val heading = LinearLayout(this@HomeActivity).apply { gravity = Gravity.CENTER_VERTICAL }
