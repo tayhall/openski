@@ -1,6 +1,6 @@
 # Run GPS: where, how fast, how far (design)
 
-Status: draft for review, 12 October 2026. Nothing is built.
+Status: implemented on `feat/run-gps`; hardware checks owed.
 
 ## What this is for
 

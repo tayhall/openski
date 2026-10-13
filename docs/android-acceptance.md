@@ -78,6 +78,17 @@ Observed on the Pixel 9a emulator with a demo run (8 October 2026): the card on 
 5. Check a run where a boot dropped its link for 30 s: the window around the gap shows flat stretches at zero, and the sentence still reads sensibly.
 6. Tune the sentence thresholds (2°, 0.15 s, 20%) if "close" or "uneven" feels wrong on real runs.
 
+## Run GPS checks
+
+Observed on the Pixel 9a emulator (13 October 2026): the Ready screen's GPS row reads "GPS needs location permission" with the permission revoked and "GPS ready · accuracy 5 m" after granting it and sending `adb emu geo fix`; the switch toggles the row to "GPS off"; a demo run's Done card reads "No GPS in demo runs"; no crash. A real GPS run needs a phone outdoors and real boots.
+
+1. Fresh install, tap Start run: the location prompt appears once; refusing it still starts the run and the Done card says "GPS was off for this run".
+2. With permission, outdoors: the Ready row goes from "waiting for signal" to "GPS ready".
+3. Lock the phone and pocket it during zeroing and the run: the Done card still shows distance and top speed (this exercises the foreground location type started while visible).
+4. The notification text never mentions location.
+5. Turn location services off, start a run: it starts and the Done card says so; no crash.
+6. Walk a known 200 m route: distance within about 10 %; vertical drop reads "not available" or a small number.
+
 ## Owed on hardware (research round)
 
 Nothing below has been run on a real boot. The JVM and host tests cover the parsing, the detector parity fixture and the exports. The storage-migration instrumentation check for database version 9 has been compiled but not run (no emulator was attached); run it on an emulator as in the run flow checks above. These items need powered boots.
