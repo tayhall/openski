@@ -148,6 +148,9 @@ class DrillActivity : Activity(), SensorSessionService.Listener {
             cue.addView(t("Coach's cue", Snow.Type.TITLE))
             cue.add(t(drill.cue, Snow.Type.BODY), top = 6)
             add(cue, bottom = 20)
+            TechniqueVideos.forDrill(drill.id)?.let { v ->
+                add(Snow.button(this@DrillActivity, "Watch: ${v.title}", Snow.ButtonKind.QUIET) { TechniqueVideos.open(this@DrillActivity, v.id) }, bottom = 16)
+            }
 
             add(t("Stand tall and still in your boots.\nRoll to one side, then the other, on the beat.\nReturn to neutral between rolls.", Snow.Type.BODY), bottom = 24)
             if (boots.isNotEmpty()) {
