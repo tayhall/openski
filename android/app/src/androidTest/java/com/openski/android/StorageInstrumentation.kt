@@ -12,6 +12,16 @@ import org.json.JSONObject
 /** Runs against an isolated database on a real Android SQLite implementation. */
 class StorageInstrumentation : Instrumentation() {
     override fun onCreate(arguments: Bundle?) { super.onCreate(arguments); start() }
+    /** Takes a latest-schema database back to version 9 by rebuilding run_info, since DROP COLUMN needs SQLite 3.35 (Android 14). */
+    private fun removeVersion10(db: SQLiteDatabase) {
+        db.execSQL("DROP TABLE run_track")
+        db.execSQL("ALTER TABLE run_info RENAME TO run_info_v10")
+        db.execSQL("""CREATE TABLE run_info(session_id TEXT PRIMARY KEY, target_beat REAL NOT NULL, target_depth REAL NOT NULL,
+            target_label TEXT NOT NULL, window_size INTEGER NOT NULL, coach_boot TEXT NOT NULL, mode_before TEXT NOT NULL,
+            ended_by TEXT NOT NULL DEFAULT '', first_turn_ms INTEGER, last_turn_ms INTEGER, gaps_json TEXT NOT NULL DEFAULT '[]')""")
+        db.execSQL("INSERT INTO run_info SELECT session_id,target_beat,target_depth,target_label,window_size,coach_boot,mode_before,ended_by,first_turn_ms,last_turn_ms,gaps_json FROM run_info_v10")
+        db.execSQL("DROP TABLE run_info_v10")
+    }
     override fun onStart() {
         val name="openski-test-${UUID.randomUUID()}.db"
         try {
@@ -106,8 +116,7 @@ class StorageInstrumentation : Instrumentation() {
                     val legacy=java.nio.ByteBuffer.allocate(16).order(java.nio.ByteOrder.LITTLE_ENDIAN).putInt(0x0000_0105).array()
                     db.execSQL("INSERT INTO flash_samples VALUES('legacy',0,?)",arrayOf<Any>(legacy))
                     // The first open built the latest schema; remove the version-10 parts so the reopen upgrades 8 -> 9 -> 10 cleanly.
-                    db.execSQL("DROP TABLE run_track")
-                    db.execSQL("ALTER TABLE run_info DROP COLUMN gps")
+                    removeVersion10(db)
                     db.version=8
                 }
                 LocalSessionStore(context,qualityMigration).use { store ->
@@ -144,8 +153,7 @@ class StorageInstrumentation : Instrumentation() {
                 LocalSessionStore(context,gpsMigration).use { it.writableDatabase.version }
                 val gpsPath=context.getDatabasePath(gpsMigration)
                 SQLiteDatabase.openDatabase(gpsPath.path,null,SQLiteDatabase.OPEN_READWRITE).use { db ->
-                    db.execSQL("DROP TABLE run_track")
-                    db.execSQL("ALTER TABLE run_info DROP COLUMN gps")
+                    removeVersion10(db)
                     db.version=9
                 }
                 LocalSessionStore(context,gpsMigration).use { store ->

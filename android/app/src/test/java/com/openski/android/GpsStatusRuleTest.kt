@@ -22,6 +22,9 @@ class GpsStatusRuleTest {
         assertEquals(GpsState.WAITING, decide(accuracy = RunTrack.MAX_ACCURACY_M + 1).state)
     }
 
+    @Test fun aNaNAccuracyIsWaitingNotACrash() =
+        assertEquals(GpsState.WAITING, decide(accuracy = Float.NaN).state)
+
     @Test fun aFreshGoodFixIsReadyWithItsAccuracy() {
         val status = decide(accuracy = 5.6f)
         assertEquals(GpsState.READY, status.state)

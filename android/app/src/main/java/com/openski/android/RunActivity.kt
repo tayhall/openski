@@ -62,12 +62,18 @@ class RunActivity : Activity() {
     private var lastFixAt = 0L   // phone uptime when it arrived, so a wrong clock cannot make it look stale
     private var gpsView: TextView? = null
     private var startWhenBound = false   // a start tap answered by the location prompt, waiting for the service
-    private val probe by lazy { GpsListener(this) { fix -> lastFix = fix; lastFixAt = android.os.SystemClock.elapsedRealtime(); gpsView?.text = gpsStatus().label() } }
+    private val probe by lazy { GpsListener(this) { fix -> lastFix = fix; lastFixAt = android.os.SystemClock.elapsedRealtime(); statusCache = null; gpsView?.text = gpsStatus().label() } }
 
+    private var statusAt = 0L
+    private var statusCache: GpsStatus? = null
+
+    /** Cached for half a second: the permission and provider checks are Binder calls and this is read every refresh. */
     private fun gpsStatus(): GpsStatus {
+        val now = android.os.SystemClock.elapsedRealtime()
+        statusCache?.let { if (now - statusAt < 500) return it }
         val fix = lastFix
         return GpsStatusRule.decide(gpsSettings.enabled, probe.permitted, probe.providerOn,
-            fix?.let { android.os.SystemClock.elapsedRealtime() - lastFixAt }, fix?.accuracyM)
+            fix?.let { now - lastFixAt }, fix?.accuracyM).also { statusCache = it; statusAt = now }
     }
 
     /** Listens only while the Ready screen is showing, so the row can say "ready" before the run starts. */
@@ -212,13 +218,20 @@ class RunActivity : Activity() {
         }
         status.add(t("${mark(s.earbuds)}  Earbuds · ${if (s.earbuds) "connected" else "not connected"}", Snow.Type.STRONG), top = 10)
         gpsView = t(gpsStatus().label(), Snow.Type.STRONG).also { status.add(it, top = 10) }
+        if (gpsSettings.enabled && gpsStatus().state == GpsState.NO_PERMISSION && gpsSettings.asked) {
+            // The system prompt may not appear again after a refusal or an approximate-only grant.
+            status.add(Snow.button(this, "Allow location in Settings", Snow.ButtonKind.QUIET) {
+                startActivity(Intent(android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    android.net.Uri.parse("package:$packageName")))
+            }, top = 8)
+        }
         column.add(status, bottom = 12)
         column.add(Snow.button(this, "Boot mode: $modeLabel · tap to switch", Snow.ButtonKind.SECONDARY) {
             service?.setOnSnowMode(modeLabel != "On snow")
         }, bottom = 10)
         column.add(Snow.button(this, "GPS for runs: ${if (gpsSettings.enabled) "On" else "Off"} · tap to switch", Snow.ButtonKind.SECONDARY) {
             gpsSettings.enabled = !gpsSettings.enabled
-            lastFix = null
+            lastFix = null; statusCache = null
             structure = ""; state?.let { apply(it) }
         }, bottom = 10)
         column.add(Snow.button(this, "Coaching: ${CoachSettingsStore(this).settings.targetLabel()}", Snow.ButtonKind.SECONDARY) {
@@ -242,12 +255,14 @@ class RunActivity : Activity() {
             requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), REQUEST_LOCATION)
             return
         }
+        probe.stop()   // the service starts its own listener; do not run two
         notice = service?.startRun(demo)
         if (notice != null) { structure = ""; state?.let { apply(it) } }
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        statusCache = null
         if (requestCode != REQUEST_LOCATION) return
         // A refusal is fine: the run goes ahead without GPS and the row says why. The activity may have been
         // recreated behind the dialog, so start now only if the service is bound, otherwise when it binds.
@@ -305,7 +320,7 @@ class RunActivity : Activity() {
             if (summary.gapSeconds > 0) card.add(t("A boot lost its link for ${summary.gapSeconds} s; turns in that time are missing.", Snow.Type.BODY), top = 6)
             card.add(t("This compares dry-ski boot roll with a training target. It is not an on-snow technique score.", Snow.Type.CAPTION, Snow.INK_SOFT), top = 10)
             column.add(card, top = 16, bottom = 16)
-            column.add(RunTrackCard.build(this, RunTrack.report(s.demo, summary.gps, summary.track)), bottom = 16)
+            column.add(RunTrackCard.build(this, RunTrack.report(s.demo, summary.gps, summary.track, summary.gpsProblem)), bottom = 16)
         }
         val comparisonHolder = FrameLayout(this)
         column.add(comparisonHolder, bottom = 16)

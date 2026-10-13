@@ -53,6 +53,7 @@ class RunControllerTest {
     }
 
     private class FakeLocation : RunLocation {
+        override var problem: String? = null
         override var enabled = true
         var canStart = true
         var starts = 0
@@ -522,6 +523,23 @@ class RunControllerTest {
         val summary = controller.state(6000).summary!!
         assertFalse(summary.gps)
         assertNull(summary.track)
+    }
+
+    @Test fun theSummaryKeepsTheReasonGpsDidNotStart() {
+        val location = FakeLocation().apply { canStart = false; problem = "location permission not granted" }
+        val controller = gpsRun(location)
+        assertNull(controller.start(0))
+        boots.zeroedSides.addAll(listOf("L", "R"))
+        controller.tick(1000)
+        controller.stop(5000)
+        boots.saved = true
+        controller.tick(6000)
+        assertEquals("No GPS: location permission not granted", controller.state(6000).summary!!.gpsProblem)
+
+        val off = FakeLocation().apply { enabled = false }
+        val second = RunController(FakeBoots().apply { zeroedSides.addAll(listOf("L", "R")); saved = true }, FakeSink(), off) { CoachSettings() }
+        assertNull(second.start(0)); second.tick(1000); second.stop(5000); second.tick(6000)
+        assertEquals("GPS was switched off for this run", second.state(6000).summary!!.gpsProblem)
     }
 
     @Test fun cancellingWhileZeroingStopsGps() {
