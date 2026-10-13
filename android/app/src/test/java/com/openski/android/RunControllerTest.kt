@@ -542,4 +542,29 @@ class RunControllerTest {
         assertEquals(RunPhase.READY, controller.state(1000).phase)
         assertEquals(1, location.stops)
     }
+
+    @Test fun aStalledZeroStopsGpsAndRetryStartsItAgain() {
+        val location = FakeLocation()
+        val controller = gpsRun(location)
+        assertNull(controller.start(0))
+        controller.tick(RunController.ZERO_TIMEOUT_MS + 1)
+        assertTrue(controller.state(RunController.ZERO_TIMEOUT_MS + 1).zeroTimedOut)
+        assertEquals(1, location.stops)
+        controller.retryZero(20_000)
+        assertEquals(2, location.starts)
+        boots.zeroedSides.addAll(listOf("L", "R"))
+        controller.tick(21_000)
+        assertTrue(sink.started.single().gps)
+    }
+
+    @Test fun aLateZeroAfterTheTimeoutStillTriesGpsOnce() {
+        val location = FakeLocation()
+        val controller = gpsRun(location)
+        assertNull(controller.start(0))
+        controller.tick(RunController.ZERO_TIMEOUT_MS + 1)
+        boots.zeroedSides.addAll(listOf("L", "R"))
+        controller.tick(RunController.ZERO_TIMEOUT_MS + 2000)
+        assertEquals(2, location.starts)
+        assertTrue(sink.started.single().gps)
+    }
 }

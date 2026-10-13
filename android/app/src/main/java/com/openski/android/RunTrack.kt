@@ -32,6 +32,7 @@ object RunTrack {
     const val MOVING_MPS = 0.5
     const val TOP_SPEED_HOLD_MS = 2_000L
     const val MIN_ALTITUDE_FIXES = 10
+    const val MAX_VERTICAL_ACCURACY_M = 30f
     const val NOTE = "Phone GPS readings, not a measure of technique."
     private const val CONSECUTIVE_MS = 3_000L
     private const val SMOOTH_WIDTH = 5
@@ -122,7 +123,7 @@ object RunTrack {
     }
 
     private fun verticalDrop(kept: List<GpsFix>): Double? {
-        val altitudes = kept.filter { it.altM != null && it.verticalAccuracyM != null }.map { it.altM!! }
+        val altitudes = kept.filter { it.altM != null && it.verticalAccuracyM?.let { v -> v <= MAX_VERTICAL_ACCURACY_M } == true }.map { it.altM!! }
         if (altitudes.size < MIN_ALTITUDE_FIXES) return null
         val smooth = altitudes.indices.map { i ->
             altitudes.subList(max(0, i - SMOOTH_WIDTH / 2), min(altitudes.size, i + SMOOTH_WIDTH / 2 + 1)).average()

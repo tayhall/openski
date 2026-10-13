@@ -168,12 +168,20 @@ class SensorSessionService : Service() {
         override fun start(): Boolean {
             if (!gps.start()) return false
             gpsTracking = true
-            ensureForeground()   // re-announce the foreground service with the location type now that tracking is on
+            // Re-announce the foreground service with the location type now that tracking is on. If the platform
+            // refuses, the run goes ahead without GPS rather than failing to start.
+            try { ensureForeground() } catch (_: Exception) {
+                gps.stop(); gpsTracking = false
+                return false
+            }
             return true
         }
         override fun stop() {
             gps.stop()
-            if (gpsTracking) { gpsTracking = false; if (foreground) ensureForeground() }
+            if (gpsTracking) {
+                gpsTracking = false
+                if (foreground) try { ensureForeground() } catch (_: Exception) { /* keeps the previous notification */ }
+            }
         }
     }
     private val runSink = object : RunSink {

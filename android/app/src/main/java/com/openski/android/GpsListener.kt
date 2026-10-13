@@ -44,7 +44,7 @@ class GpsListener(private val context: Context, private val onFix: (GpsFix) -> U
             manager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 0f, listener, Looper.getMainLooper())
             active = true
             true
-        } catch (_: SecurityException) { false }
+        } catch (_: Exception) { false }   // SecurityException, or a provider that reports enabled but refuses
     }
 
     fun stop() {

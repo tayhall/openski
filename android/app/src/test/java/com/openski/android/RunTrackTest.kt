@@ -104,6 +104,11 @@ class RunTrackTest {
         assertNull(RunTrack.summarize(withAlt(9, 5f)).verticalDropM)
     }
 
+    @Test fun altitudeFromPoorVerticalAccuracyIsNotUsed() {
+        val poor = line(20, 10.0).mapIndexed { i, f -> f.copy(altM = 2000.0 - 5.0 * i, verticalAccuracyM = 200f) }
+        assertNull(RunTrack.summarize(poor).verticalDropM)
+    }
+
     @Test fun reportExplainsWhyThereAreNoNumbers() {
         assertEquals("No GPS in demo runs", RunTrack.report(true, false, null).headline)
         assertEquals("No GPS for this run", RunTrack.report(false, false, null).headline)

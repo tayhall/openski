@@ -61,7 +61,7 @@ class RunActivity : Activity() {
     private var lastFix: GpsFix? = null
     private var lastFixAt = 0L   // phone uptime when it arrived, so a wrong clock cannot make it look stale
     private var gpsView: TextView? = null
-    private var pendingStart = false
+    private var startWhenBound = false   // a start tap answered by the location prompt, waiting for the service
     private val probe by lazy { GpsListener(this) { fix -> lastFix = fix; lastFixAt = android.os.SystemClock.elapsedRealtime(); gpsView?.text = gpsStatus().label() } }
 
     private fun gpsStatus(): GpsStatus {
@@ -88,6 +88,10 @@ class RunActivity : Activity() {
             service = connected
             connected.setRunListener { update -> runOnUiThread { apply(update) } }
             apply(connected.runState())
+            if (startWhenBound) {
+                startWhenBound = false
+                if (state?.phase == RunPhase.READY) tryStart(false)
+            }
         }
         override fun onServiceDisconnected(name: ComponentName?) { service = null }
     }
@@ -235,7 +239,6 @@ class RunActivity : Activity() {
     private fun tryStart(demo: Boolean) {
         if (!demo && gpsSettings.enabled && !probe.permitted && !gpsSettings.asked) {
             gpsSettings.asked = true
-            pendingStart = true
             requestPermissions(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION), REQUEST_LOCATION)
             return
         }
@@ -245,9 +248,10 @@ class RunActivity : Activity() {
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode != REQUEST_LOCATION || !pendingStart) return
-        pendingStart = false
-        tryStart(false)   // a refusal is fine: the run goes ahead without GPS and the row says why
+        if (requestCode != REQUEST_LOCATION) return
+        // A refusal is fine: the run goes ahead without GPS and the row says why. The activity may have been
+        // recreated behind the dialog, so start now only if the service is bound, otherwise when it binds.
+        if (service != null) tryStart(false) else startWhenBound = true
     }
 
     private fun zeroing(column: LinearLayout, s: RunState) {

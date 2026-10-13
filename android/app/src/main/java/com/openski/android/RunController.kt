@@ -173,6 +173,7 @@ class RunController(
         SIDES.filterNot { boots.zeroed(it) }.forEach { boots.zero(it) }
         zeroStartedAt = nowMs
         zeroTimedOut = false
+        gpsOn = !demo && location.enabled && location.start()   // the skier is looking at the screen again
         message = "Stand upright. Hold still."
     }
 
@@ -234,6 +235,8 @@ class RunController(
                 demo || SIDES.all { boots.zeroed(it) } -> beginRun(nowMs)
                 !zeroTimedOut && nowMs - zeroStartedAt >= ZERO_TIMEOUT_MS -> {
                     zeroTimedOut = true
+                    // A stalled zero must not leave GPS and the location indicator on for the whole lift ride.
+                    location.stop(); gpsOn = false
                     val waiting = SIDES.filterNot { boots.zeroed(it) }.joinToString(" and ") { name(it) }
                     message = "The $waiting boot has not zeroed. Hold still, or check it is connected."
                 }
@@ -284,6 +287,8 @@ class RunController(
     }
 
     private fun beginRun(nowMs: Long) {
+        // The boots zeroed after the timeout stopped GPS: try once more, best effort (it may be refused in a pocket).
+        if (!gpsOn && zeroTimedOut && !demo && location.enabled) gpsOn = location.start()
         val problem = boots.beginSession(demo)
         if (problem != null) {
             message = problem
