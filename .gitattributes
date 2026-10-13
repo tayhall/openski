@@ -1,0 +1,2 @@
+# Fixture emitted in binary mode by tools/test_rest_bias.cpp: keep LF so regenerating never rewrites line endings.
+android/app/src/test/resources/rest_bias.txt text eol=lf

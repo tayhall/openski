@@ -138,7 +138,8 @@ int runTests() {
 
 // ---- Kotlin parity fixture (android RestBiasParityTest) ----
 // Format: "series <name>", then one "s ax ay az gx gy gz" line per 100 Hz sample from t = 1000 ms
-// ("x" = missing sample), "c <index> bx by bz updates refused" checkpoints after every 100th sample, "end".
+// ("x" = missing sample), "c <index> bx by bz updates refused" checkpoints after every 100th sample and after
+// any sample on which the update or refusal count changed, then "end".
 namespace {
 constexpr float kPi = 3.14159265f;
 struct Sample { bool present; float v[6]; };
@@ -147,9 +148,12 @@ struct Series { std::string name; std::vector<Sample> samples; };
 
 float r4(float v) { return std::round(v*10000.0f)/10000.0f; }
 
-void addRest(Series& s, float seconds, float gx, float gy, float gz, float noiseAmp) {
+// accelNoise applies to x and y only, so a series can sit near the accelerometer peak-to-peak limit without also
+// moving |a|; azScale lifts |a| away from 1 g to sit near the stillness fraction.
+void addRest(Series& s, float seconds, float gx, float gy, float gz, float noiseAmp,
+             float accelNoise = 0.05f, float azScale = 1.0f) {
   for (int i = 0, n = static_cast<int>(seconds*100); i < n; ++i)
-    s.samples.push_back({true, {r4(noise(0.05f)), r4(noise(0.05f)), r4(kG + noise(0.05f)),
+    s.samples.push_back({true, {r4(noise(accelNoise)), r4(noise(accelNoise)), r4(kG*azScale + noise(0.05f)),
                                 r4(gx + noise(noiseAmp)), r4(gy + noise(noiseAmp)), r4(gz + noise(noiseAmp))}});
 }
 void addMotion(Series& s, float seconds) {  // walking-like: accel swings about 3 m/s^2, gyro about 1 rad/s
@@ -181,23 +185,44 @@ std::vector<Series> buildSeries() {
       s.samples.push_back({true, {0, r4(kG*std::sin(a)), r4(kG*std::cos(a)), 0.1f, 0, 0}});
     }
     all.push_back(s); }
+  // Just inside and just outside each limit (4 s of rest each). A rule that moves shows as a different update or
+  // refusal count, so retuning one side of a pair without the other fails the parity test.
+  struct Edge { const char* name; float gx, noise, accelNoise, azScale; };
+  static const Edge edges[] = {
+    {"offset_inside",      0.11f, 0.004f, 0.05f, 1.0f},    // per-sample |g| limit 0.12
+    {"offset_over",        0.13f, 0.004f, 0.05f, 1.0f},
+    {"gyro_p2p_inside",    0.02f, 0.020f, 0.05f, 1.0f},    // gyro peak-to-peak limit 0.05
+    {"gyro_p2p_over",      0.02f, 0.030f, 0.05f, 1.0f},
+    {"accel_frac_inside",  0.02f, 0.004f, 0.05f, 1.02f},   // | |a| - g | / g limit 3 %
+    {"accel_frac_over",    0.02f, 0.004f, 0.05f, 1.04f},
+    {"accel_p2p_inside",   0.02f, 0.004f, 0.20f, 1.0f},    // accelerometer peak-to-peak limit 0.5
+    {"accel_p2p_over",     0.02f, 0.004f, 0.30f, 1.0f},
+  };
+  for (const Edge& e : edges) {
+    Series s; s.name = e.name;
+    addRest(s, 4.0f, e.gx, 0.0f, 0.0f, e.noise, e.accelNoise, e.azScale);
+    all.push_back(s);
+  }
   return all;
 }
 
 std::vector<Checkpoint> run(const Series& s) {
   RestBias r; std::vector<Checkpoint> out;
+  uint32_t lastUpdates = 0, lastRefused = 0;
   for (size_t i = 0; i < s.samples.size(); ++i) {
     const Sample& m = s.samples[i];
     if (m.present)
       r.update(1000000U + static_cast<uint32_t>(i)*10000U, m.v[0], m.v[1], m.v[2], m.v[3], m.v[4], m.v[5]);
-    if (i % 100 == 99)
+    const bool changed = r.updates() != lastUpdates || r.refused() != lastRefused;
+    lastUpdates = r.updates(); lastRefused = r.refused();
+    if (i % 100 == 99 || changed)
       out.push_back({static_cast<int>(i), {r.bias(0), r.bias(1), r.bias(2)}, r.updates(), r.refused()});
   }
   return out;
 }
 
 int emitFixture(const char* path) {
-  std::FILE* f = std::fopen(path, "w");
+  std::FILE* f = std::fopen(path, "wb");   // binary: the same bytes on every platform
   if (!f) { std::printf("cannot write %s\n", path); return 1; }
   for (const Series& s : buildSeries()) {
     std::fprintf(f, "series %s\n", s.name.c_str());
@@ -223,16 +248,20 @@ int checkFixture(const char* path) {
       s = Series(); stored.clear(); inSeries = true;
       s.name = line + 7; while (!s.name.empty() && (s.name.back() == '\n' || s.name.back() == '\r')) s.name.pop_back();
     } else if (!inSeries) {
-      continue;
+      if (line[0] != '\n' && line[0] != '\r') { std::printf("unexpected line outside a series: %s", line); return 1; }
     } else if (line[0] == 'x') {
       s.samples.push_back({false, {0, 0, 0, 0, 0, 0}});
     } else if (line[0] == 's') {
       Sample m{true, {0, 0, 0, 0, 0, 0}};
-      std::sscanf(line, "s %f %f %f %f %f %f", &m.v[0], &m.v[1], &m.v[2], &m.v[3], &m.v[4], &m.v[5]);
+      if (std::sscanf(line, "s %f %f %f %f %f %f", &m.v[0], &m.v[1], &m.v[2], &m.v[3], &m.v[4], &m.v[5]) != 6) {
+        std::printf("series %s: bad sample line: %s", s.name.c_str(), line); return 1;
+      }
       s.samples.push_back(m);
     } else if (line[0] == 'c') {
       Checkpoint c{}; unsigned u = 0, rf = 0;
-      std::sscanf(line, "c %d %f %f %f %u %u", &c.index, &c.bias[0], &c.bias[1], &c.bias[2], &u, &rf);
+      if (std::sscanf(line, "c %d %f %f %f %u %u", &c.index, &c.bias[0], &c.bias[1], &c.bias[2], &u, &rf) != 6) {
+        std::printf("series %s: bad checkpoint line: %s", s.name.c_str(), line); return 1;
+      }
       c.updates = u; c.refused = rf; stored.push_back(c);
     } else if (std::strncmp(line, "end", 3) == 0) {
       const std::vector<Checkpoint> now = run(s);
@@ -244,10 +273,12 @@ int checkFixture(const char* path) {
         if (!same) { std::printf("series %s: checkpoint %zu differs\n", s.name.c_str(), i); return 1; }
       }
       inSeries = false;
+    } else {
+      std::printf("series %s: unexpected line: %s", s.name.c_str(), line); return 1;
     }
   }
   std::fclose(f);
-  if (seriesSeen != 5) { std::printf("expected 5 series, saw %d\n", seriesSeen); return 1; }
+  if (seriesSeen != 13 || inSeries) { std::printf("expected 13 complete series, saw %d\n", seriesSeen); return 1; }
   std::printf("rest bias fixture matches\n");
   return 0;
 }
