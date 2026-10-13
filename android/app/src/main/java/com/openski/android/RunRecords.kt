@@ -16,10 +16,12 @@ data class RunVerdictRow(
 data class RunInfoRow(
     val targetBeat: Double, val targetDepth: Double, val targetLabel: String, val windowSize: Int, val coachBoot: String,
     val modeBeforeJson: String, val endedBy: String, val firstTurnMs: Long?, val lastTurnMs: Long?, val gapsJson: String,
+    val gps: Boolean = false,
 )
 
 /** Everything a run stored beyond the ordinary session data. */
-data class RunData(val events: List<RunEventRow>, val verdicts: List<RunVerdictRow>, val info: RunInfoRow?)
+data class RunData(val events: List<RunEventRow>, val verdicts: List<RunVerdictRow>, val info: RunInfoRow?,
+                   val track: List<GpsFix> = emptyList())
 
 /** The same flag bits as the ski_v0 wire frame: 1 side positive, 2 outside envelope, 4 pitch outside, 8 samples skipped. */
 fun skiEventFlags(e: SkiEvent): Int = (if (e.positive) 1 else 0) or (if (e.outsideEnvelope) 2 else 0) or

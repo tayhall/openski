@@ -48,7 +48,7 @@ data class TestMarker(val id: Long, val timeMs: Long, val label: String, val sid
 data class SensorHealth(val side: String, val timeMs: Long, val battery: Int?, val batteryAtMs: Long?,
     val rssi: Int?, val rssiAtMs: Long?)
 
-class LocalSessionStore(context: Context, databaseName: String = "openski-local.db") : SQLiteOpenHelper(context, databaseName, null, 9) {
+class LocalSessionStore(context: Context, databaseName: String = "openski-local.db") : SQLiteOpenHelper(context, databaseName, null, 10) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE sessions (
             id TEXT PRIMARY KEY, started_at_ms INTEGER NOT NULL, ended_at_ms INTEGER,
@@ -68,6 +68,7 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
         addAnalysisSchema(db)
         addRunSchema(db)
         addQualitySchema(db)
+        addTrackSchema(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -79,12 +80,21 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
         if (oldVersion < 7) addAnalysisSchema(db)
         if (oldVersion < 8) addRunSchema(db)
         if (oldVersion < 9) addQualitySchema(db)
+        if (oldVersion < 10) addTrackSchema(db)
     }
 
     /** Version 9: signal quality. Live samples carry quality bits; a capture records its flash record format. */
     private fun addQualitySchema(db: SQLiteDatabase) {
         db.execSQL("ALTER TABLE captures ADD COLUMN record_format INTEGER NOT NULL DEFAULT 2")
         db.execSQL("ALTER TABLE samples ADD COLUMN quality INTEGER NOT NULL DEFAULT 0")
+    }
+
+    /** Version 10: phone GPS for runs. run_info.gps records whether tracking actually started for the run. */
+    private fun addTrackSchema(db: SQLiteDatabase) {
+        db.execSQL("ALTER TABLE run_info ADD COLUMN gps INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("""CREATE TABLE run_track(session_id TEXT NOT NULL, time_ms INTEGER NOT NULL, lat REAL NOT NULL,
+            lon REAL NOT NULL, alt REAL, speed REAL, accuracy REAL NOT NULL, vertical_accuracy REAL)""")
+        db.execSQL("CREATE INDEX run_track_session_idx ON run_track(session_id, time_ms)")
     }
 
     private fun addOriginSchema(db: SQLiteDatabase) {
@@ -246,7 +256,7 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
         try {
             for (table in listOf("flash_samples", "download_samples")) db.execSQL(
                 "DELETE FROM $table WHERE capture_id IN (SELECT id FROM captures WHERE session_id=?)", arrayOf(id))
-            for (table in listOf("samples", "captures", "session_events", "test_markers", "sensor_health", "run_events", "run_verdicts", "run_info")) db.delete(table, "session_id=?", arrayOf(id))
+            for (table in listOf("samples", "captures", "session_events", "test_markers", "sensor_health", "run_events", "run_verdicts", "run_info", "run_track")) db.delete(table, "session_id=?", arrayOf(id))
             db.delete("sessions", "id=?", arrayOf(id))
             db.setTransactionSuccessful()
             return true
@@ -373,6 +383,7 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
             put("session_id", sessionId); put("target_beat", info.target.beatSeconds); put("target_depth", info.target.depthDegrees)
             put("target_label", info.targetLabel); put("window_size", info.windowSize); put("coach_boot", info.coachBoot)
             put("mode_before", org.json.JSONObject().apply { info.modeBefore.forEach { (side, mode) -> put(side, mode ?: org.json.JSONObject.NULL) } }.toString())
+            put("gps", if (info.gps) 1 else 0)
         }, SQLiteDatabase.CONFLICT_REPLACE)
     }
 
@@ -403,6 +414,16 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
         })
     }
 
+    @Synchronized fun addRunFix(sessionId: String, fix: GpsFix) {
+        writableDatabase.insertOrThrow("run_track", null, ContentValues().apply {
+            put("session_id", sessionId); put("time_ms", fix.timeMs); put("lat", fix.lat); put("lon", fix.lon)
+            if (fix.altM == null) putNull("alt") else put("alt", fix.altM)
+            if (fix.speedMps == null) putNull("speed") else put("speed", fix.speedMps)
+            put("accuracy", fix.accuracyM)
+            if (fix.verticalAccuracyM == null) putNull("vertical_accuracy") else put("vertical_accuracy", fix.verticalAccuracyM)
+        })
+    }
+
     @Synchronized fun runData(sessionId: String): RunData {
         val events = readableDatabase.rawQuery("SELECT side,sequence,start_ms,duration_ms,peak_roll,peak_rate,pitch,flags,received_ms FROM run_events WHERE session_id=? ORDER BY received_ms,rowid", arrayOf(sessionId)).use { c ->
             buildList { while (c.moveToNext()) add(RunEventRow(c.getString(0), c.getInt(1), c.getLong(2), c.getInt(3), c.getFloat(4), c.getFloat(5), c.getFloat(6), c.getInt(7), c.getLong(8))) }
@@ -411,11 +432,16 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
             buildList { while (c.moveToNext()) add(RunVerdictRow(c.getLong(0), c.getString(1), c.getString(2), c.getInt(3), c.getInt(4), c.getInt(5), c.getInt(6),
                 if (c.isNull(7)) null else c.getInt(7), c.getDouble(8), c.getDouble(9), c.getInt(10) != 0)) }
         }
-        val info = readableDatabase.rawQuery("SELECT target_beat,target_depth,target_label,window_size,coach_boot,mode_before,ended_by,first_turn_ms,last_turn_ms,gaps_json FROM run_info WHERE session_id=?", arrayOf(sessionId)).use { c ->
+        val info = readableDatabase.rawQuery("SELECT target_beat,target_depth,target_label,window_size,coach_boot,mode_before,ended_by,first_turn_ms,last_turn_ms,gaps_json,gps FROM run_info WHERE session_id=?", arrayOf(sessionId)).use { c ->
             if (c.moveToFirst()) RunInfoRow(c.getDouble(0), c.getDouble(1), c.getString(2), c.getInt(3), c.getString(4), c.getString(5), c.getString(6),
-                if (c.isNull(7)) null else c.getLong(7), if (c.isNull(8)) null else c.getLong(8), c.getString(9)) else null
+                if (c.isNull(7)) null else c.getLong(7), if (c.isNull(8)) null else c.getLong(8), c.getString(9), c.getInt(10) != 0) else null
         }
-        return RunData(events, verdicts, info)
+        val track = readableDatabase.rawQuery("SELECT time_ms,lat,lon,alt,speed,accuracy,vertical_accuracy FROM run_track WHERE session_id=? ORDER BY time_ms,rowid", arrayOf(sessionId)).use { c ->
+            buildList { while (c.moveToNext()) add(GpsFix(c.getLong(0), c.getDouble(1), c.getDouble(2),
+                if (c.isNull(3)) null else c.getDouble(3), if (c.isNull(4)) null else c.getDouble(4),
+                c.getFloat(5), if (c.isNull(6)) null else c.getFloat(6))) }
+        }
+        return RunData(events, verdicts, info, track)
     }
 
     @Synchronized fun finishSession(id: String, endedAtMs: Long) {

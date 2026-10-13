@@ -33,6 +33,7 @@ data class RunGap(val side: String, val startMs: Long, val endMs: Long)
 data class RunStartInfo(
     val startedAtMs: Long, val demo: Boolean, val target: CoachTarget, val targetLabel: String,
     val windowSize: Int, val coachBoot: String, val modeBefore: Map<String, Boolean?>,
+    val gps: Boolean = false,
 )
 data class RunEndInfo(val endedAtMs: Long, val endedBy: RunEnd, val firstTurnMs: Long?, val lastTurnMs: Long?, val gaps: List<RunGap>)
 
