@@ -13,3 +13,6 @@ firmware.zip
 local.properties
 **/build/
 .idea/
+
+# Local emulator/test run output
+test/*.log

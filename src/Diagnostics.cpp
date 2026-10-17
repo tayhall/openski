@@ -1,6 +1,7 @@
 #include "Diagnostics.h"
 
 #include <Arduino.h>
+#include <esp_system.h>
 
 #include "AppConfig.h"
 #include "ImuService.h"
@@ -20,6 +21,9 @@ void begin() {
   Serial.printf("Build: %s\n", config::kBuildId);
   Serial.printf("Chip: %s, revision %u\n", ESP.getChipModel(), ESP.getChipRevision());
   Serial.printf("Flash: %u bytes, heap: %u bytes\n", ESP.getFlashChipSize(), ESP.getFreeHeap());
+  const esp_reset_reason_t reason = esp_reset_reason();
+  Serial.printf("Reset reason: %d%s\n", static_cast<int>(reason),
+                reason == ESP_RST_BROWNOUT ? " (brownout: supply dipped)" : "");
   if (config::kWifiSsid[0] == '\0') {
     Serial.println("Wi-Fi unconfigured: copy include/wifi_config.example.h to include/wifi_config.h");
   }

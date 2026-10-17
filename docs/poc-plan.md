@@ -8,7 +8,7 @@ Status as of 6 October 2026. The goal is a trustworthy basic pipeline before any
 |---|---|
 | Sensors | MPU-6050 (GY-521 breakout) on an iSpindel 4.0 PCB with an 18650 and charger board. Running on a classic **ESP32 DevKit V1** for now (default PlatformIO environment `esp32-devkit-v1`, SDA 21 / SCL 22). |
 | Next hardware | ESP32-S3 Super Mini. The S3 has no GPIO22, so `kImuSclPin` must change and the board may need its own PlatformIO environment. Not started; do it when the board arrives, then repeat Phase 0. |
-| Firmware | 100 Hz IMU (±1000 °/s, ±8 g, ~42 Hz filter), 50 Hz BLE live stream, ~10 minutes of full-rate flash recording per boot. No battery level reported yet. |
+| Firmware | 100 Hz IMU (±1000 °/s, ±8 g, ~42 Hz filter), 50 Hz BLE live stream, ~10 minutes of full-rate flash recording per boot. Battery voltage is read on S3 Super Mini builds with a sense divider (see [battery diagnostics](battery-diagnostics.md)); not yet verified on a cell, and no charge percentage. |
 | App | Training path with drills on demo boots or a live boot; Geek mode keeps raw telemetry, test lab, flash recovery and session replay/export. The live drill flow has not been run on real hardware yet. |
 
 ## Decision: mount at the top of the cuff, near the calf
