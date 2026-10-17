@@ -2,7 +2,7 @@
 
 Companion to [turn metrics](turn-metrics.md). These are candidate calculations and starting parameters, to be tried on our own two-boot recordings and the public ski data ([datasets](skivids/sensor-research/06-open-datasets.md)). **Every number here is a starting value, not a validated threshold.** Where our data disagrees, our data wins, and the change is recorded in [bench results](bench-results.md).
 
-Provenance: they come from a static review of how a commercial ski app computes turn features, done in the separate research project (note 07 there, not in this repo). The calculations are small and physically motivated, and each can be re-derived from skiing physics. No trained model weights, regression coefficients or population-calibration constants from that app are included, and none should be added. Everything stays experimental dry-ski boot data, not on-snow technique scoring.
+The calculations are small and physically motivated, and each can be re-derived from skiing physics. Trained weights, regression coefficients and population-calibration constants are out of scope: ours come from our own data. Everything stays experimental dry-ski boot data, not on-snow technique scoring.
 
 ## Status key
 

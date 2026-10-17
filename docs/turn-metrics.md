@@ -4,7 +4,7 @@ Status: implemented as a pure Kotlin module (`TurnMetrics.kt`, tested in `TurnMe
 
 ## Why
 
-To learn which shape features of a roll excursion separate smooth, repeatable skiing from rough skiing **in our own recordings**, before choosing a scoring model or a sensor upgrade. Commercial systems score turns with an additive model over a dozen standardised metrics; the useful idea is that the score is a sum of readable per-metric contributions. We take the idea only. Thresholds and weights have to come from our own labelled data. No third-party weights or thresholds are used or stored in this repo.
+To learn which shape features of a roll excursion separate smooth, repeatable skiing from rough skiing **in our own recordings**, before choosing a scoring model or a sensor upgrade. A score built as a sum of readable per-metric contributions can be inspected and explained, which a black-box classifier cannot. Thresholds and weights have to come from our own labelled data.
 
 ## Candidate and window
 
@@ -28,7 +28,7 @@ Cross-boot: `TurnMetricsExtractor.agreement(first, second, startMs, endMs)` is t
 
 ## Design principles
 
-Four ideas to base measurements and interpretation on. They come from a static review of how a commercial product describes turn quality, and only the qualitative ideas are kept: no code, thresholds, constants or model weights from it are used here, and every number we use has to come from our own recordings. They are hypotheses about what separates good from poor skiing, to be checked against labelled data before any is treated as true. Each is phrased the way a ski instructor would say it.
+Four ideas to base measurements and interpretation on. Every number we use has to come from our own recordings. They are hypotheses about what separates good from poor skiing, to be checked against labelled data before any is treated as true. Each is phrased the way a ski instructor would say it.
 
 1. **Edge engagement should happen early, not late.** Look at the start of the turn separately from the whole turn. A rushed, late edge-set (typical of a skidded or defensive turn) and a smooth early commitment can have the same average roll rate over the turn yet look different in the first part. Do not collapse a turn into one summary number. `earlyRateDps` (first quarter of the shape window) exists for this reason; the window length is our choice and should be tuned on our data.
 2. **Left and right boots should move together, and that is agreement, not equal tilt.** Compare how each boot's roll *changes over time* (the shape of its roll rate and its derivative), not how far each is tilted. Two boots can sit at the same angle on average while one drags or stems into the turn. A fluid, parallel turn has both boots speeding up and slowing down at the same moments. This can be read from two raw boot traces with no trained model. The current `agreement` function correlates the roll curves, which is a coarser version; a derivative-based variant is the natural refinement and should be compared with it on real data.
