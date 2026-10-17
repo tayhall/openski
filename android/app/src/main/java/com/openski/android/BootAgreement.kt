@@ -39,14 +39,15 @@ object BootAgreement {
     private fun resample(rolls: List<BootRoll>, startMs: Double, endMs: Double, value: (BootRoll) -> Double): List<Double>? {
         if (endMs <= startMs) return null
         val w = rolls.filter { it.timeMs in startMs..endMs }.sortedBy { it.timeMs }
-        if (w.size < MIN_SAMPLES || w.zipWithNext().any { (p, q) -> q.timeMs - p.timeMs > MAX_GAP_MS }) return null
+        if (w.size < MIN_SAMPLES || w.zipWithNext().any { (p, q) -> q.timeMs - p.timeMs > MAX_GAP_MS } ||
+            w.first().timeMs - startMs > MAX_GAP_MS || endMs - w.last().timeMs > MAX_GAP_MS) return null
         var j = 0
         return (0 until GRID_POINTS).map { g ->
             val t = startMs + (endMs - startMs) * g / (GRID_POINTS - 1)
             while (j < w.size - 2 && w[j + 1].timeMs <= t) j++
             val p = w[j]
             val q = w[j + 1]
-            val f = ((t - p.timeMs) / (q.timeMs - p.timeMs)).coerceIn(0.0, 1.0)
+            val f = if (q.timeMs > p.timeMs) ((t - p.timeMs) / (q.timeMs - p.timeMs)).coerceIn(0.0, 1.0) else 0.0
             value(p) + (value(q) - value(p)) * f
         }
     }

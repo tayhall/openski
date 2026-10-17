@@ -55,4 +55,11 @@ class BootAgreementTest {
     @Test fun wedgeIsNullWhenBothStayNeutral() {
         assertNull(BootAgreement.wedgeFraction(boot("L", peak = 1.0), boot("R", peak = 1.0), 300.0, 1500.0))
     }
+
+    @Test fun windowStartingOrEndingInAGapIsNull() {
+        val gappy = boot("R").filter { it.timeMs !in 300.0..700.0 }
+        assertNull(BootAgreement.derivativeSimilarity(boot("L"), gappy, 300.0, 1500.0))
+        val tailGap = boot("R").filter { it.timeMs <= 1100.0 }
+        assertNull(BootAgreement.wedgeFraction(boot("L"), tailGap, 300.0, 1500.0))
+    }
 }
