@@ -26,6 +26,17 @@ Per-run spread (`TurnMetricsExtractor.summarise`): mean and sample SD per metric
 
 Cross-boot: `TurnMetricsExtractor.agreement(first, second, startMs, endMs)` is the Pearson correlation of the two boots' roll curves over a window, resampled to 50 points. The caller must give both boots the same sign convention. Null on gaps or too few samples. It is the nearest thing we have to "skis parallel", and says nothing about edge angle.
 
+## Design principles
+
+Four ideas to base measurements and interpretation on. They come from a static review of how a commercial product describes turn quality, and only the qualitative ideas are kept: no code, thresholds, constants or model weights from it are used here, and every number we use has to come from our own recordings. They are hypotheses about what separates good from poor skiing, to be checked against labelled data before any is treated as true. Each is phrased the way a ski instructor would say it.
+
+1. **Edge engagement should happen early, not late.** Look at the start of the turn separately from the whole turn. A rushed, late edge-set (typical of a skidded or defensive turn) and a smooth early commitment can have the same average roll rate over the turn yet look different in the first part. Do not collapse a turn into one summary number. `earlyRateDps` (first quarter of the shape window) exists for this reason; the window length is our choice and should be tuned on our data.
+2. **Left and right boots should move together, and that is agreement, not equal tilt.** Compare how each boot's roll *changes over time* (the shape of its roll rate and its derivative), not how far each is tilted. Two boots can sit at the same angle on average while one drags or stems into the turn. A fluid, parallel turn has both boots speeding up and slowing down at the same moments. This can be read from two raw boot traces with no trained model. The current `agreement` function correlates the roll curves, which is a coarser version; a derivative-based variant is the natural refinement and should be compared with it on real data.
+3. **Good weight transfer shows as rising load, not a dip towards weightless.** Vertical load that builds as weight commits onto the new edge suggests a committed turn. A large part of the turn spent near weightless suggests an unweighted, floaty or mistimed transition (except in deliberate powder or air moves, where the same quantity means something else). **Limit for us:** this needs vertical acceleration in a snow-relative frame, which a cuff-mounted IMU without a slope reference gives only noisily, so we do not report it yet. Treat it as a target for later hardware or fusion work, with the "too light" threshold set from our own data.
+4. **"Excellent" is a ceiling you approach.** The raw signal difference between poor and average is large; between strong and excellent it is small and subtle, matching how coaching gains arrive (fast early, fine refinements late). If we ever combine metrics into a score, use a saturating, log-like curve per metric and not a linear one, with the shape fitted to our own distributions. Keep the score additive and inspectable so each metric's contribution can be shown.
+
+How these map to what is built: principle 1 is `earlyRateDps`, principle 2 is `agreement` (with the derivative variant still to do), principle 3 is not measurable with the current placement, and principle 4 applies only if a combined score is added.
+
 ## Not available from this IMU placement
 
 True edge angle (no snow reference), pressure, weight release and lateral g in a snow frame (cuff mount, no slope plane). Do not label any metric above with those names.
@@ -34,5 +45,6 @@ True edge angle (no snow reference), pressure, weight release and lateral g in a
 
 1. Run the extractor over real recorded sessions and look at the distributions per drill and per skier (no UI needed; a replay test or a CSV export is enough).
 2. Check that each metric moves in the expected direction on labelled good and rough repetitions of the same drill.
-3. Only then decide on a combined score, and keep it additive and inspectable.
-4. If wired into export, add a `turn-metrics.csv` and keep the experimental caveat in the header and in `analysis-summary.json`.
+3. Try the derivative-based boot agreement from principle 2 next to the roll-curve correlation and keep whichever separates smooth from rough repetitions better.
+4. Only then decide on a combined score, and keep it additive and inspectable (principle 4).
+5. If wired into export, add a `turn-metrics.csv` and keep the experimental caveat in the header and in `analysis-summary.json`.
