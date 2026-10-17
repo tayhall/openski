@@ -35,6 +35,8 @@ Four ideas to base measurements and interpretation on. They come from a static r
 3. **Good weight transfer shows as rising load, not a dip towards weightless.** Vertical load that builds as weight commits onto the new edge suggests a committed turn. A large part of the turn spent near weightless suggests an unweighted, floaty or mistimed transition (except in deliberate powder or air moves, where the same quantity means something else). **Limit for us:** this needs vertical acceleration in a snow-relative frame, which a cuff-mounted IMU without a slope reference gives only noisily, so we do not report it yet. Treat it as a target for later hardware or fusion work, with the "too light" threshold set from our own data.
 4. **"Excellent" is a ceiling you approach.** The raw signal difference between poor and average is large; between strong and excellent it is small and subtle, matching how coaching gains arrive (fast early, fine refinements late). If we ever combine metrics into a score, use a saturating, log-like curve per metric and not a linear one, with the shape fitted to our own distributions. Keep the score additive and inspectable so each metric's contribution can be shown.
 
+Starter calculations and parameters to try for each are in [turn metric starters](turn-metric-starters.md).
+
 How these map to what is built: principle 1 is `earlyRateDps`, principle 2 is `agreement` (with the derivative variant still to do), principle 3 is not measurable with the current placement, and principle 4 applies only if a combined score is added.
 
 ## Not available from this IMU placement
