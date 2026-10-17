@@ -32,6 +32,17 @@ inline constexpr int kImuSdaPin = OPENSKI_IMU_SDA_PIN;
 inline constexpr int kImuSclPin = OPENSKI_IMU_SCL_PIN;
 inline constexpr uint8_t kImuI2cAddress = 0x68;
 inline constexpr uint32_t kImuI2cFrequencyHz = 400000;
+// Battery sense: an ADC1 pin at the midpoint of a resistor divider across the cell. Only builds that
+// define OPENSKI_BATTERY_ADC_PIN sample it. The ratio is (top + bottom) / bottom: 2.0 for 1k + 1k.
+#ifdef OPENSKI_BATTERY_ADC_PIN
+inline constexpr int kBatteryAdcPin = OPENSKI_BATTERY_ADC_PIN;
+#else
+inline constexpr int kBatteryAdcPin = -1;
+#endif
+#ifndef OPENSKI_BATTERY_DIVIDER_RATIO
+#define OPENSKI_BATTERY_DIVIDER_RATIO 2.0f
+#endif
+inline constexpr float kBatteryDividerRatio = OPENSKI_BATTERY_DIVIDER_RATIO;
 // Which sensor axis points up the leg, forward and sideways when the board sits in its cuff clip,
 // and the sign that makes it point that way. Assumed for the first mounting: board length (y) up
 // the leg, holes edge (x) forward, header side (z) as the lateral axis. Confirm against the real

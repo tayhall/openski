@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "AppConfig.h"
+#include "BatteryService.h"
 #include "BluetoothService.h"
 #include "ImuService.h"
 #include "Mpu6050Profile.h"
@@ -174,16 +175,41 @@ void handleRoot() {
   server.send(200, "text/plain", "OpenSki sensor API: GET /api/v1/imu, GET /api/v1/status (Bluetooth diagnostics)");
 }
 
+void formatBatteryVolts(char* out, size_t size, const battery::Reading& reading) {
+  if (reading.valid) {
+    snprintf(out, size, "%.3f", reading.volts);
+  } else {
+    snprintf(out, size, "null");
+  }
+}
+
+void handleBattery() {
+  const battery::Reading reading = battery::reading();
+  char volts[16];
+  formatBatteryVolts(volts, sizeof(volts), reading);
+  char body[256];
+  snprintf(body, sizeof(body),
+           "{\"available\":%s,\"battery_voltage_v\":%s,\"pin_mv\":%.1f,\"divider_ratio\":%.2f,"
+           "\"samples_per_reading\":16,\"interval_ms\":60000,\"age_ms\":%lu,"
+           "\"charge_percent\":null}",
+           reading.available ? "true" : "false", volts, reading.pinMillivolts, config::kBatteryDividerRatio,
+           static_cast<unsigned long>(reading.ageMs));
+  server.send(200, "application/json", body);
+}
+
 void handleStatus() {
   const bluetooth::Diagnostics ble = bluetooth::diagnostics();
-  char body[1024];
+  char batteryVolts[16];
+  formatBatteryVolts(batteryVolts, sizeof(batteryVolts), battery::reading());
+  char body[1100];
   snprintf(body, sizeof(body),
            "{\"device\":\"%s\",\"build\":\"%s\",\"uptime_ms\":%llu,"
            "\"reset_reason\":%d,\"free_heap_bytes\":%lu,\"wifi_rssi_dbm\":%d,"
            "\"ble\":{\"connected\":%s,\"advertising\":%s,\"connections\":%lu,"
            "\"disconnections\":%lu,\"last_connected_ms\":%llu,"
            "\"last_disconnected_ms\":%llu,\"last_disconnect_reason\":%d},"
-           "\"imu_samples\":%lu,\"imu_read_failures\":%lu}",
+           "\"imu_samples\":%lu,\"imu_read_failures\":%lu,\"battery_voltage_v\":%s,"
+           "\"power_profile\":\"%s\"}",
            config::kHostname, config::kBuildId,
            static_cast<unsigned long long>(esp_timer_get_time() / 1000ULL),
            static_cast<int>(esp_reset_reason()), static_cast<unsigned long>(ESP.getFreeHeap()), WiFi.RSSI(),
@@ -192,7 +218,8 @@ void handleStatus() {
            static_cast<unsigned long long>(ble.lastConnectedMs),
            static_cast<unsigned long long>(ble.lastDisconnectedMs), ble.lastDisconnectReason,
            static_cast<unsigned long>(imu::monitor().stats().samples),
-           static_cast<unsigned long>(imu::monitor().stats().readFailures));
+           static_cast<unsigned long>(imu::monitor().stats().readFailures), batteryVolts,
+           battery::brownoutBoot() ? "safe_after_brownout" : "normal");
   server.send(200, "application/json", body);
 }
 
@@ -311,7 +338,7 @@ void handleAdcDiagnostic() {
                 "\"attenuation\":\"11db\",\"samples_per_pin\":16,\"pins\":[";
   bool first = true;
   for (uint8_t pin : pins) {
-    if (pin == config::kImuSdaPin || pin == config::kImuSclPin) continue;
+    if (pin == config::kImuSdaPin || pin == config::kImuSclPin || pin == config::kBatteryAdcPin) continue;
     analogSetPinAttenuation(pin, ADC_11db);
     analogRead(pin);  // Discard initial conversion after channel setup.
     uint32_t rawSum = 0, mvSum = 0, minMv = UINT32_MAX, maxMv = 0;
@@ -344,6 +371,7 @@ void begin() {
   server.on("/api/v1/acquisition", HTTP_GET, handleAcquisition);
   server.on("/api/v1/motion", HTTP_GET, handleMotion);
   server.on("/api/v1/motion/zero", HTTP_POST, handleZero);
+  server.on("/api/v1/battery", HTTP_GET, handleBattery);
   server.on("/api/v1/status", HTTP_GET, handleStatus);
   server.on("/api/v1/ble", HTTP_GET, handleStatus);
   server.onNotFound(handleNotFound);

@@ -538,7 +538,7 @@ void begin() {
 }
 
 bool connected() { return clientConnected; }
-bool advertisingNow() { return NimBLEDevice::getAdvertising()->isAdvertising(); }
+bool advertisingNow() { return server != nullptr && NimBLEDevice::getAdvertising()->isAdvertising(); }
 Diagnostics diagnostics() {
   portENTER_CRITICAL(&diagnosticsMux);
   const Diagnostics snapshot = connectionDiagnostics;
@@ -548,7 +548,8 @@ Diagnostics diagnostics() {
 bool recording() { return recorder::status().recording; }
 
 void tick() {
-  if (server != nullptr && !clientConnected && !advertising) {
+  if (server == nullptr) return;  // BLE was not started (safe boot after a brownout)
+  if (!clientConnected && !advertising) {
     NimBLEDevice::startAdvertising();
     advertising = true;
   }
