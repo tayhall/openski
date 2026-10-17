@@ -61,4 +61,17 @@ class YawTurnShapeTest {
         assertNull(YawTurnShape.turnShape(emptyList(), 0.0, 1000.0))
         assertNull(YawTurnShape.turnClosure(r, 0.0, 50.0))
     }
+
+    @Test fun windowMissingItsStartOrEndIsNull() {
+        val rolls = (0..100).map { BootRoll("L", it * 10.0, 0.0, 0.0, yawRateRadps = 1.0, yawDegrees = it.toDouble()) }
+        assertNull(YawTurnShape.turnShape(rolls, 0.0, 2000.0))
+        assertNull(YawTurnShape.turnClosure(rolls, -500.0, 1000.0))
+        assertNotNull(YawTurnShape.turnShape(rolls, 0.0, 1000.0))
+    }
+
+    @Test fun closureAcrossASegmentChangeIsNull() {
+        val rolls = (0..100).map { BootRoll("L", it * 10.0, 0.0, 0.0, segment = if (it < 50) 0 else 1, yawDegrees = it.toDouble()) }
+        assertNull(YawTurnShape.turnClosure(rolls, 0.0, 1000.0))
+        assertNotNull(YawTurnShape.turnClosure(rolls.filter { it.segment == 0 }, 0.0, 490.0))
+    }
 }

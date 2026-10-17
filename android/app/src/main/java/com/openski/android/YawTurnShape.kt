@@ -4,7 +4,8 @@ import kotlin.math.abs
 
 /**
  * Experimental yaw-based descriptors of one turn window for one boot. All return null when the window has
- * fewer than [MIN_SAMPLES] samples or a gap over [MAX_GAP_MS].
+ * fewer than [MIN_SAMPLES] samples, a gap over [MAX_GAP_MS] (including at either end of the window), and,
+ * for yaw ranges, when the window spans an orientation segment change.
  */
 object YawTurnShape {
     const val MAX_GAP_MS = 100.0
@@ -13,7 +14,8 @@ object YawTurnShape {
 
     private fun window(rolls: List<BootRoll>, startMs: Double, endMs: Double): List<BootRoll>? {
         val w = rolls.filter { it.timeMs in startMs..endMs }.sortedBy { it.timeMs }
-        if (w.size < MIN_SAMPLES || w.zipWithNext().any { (a, b) -> b.timeMs - a.timeMs > MAX_GAP_MS }) return null
+        if (w.size < MIN_SAMPLES || w.zipWithNext().any { (a, b) -> b.timeMs - a.timeMs > MAX_GAP_MS } ||
+            w.first().timeMs - startMs > MAX_GAP_MS || endMs - w.last().timeMs > MAX_GAP_MS) return null
         return w
     }
 
@@ -27,6 +29,7 @@ object YawTurnShape {
     /** Range (max minus min) of yaw over the first half of the window, in degrees. */
     fun turnClosure(rolls: List<BootRoll>, startMs: Double, endMs: Double): Double? {
         val w = window(rolls, startMs, endMs) ?: return null
+        if (w.any { it.segment != w.first().segment }) return null  // yaw is relative and restarts at a segment change
         val half = w.filter { it.timeMs <= startMs + (endMs - startMs) / 2 }.map { it.yawDegrees }
         return if (half.isEmpty()) null else half.max() - half.min()
     }

@@ -36,6 +36,16 @@ object BootAgreement {
         return used.count { a[it] * b[it] < 0 }.toDouble() / used.size
     }
 
+    /** Pearson correlation of the two boots' roll curves (degrees) on the common grid; null on the shared gap rules. */
+    fun rollCurveCorrelation(first: List<BootRoll>, second: List<BootRoll>, startMs: Double, endMs: Double): Double? {
+        val a = resample(first, startMs, endMs) { it.degrees } ?: return null
+        val b = resample(second, startMs, endMs) { it.degrees } ?: return null
+        val ma = a.average(); val mb = b.average()
+        val cov = a.indices.sumOf { (a[it] - ma) * (b[it] - mb) }
+        val va = a.sumOf { (it - ma) * (it - ma) }; val vb = b.sumOf { (it - mb) * (it - mb) }
+        return if (va <= 0 || vb <= 0) null else cov / sqrt(va * vb)
+    }
+
     private fun resample(rolls: List<BootRoll>, startMs: Double, endMs: Double, value: (BootRoll) -> Double): List<Double>? {
         if (endMs <= startMs) return null
         val w = rolls.filter { it.timeMs in startMs..endMs }.sortedBy { it.timeMs }

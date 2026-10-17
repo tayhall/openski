@@ -17,14 +17,17 @@ A candidate is a `DryMovement` from `DrySkiAnalysis` (roll leaves neutral by 8 d
 | `peakDegrees` | Peak absolute roll | How far the boot rolled |
 | `durationMs` | Detector start to end | Turn time |
 | `buildMs` | Time from 10% to 80% of peak, up to the peak | Fast = decisive edge change |
-| `earlyRateDps` | Mean absolute roll rate over the first quarter of the shape window | How early the edge is engaged |
+| `earlyRateDps` | Median absolute roll rate (after a 3-sample rolling mean) over the first quarter of the shape window | How early the edge is engaged |
 | `peakPhase` | Peak position in the shape window, 0 to 1 | Early or late peak |
 | `roughness` | RMS roll acceleration (second difference) divided by peak | Jerky edging |
 | `headingChangeDegrees` | Heading-rate lobe with the greatest overlap | Rotation about vertical during the roll |
+| `edgeHold` | Median absolute roll over the middle 10 to 80% of the shape window, divided by the square root of the peak. Null if the window has no span. Not the same as `buildMs` | Sustained edge versus a brief spike |
+| `entryDegrees` | Roll at the first sample of the shape window | The turn's own starting roll, so roll can be judged relative to it |
+| `peakFromEntryDegrees` | Peak roll minus the entry roll, in the turn's direction | Edge change not caused by a non-zero starting roll |
 
 Per-run spread (`TurnMetricsExtractor.summarise`): mean and sample SD per metric, null below two turns. Repeatability (SD) is the main thing to look at first.
 
-Cross-boot: `TurnMetricsExtractor.agreement(first, second, startMs, endMs)` is the Pearson correlation of the two boots' roll curves over a window, resampled to 50 points. The caller must give both boots the same sign convention. Null on gaps or too few samples. It is the nearest thing we have to "skis parallel", and says nothing about edge angle.
+Cross-boot: `BootAgreement` (also `wedgeFraction`) and `YawTurnShape` (turn shape, turn closure, roll-versus-yaw lead) are separate experimental modules, described in [turn metric starters](turn-metric-starters.md). `TurnMetricsExtractor.agreement(first, second, startMs, endMs)` is the Pearson correlation of the two boots' roll curves over a window, resampled to 50 points. The caller must give both boots the same sign convention. Null on gaps or too few samples. It is the nearest thing we have to "skis parallel", and says nothing about edge angle.
 
 ## Design principles
 
@@ -37,7 +40,7 @@ Four ideas to base measurements and interpretation on. Every number we use has t
 
 Starter calculations and parameters to try for each are in [turn metric starters](turn-metric-starters.md).
 
-How these map to what is built: principle 1 is `earlyRateDps`, principle 2 is `agreement` (with the derivative variant still to do), principle 3 is not measurable with the current placement, and principle 4 applies only if a combined score is added.
+How these map to what is built: principle 1 is `earlyRateDps`, principle 2 is `BootAgreement.derivativeSimilarity` (the roll-curve correlation `agreement`, now sharing its resampler, is kept to compare against), principle 3 is not measurable with the current placement, and principle 4 applies only if a combined score is added.
 
 ## Not available from this IMU placement
 

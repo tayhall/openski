@@ -122,4 +122,17 @@ class TurnMetricsTest {
         assertTrue(s.peakDegrees!!.sd > 0)
         assertNull(TurnMetricsExtractor.summarise(turns.take(1)).peakDegrees)
     }
+
+    @Test fun zeroSpanWindowYieldsNullEdgeHoldNotZero() {
+        val same = (0 until 12).map { BootRoll("L", 500.0, if (it == 0) 0.0 else 0.5, 0.0) }
+        val m = TurnMetricsExtractor.extract(same, listOf(DryMovement(500.0, 500.0, true, 30.0)), emptyList()).single()
+        assertNull(m.edgeHold)
+        assertTrue(TurnMetricsExtractor.summarise(listOf(m, m)).edgeHold == null)
+    }
+
+    @Test fun rollCurveAgreementRejectsAWindowThatStartsInAGap() {
+        val left = lean(30.0, 1200.0)
+        val gappy = left.map { it.copy(side = "R") }.filter { it.timeMs !in 300.0..700.0 }
+        assertNull(TurnMetricsExtractor.agreement(left, gappy, 300.0, 1500.0))
+    }
 }
