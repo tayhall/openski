@@ -13,20 +13,36 @@ data class TurnMetrics(
     val peakDegrees: Double, val durationMs: Double,
     /** Time for the roll to go from 10% to 80% of its peak. */
     val buildMs: Double?,
-    /** Mean absolute roll rate over the first quarter of the excursion (deg/s). */
+    /**
+     * Median absolute roll rate over the first quarter of the shape window (deg/s), after a 3-sample rolling
+     * mean of the rate, so one noisy sample cannot dominate.
+     */
     val earlyRateDps: Double?,
     /** Where the peak falls in the excursion, 0 (start) to 1 (end). */
     val peakPhase: Double?,
     /** RMS roll acceleration divided by peak roll (1/s^2); jerky edging scores higher. */
     val roughness: Double?,
     /** Heading change of the overlapping heading-rate lobe, if one overlaps. */
-    val headingChangeDegrees: Double?
+    val headingChangeDegrees: Double?,
+    /**
+     * Median absolute roll over the middle 10 to 80% (by time) of the shape window, divided by sqrt([peakDegrees]).
+     * Higher means the edge is held rather than peaked. Not [buildMs], which is the time from 10% to 80% of the peak.
+     */
+    val edgeHold: Double? = null,
+    /**
+     * Roll at the first sample of the shape window, signed. Needs a gap-free window but not the near-neutral ends
+     * the shape metrics need, so a turn that starts off neutral still reports where it started.
+     */
+    val entryDegrees: Double? = null,
+    /** [peakDegrees] measured from [entryDegrees] in the turn's direction (entry on the turn's side is subtracted). */
+    val peakFromEntryDegrees: Double? = null
 )
 
 data class MetricSpread(val mean: Double, val sd: Double)
 data class TurnMetricsSummary(
     val count: Int, val peakDegrees: MetricSpread?, val durationMs: MetricSpread?, val buildMs: MetricSpread?,
-    val earlyRateDps: MetricSpread?, val peakPhase: MetricSpread?, val roughness: MetricSpread?
+    val earlyRateDps: MetricSpread?, val peakPhase: MetricSpread?, val roughness: MetricSpread?,
+    val edgeHold: MetricSpread? = null
 )
 
 object TurnMetricsExtractor {
@@ -40,6 +56,8 @@ object TurnMetricsExtractor {
         return movements.map { m ->
             val window = shapeWindow(ordered, m)
             val usable = window.size >= MIN_SAMPLES && abs(window.first().degrees) <= NEUTRAL_DEGREES && abs(window.last().degrees) <= NEUTRAL_DEGREES && window.zipWithNext().all { (a, b) -> b.timeMs - a.timeMs in 0.0..MAX_GAP_MS }
+            val continuous = window.size >= MIN_SAMPLES && window.zipWithNext().all { (a, b) -> b.timeMs - a.timeMs in 0.0..MAX_GAP_MS }
+            val entry = if (continuous) window.first().degrees else null
             val duration = m.endMs - m.startMs
             val span = if (window.size >= 2) window.last().timeMs - window.first().timeMs else 0.0
             val abs = window.map { abs(it.degrees) }
@@ -54,7 +72,10 @@ object TurnMetricsExtractor {
                 earlyRateDps = if (usable) earlyRate(window, window.first().timeMs, span) else null,
                 peakPhase = if (usable && peakIndex != null && span > 0) (window[peakIndex].timeMs - window.first().timeMs) / span else null,
                 roughness = if (usable && m.peakRoll > 0) roughness(window) / m.peakRoll else null,
-                headingChangeDegrees = heading?.changeDegrees
+                headingChangeDegrees = heading?.changeDegrees,
+                edgeHold = if (usable && m.peakRoll > 0) edgeHold(window, abs, span) / sqrt(m.peakRoll) else null,
+                entryDegrees = entry,
+                peakFromEntryDegrees = entry?.let { m.peakRoll - (if (m.positive) it else -it) }
             )
         }
     }
@@ -80,8 +101,22 @@ object TurnMetricsExtractor {
     }
 
     private fun earlyRate(window: List<BootRoll>, start: Double, duration: Double): Double? {
-        val early = window.filter { it.timeMs <= start + duration / 4 }
-        return if (early.isEmpty()) null else early.map { abs(Math.toDegrees(it.rollRateRadps)) }.average()
+        val rates = window.map { Math.toDegrees(it.rollRateRadps) }
+        val smooth = rates.indices.map { i -> rates.subList(maxOf(0, i - 1), minOf(rates.size, i + 2)).average() }
+        val early = window.indices.filter { window[it].timeMs <= start + duration / 4 }.map { abs(smooth[it]) }
+        return median(early)
+    }
+
+    private fun edgeHold(window: List<BootRoll>, abs: List<Double>, span: Double): Double {
+        val t0 = window.first().timeMs
+        val mid = abs.filterIndexed { i, _ -> (window[i].timeMs - t0) / span in 0.1..0.8 }
+        return median(mid) ?: 0.0
+    }
+
+    private fun median(v: List<Double>): Double? {
+        if (v.isEmpty()) return null
+        val s = v.sorted()
+        return if (s.size % 2 == 1) s[s.size / 2] else (s[s.size / 2 - 1] + s[s.size / 2]) / 2
     }
 
     /** RMS of the second difference of roll, in deg/s^2. */
@@ -124,7 +159,8 @@ object TurnMetricsExtractor {
     fun summarise(turns: List<TurnMetrics>): TurnMetricsSummary = TurnMetricsSummary(
         turns.size, spread(turns.map { it.peakDegrees }), spread(turns.map { it.durationMs }),
         spread(turns.mapNotNull { it.buildMs }), spread(turns.mapNotNull { it.earlyRateDps }),
-        spread(turns.mapNotNull { it.peakPhase }), spread(turns.mapNotNull { it.roughness })
+        spread(turns.mapNotNull { it.peakPhase }), spread(turns.mapNotNull { it.roughness }),
+        spread(turns.mapNotNull { it.edgeHold })
     )
 
     private fun spread(v: List<Double>): MetricSpread? {
