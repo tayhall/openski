@@ -223,3 +223,26 @@ Flashed the `esp32-s3-supermini-research` binary to `ski-s3` at 192.168.43.28 vi
 A short HTTP smoke check counted 1,021 successful samples over approximately 10.165 s between request midpoints (about 100.4 Hz; request durations 0.187 s and 0.142 s, so this is an approximate rate). Read failures and near-rail counters remained zero. One >20 ms gap was already present at the first post-boot observation, maximum interval 20,039 microseconds; no additional gap appeared during the timed check. The cause of that early gap was not established.
 
 This verifies OTA restart, profile selection and basic acquisition health only. Scale/sign, noise, dynamic filter delay, flash/BLE load, recogniser timing and synchronised skiing validation remain outstanding. The classic ESP32 was unreachable and was not flashed.
+
+## 2026-10-17: vertical-load feasibility on a ski-mounted IMU (public data, not our hardware)
+
+Question: is the tilt-compensated vertical acceleration in the starter calculations (row 5 of [turn metric starters](turn-metric-starters.md)) usable as a weight-on-ski measure? This is the only open ski IMU set with real downhill runs, so it was the cheapest first look. **It is not our sensor and not a boot cuff**, so it cannot confirm or rule out the idea for OpenSki; it only shows what a ski-mounted signal does.
+
+**Data.** Beuken et al., *Distributed IMU Sensors on an Alpine Ski*, Sensors 2024, 24, 1805 (Kaggle `leopoldbeuken/distributed-imu-sensors-on-an-alpine-ski`, Apache 2.0). File `Outdoor Testing/Outdoor Testing/1_23/run10.txt`: 175 s, about 714 Hz, ten TDK ICM-42688-class IMUs on the top of one ski, accelerometer range +-16 g, easy blue run, expert or intermediate skier. The run notes say runs 7 to 10 were good data and that a quarter turn was added to the front-half sensors. Per the paper the layout is five sensors on the forebody, one under the boot and four on the aftbody; mapping the under-boot sensor to IMU 5 is my inference from the count and was not confirmed against the file.
+
+**Method.** Orientation from VQF (6D), world-frame vertical specific force in g, zero-phase 3rd-order Butterworth low-pass. The roll-only projection from row 5 was compared with the full quaternion vertical. Turns were crudely segmented from zero crossings of the low-passed turn angle (roll, or pitch on IMU 5 because of the quarter-turn mounting), keeping segments of 0.6 to 6 s with at least 10 degrees of peak. The scripts and data are in a scratch folder and are not in the repo.
+
+| Check | Result |
+|---|---|
+| Raw accelerometer magnitude within 15% of 1 g | 12% to 25% of samples across the ten IMUs (the earlier note reported 21% for one IMU) |
+| Samples with any axis at or above 15.5 g | 0% to 2% by this count. An earlier research note reported 13% to 35% clipping under a different definition; the two were not reconciled |
+| Median vertical load | 1.01 to 1.03 g on every IMU checked, so the maths is sound |
+| Share below 0.25 g | Depends on the low-pass cutoff: 0 to 0.6% at 3 Hz, 0.6% to 3.7% at 6 Hz, 3.9% to 19.6% at 12 Hz; values below -2 g appear at 12 Hz on some IMUs. A fixed 0.25 g threshold has no stable meaning here |
+| Roll-only projection against the full quaternion vertical (6 Hz) | correlation 0.90 to 0.99, error 0.05 to 0.13 g, with the ski's lateral axis. Both use the same orientation estimate, so this is not independent validation |
+| Load at turn apex against turn transitions | IMU 0: 1.05 g against 1.04 g (apex higher in 45% of 75 segments). IMU 5, using pitch: 1.04 g against 1.02 g (48% of 77). IMU 6: 1.01 g against 1.06 g (49% of 77). The expected rise mid-turn and dip between turns was not seen |
+| Position of the load minimum within a turn | median 0.37 (IMU 0), 0.40 (IMU 5), 0.58 (IMU 6); only 32% to 43% fall in the middle 30% to 70% |
+| Vertical-load correlation between IMUs on the same ski (6 Hz) | 0.08 to 0.67 across the four compared (one pair negative) |
+
+**Reading.** On a ski, the filtered vertical signal is dominated by vibration and position, not weight transfer: it does not follow the apex and transition pattern, its low-load share is set mostly by the filter, and IMUs on one rigid-looking ski disagree. This does not show a boot-cuff signal would behave the same: a ski carries far more vibration and impact than a cuff, "vertical" here is true vertical and not the slope normal, and the turn segmentation was rough (about 75 segments against roughly 25 clean left-right cycles counted earlier, so it includes chatter). Rows 6 (weightless fraction) and 12 (weight-transfer timing) therefore stay unbuilt until we have a boot-mounted two-boot recording with a load reference such as scales under each boot. The paper also says the system was built to measure ski vibration and bending, not skier load, and that its under-boot orientation estimates agreed with boot-camera footage; that supports using roll and pitch from the boot, not load.
+
+**Not done.** Only run10 was analysed. The other nine runs in the same folder, the lab files with optical ground truth and the 4_29 and 5_17 sessions were not used.

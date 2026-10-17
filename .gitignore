@@ -16,3 +16,8 @@ local.properties
 
 # Local emulator/test run output
 test/*.log
+
+# Large third-party downloads kept at the repo root for analysis
+/archive.zip
+/sensors-*.pdf
+/run*.txt.zip

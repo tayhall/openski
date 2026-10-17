@@ -42,6 +42,46 @@ class TurnMetricsTest {
         assertEquals(a.peakDegrees, b.peakDegrees, 3.0)
     }
 
+    @Test fun edgeHoldOfAHalfSineMatchesTheAnalyticMedian() {
+        // median of sin(pi x) over x in [0.1, 0.8] is sin(0.325 pi) = 0.853, so edgeHold = 0.853 * sqrt(30)
+        val rolls = lean(30.0, 1200.0)
+        val m = TurnMetricsExtractor.extract(rolls, move(rolls), emptyList()).single()
+        assertEquals(0.853 * sqrt(30.0), m.edgeHold!!, 0.4)
+        assertEquals(m.edgeHold!!, TurnMetricsExtractor.summarise(listOf(m, m)).edgeHold!!.mean, 1e-9)
+    }
+
+    @Test fun aFlatToppedLeanHoldsMoreThanASpikyOne() {
+        val base = lean(30.0, 1200.0)
+        fun shaped(f: (Double) -> Double) = base.map { r ->
+            val x = (r.timeMs - 300.0) / 1200.0
+            if (x in 0.0..1.0) r.copy(degrees = 30 * f(sin(PI * x))) else r
+        }
+        val mv = listOf(DryMovement(300.0, 1500.0, true, 30.0))
+        val flat = shaped { min(1.0, 2.0 * it) }
+        val spiky = shaped { it.pow(3) }
+        val a = TurnMetricsExtractor.extract(flat, mv, emptyList()).single().edgeHold!!
+        val b = TurnMetricsExtractor.extract(spiky, mv, emptyList()).single().edgeHold!!
+        assertTrue("flat $a spiky $b", a > b * 1.2)
+    }
+
+    @Test fun reportsEntryRollAndPeakRelativeToIt() {
+        val offset = lean(30.0, 1200.0).map { it.copy(degrees = it.degrees + 5.0) }
+        val m = TurnMetricsExtractor.extract(offset, listOf(DryMovement(300.0, 1500.0, true, 30.0)), emptyList()).single()
+        assertEquals(5.0, m.entryDegrees!!, 0.01)
+        assertEquals(25.0, m.peakFromEntryDegrees!!, 0.01)
+        assertEquals(30.0, m.peakDegrees, 0.01)
+        val flat = lean(30.0, 1200.0)
+        assertEquals(30.0, TurnMetricsExtractor.extract(flat, move(flat), emptyList()).single().peakFromEntryDegrees!!, 2.5)
+    }
+
+    @Test fun earlyRateUsesTheMedianSoASpikeDoesNotMoveIt() {
+        val clean = lean(30.0, 1200.0)
+        val spike = clean.mapIndexed { i, r -> if (i == 40) r.copy(rollRateRadps = 50.0) else r }
+        val a = TurnMetricsExtractor.extract(clean, move(clean), emptyList()).single().earlyRateDps!!
+        val b = TurnMetricsExtractor.extract(spike, move(spike), emptyList()).single().earlyRateDps!!
+        assertEquals(a, b, a * 0.2)
+    }
+
     @Test fun lateEdgeShiftsPeakPhase() {
         val rolls = lean(30.0, 1200.0)
         val early = TurnMetricsExtractor.extract(rolls, move(rolls), emptyList()).single()
@@ -81,5 +121,18 @@ class TurnMetricsTest {
         assertEquals(turns.size, s.count)
         assertTrue(s.peakDegrees!!.sd > 0)
         assertNull(TurnMetricsExtractor.summarise(turns.take(1)).peakDegrees)
+    }
+
+    @Test fun zeroSpanWindowYieldsNullEdgeHoldNotZero() {
+        val same = (0 until 12).map { BootRoll("L", 500.0, if (it == 0) 0.0 else 0.5, 0.0) }
+        val m = TurnMetricsExtractor.extract(same, listOf(DryMovement(500.0, 500.0, true, 30.0)), emptyList()).single()
+        assertNull(m.edgeHold)
+        assertTrue(TurnMetricsExtractor.summarise(listOf(m, m)).edgeHold == null)
+    }
+
+    @Test fun rollCurveAgreementRejectsAWindowThatStartsInAGap() {
+        val left = lean(30.0, 1200.0)
+        val gappy = left.map { it.copy(side = "R") }.filter { it.timeMs !in 300.0..700.0 }
+        assertNull(TurnMetricsExtractor.agreement(left, gappy, 300.0, 1500.0))
     }
 }
