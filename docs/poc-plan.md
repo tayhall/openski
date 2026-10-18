@@ -201,6 +201,8 @@ From [research findings](research-findings.md). None has been run on this hardwa
 
 ## Next hardware: XIAO ESP32S3 + LSM6DSOX (built, untested on hardware)
 
+The first on-hardware run is planned in [garden trial protocol](garden-trial-protocol.md).
+
 Status: firmware compiles and the driver passes host tests with a fake I2C device. **No board has run it.** Nothing here is bench-validated; the acquisition profile (`openski_lsm6dsox_v1`) must be checked on the bench before any field use.
 
 - Env `xiao-esp32s3-lsm6dsox` (and `-ota`): board `seeed_xiao_esp32s3` (8 MB flash), partition table `partitions/xiao-esp32s3-8mb.csv` (2 MB x 2 app slots, about 3.9 MB SPIFFS recorder, so a longer retained recording than the 4 MB boards), hostname `ski-xiao`. Existing envs still use the MPU-6050 and are unchanged; the LSM6DSOX is selected by `-DOPENSKI_IMU_LSM6DSOX`, which also moves the default I2C address to 0x6A (`OPENSKI_IMU_I2C_ADDRESS` overrides).
