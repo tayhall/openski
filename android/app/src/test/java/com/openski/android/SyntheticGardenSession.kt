@@ -86,8 +86,9 @@ data class GardenParams(
 
 /**
  * Known-truth torso for the phone rows: lean = [leanGain] x the left boot's roll (about the torso's forward axis), torso
- * heading rate = [yawGain] x the boot heading rate; the phone sits at the fixed rotation [pocket] (torso to phone) and the
- * game rotation vector has the arbitrary yaw reference [gameYawRad]. Noise is fixed to the torso.
+ * heading rate = [yawGain] x the boot heading rate; the phone sits at the fixed rotation [pocket] (device to torso: the
+ * phone's device-to-world rotation is torso x pocket) and the game rotation vector has the arbitrary yaw reference
+ * [gameYawRad]. Noise is fixed to the torso. No fore-aft pitch, so the phone's total tilt equals the sideways lean.
  */
 data class GardenTorso(
     val leanGain: Double = 0.4,

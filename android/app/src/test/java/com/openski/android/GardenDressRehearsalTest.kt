@@ -440,14 +440,26 @@ class GardenDressRehearsalTest {
         assertEquals(TorsoMetricsExport.HEADER, csv.header)
         assertEquals("one row per boot candidate", 40, csv.rows.size)
         assertTrue(csv.doubles("phone_coverage_fraction").all { it > 0.95 })
-        // Each boot's live timeline sits about 18 to 20 ms after the true sample time (the generator's minimum transport
-        // delay); the pings measure that bias, so it is removed and the uncertainty is the ping uncertainty.
+        // Each boot's analysis timeline sits after the true sample time by its smallest observed transport delay. The truth
+        // of that bias at mid-session: the timeline time of the sensor clock reading there minus the true (phone) time of it.
+        val timeline = SessionAnalysis.build(e.garden.data).timeline
+        val mid = (e.truth.wallMs(0.0) + e.truth.wallMs(e.truth.p.durationSec)) / 2.0
         for (side in listOf("L", "R")) {
             val t = tm.getJSONObject("timing").getJSONObject(side)
             assertEquals("ping", t.getString("source"))
-            assertEquals("$side bias", 19.0, t.getDouble("bias_removed_ms"), 6.0)
-            assertTrue(t.toString(), t.getDouble("max_uncertainty_ms") < 25.0)
+            val anchor = ClockAlignment.anchor(timeline, side)!!
+            val clockMs = mid - anchor.anchorMs
+            val trueBias = mid - e.truth.wallMs(0.0) - 1000.0 * e.truth.trueTimeOfSensor(side, clockMs / 1000.0)
+            val unc = t.getDouble("max_uncertainty_ms")
+            assertTrue("$side true bias $trueBias ms is a transport delay of 10 to 25 ms", trueBias in 10.0..25.0)
+            assertEquals("$side measured bias against the truth", trueBias, t.getDouble("bias_removed_ms"), 3.0)
+            assertTrue(t.toString(), abs(t.getDouble("bias_removed_ms") - trueBias) <= unc && unc < 15.0)
         }
+        val gb = tm.getJSONObject("phone_gyro_bias")
+        assertTrue("still periods between the turn groups give a bias estimate", gb.getBoolean("estimated"))
+        // The default phone track has no gyro bias, only 0.01 rad/s noise per axis (about 1 dps of magnitude) plus the small
+        // sway the still blocks still allow near the turns: the floor sits just above 1 dps.
+        assertTrue(gb.toString(), gb.getDouble("still_gyro_rms_dps") in 0.95..1.3)
         assertTrue(csv.strings("timing_source").all { it == "ping" })
         // The default phone track only sways about the vertical against a boot that does not turn: yaw figures stay null.
         val yaw = tm.getJSONObject("per_boot").getJSONObject("L").getJSONObject("yaw")
@@ -467,26 +479,29 @@ class GardenDressRehearsalTest {
         assertEquals(40, tm.getInt("rows_with_metrics"))
         for (side in listOf("L", "R")) {
             val b = tm.getJSONObject("per_boot").getJSONObject(side)
-            val lean = b.getJSONObject("lean_vs_roll")
-            // The torso leans 0.4 of the left boot's roll; the right boot repeats it 60 ms later, so it sees the same ratio.
-            assertEquals("$side lean ratio", m.leanGain, lean.getJSONObject("lean_to_roll_ratio").getDouble("mean"), 0.06)
-            assertTrue("$side lean correlation ${lean.getDouble("correlation_across_turns")}", lean.getDouble("correlation_across_turns") > 0.9)
+            val tilt = b.getJSONObject("tilt_vs_roll")
+            // The torso leans sideways 0.4 of the left boot's roll (no fore-aft pitch here, so total tilt = that lean); the
+            // right boot repeats the roll 60 ms later, so it sees the same ratio.
+            assertEquals("$side tilt ratio", m.leanGain, tilt.getJSONObject("tilt_to_roll_ratio").getDouble("mean"), 0.01)
+            assertTrue("$side tilt correlation ${tilt.getDouble("correlation_across_turns")}", tilt.getDouble("correlation_across_turns") > 0.99)
             val yaw = b.getJSONObject("yaw")
             assertEquals(20, yaw.getInt("turns"))
-            assertEquals("$side heading ratio", m.yawGain, yaw.getJSONObject("torso_to_boot_heading_ratio").getDouble("mean"), 0.1)
+            // Left: the torso turns with the left boot, so the ratio is the injected 0.5. Right: its window is 60 ms later
+            // than the torso's turn, so a little of the torso's heading falls outside it (0.475 here).
+            assertEquals("$side heading ratio", if (side == "L") m.yawGain else 0.475, yaw.getJSONObject("torso_to_boot_heading_ratio").getDouble("mean"), 0.01)
             assertEquals(1.0, yaw.getDouble("sign_agreement_fraction"), 0.0)
-            assertTrue(yaw.getJSONObject("yaw_rate_correlation").getDouble("mean") > 0.8)
-            assertTrue(yaw.getDouble("heading_change_correlation_across_turns") > 0.8)
+            assertTrue(yaw.getJSONObject("yaw_rate_correlation").getDouble("mean") > if (side == "L") 0.99 else 0.95)
+            assertTrue(yaw.getDouble("heading_change_correlation_across_turns") > 0.99)
         }
         val rows = csv.where("side", "L")
-        rows.doubles("torso_lean_peak_deg").zip(rows.doubles("boot_roll_peak_deg")).forEachIndexed { i, (lean, roll) ->
-            assertEquals("turn $i lean", m.leanGain * roll, lean, 0.15 * m.leanGain * roll + 1.0)
+        rows.doubles("torso_tilt_peak_deg").zip(rows.doubles("boot_roll_peak_deg")).forEachIndexed { i, (tilt, roll) ->
+            assertEquals("turn $i tilt", m.leanGain * roll, tilt, 0.03 * m.leanGain * roll)
         }
         // Signed heading: the torso turns the same way as the boot, by about half.
         rows.doubles("torso_heading_change_deg").zip(rows.doubles("boot_heading_change_deg")).forEach { (torso, boot) ->
             assertTrue("same sign: torso $torso, boot $boot", torso * boot > 0)
         }
-        assertTrue("timing-limited rows ${tm.getInt("rows_timing_limited")}", tm.getInt("rows_timing_limited") <= 4)
+        assertEquals("timing-limited rows", 0, tm.getInt("rows_timing_limited"))
         // Raw phone rows are exported as stored.
         assertEquals(e.truth.phoneRows, e.csv("phone-motion.csv").rows.size)
     }
