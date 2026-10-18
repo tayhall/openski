@@ -47,7 +47,8 @@ void tick() {
   }
   imuMonitor.poll();
   if (imuMonitor.checkStall(millis(), kStallMs)) {
-    Serial.println("IMU stalled: no new sample for 1 s, re-initialising");
+    Serial.printf("IMU stalled: no new sample for 1 s, re-initialising (stall %lu)\n",
+                  static_cast<unsigned long>(imuMonitor.stats().stalls));
   }
   const Stats& stats = imuMonitor.stats();
   const unsigned long now = millis();

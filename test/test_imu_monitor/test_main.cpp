@@ -32,7 +32,7 @@ void test_stalled_sensor_is_marked_not_ready_and_reinitialised() {
   TEST_ASSERT_FALSE(monitor.checkStall(10000, 1000));  // first sight of this sample count starts the clock
   imu.nextResult = ReadResult::kNoData;
   for (int i = 0; i < 50; ++i) monitor.poll();
-  TEST_ASSERT_FALSE(monitor.checkStall(10900, 1000));
+  for (uint32_t now = 10100; now <= 10900; now += 100) TEST_ASSERT_FALSE(monitor.checkStall(now, 1000));
   TEST_ASSERT_TRUE(monitor.stats().ready);
   TEST_ASSERT_TRUE(monitor.checkStall(11001, 1000));
   TEST_ASSERT_FALSE(monitor.stats().ready);
@@ -54,6 +54,60 @@ void test_checkstall_ignores_a_sensor_that_keeps_delivering() {
   }
   TEST_ASSERT_EQUAL_UINT32(0, monitor.stats().stalls);
   TEST_ASSERT_TRUE(monitor.stats().ready);
+}
+
+void test_stall_detection_survives_a_millis_wrap() {
+  FakeImu imu;
+  ImuMonitor monitor(&imu);
+  TEST_ASSERT_TRUE(monitor.begin());
+  monitor.poll();
+  const uint32_t start = 0xFFFFFFFFu - 300u;
+  TEST_ASSERT_FALSE(monitor.checkStall(start, 1000));
+  imu.nextResult = ReadResult::kNoData;
+  uint32_t now = start;
+  bool stalled = false;
+  for (int i = 0; i < 20 && !stalled; ++i) {  // 100 ms steps across the wrap
+    now += 100u;
+    stalled = monitor.checkStall(now, 1000);
+  }
+  TEST_ASSERT_TRUE(stalled);
+  TEST_ASSERT_TRUE(now - start >= 1000u && now - start <= 1100u);
+}
+
+void test_sensor_that_never_delivers_is_detected() {
+  FakeImu imu;
+  imu.nextResult = ReadResult::kNoData;
+  ImuMonitor monitor(&imu);
+  TEST_ASSERT_TRUE(monitor.begin());
+  bool stalled = false;
+  for (uint32_t now = 0; now <= 1200 && !stalled; now += 100) {
+    monitor.poll();
+    stalled = monitor.checkStall(now, 1000);
+  }
+  TEST_ASSERT_TRUE(stalled);
+  TEST_ASSERT_EQUAL_UINT32(0, monitor.stats().samples);
+  TEST_ASSERT_FALSE(monitor.stats().ready);
+}
+
+void test_a_blocked_loop_is_not_a_stall() {
+  FakeImu imu;
+  ImuMonitor monitor(&imu);
+  TEST_ASSERT_TRUE(monitor.begin());
+  monitor.poll();
+  TEST_ASSERT_FALSE(monitor.checkStall(1000, 1000));
+  imu.nextResult = ReadResult::kNoData;
+  // Nothing calls checkStall for 3 s (another service blocked the loop); the first call afterwards must
+  // restart the clock rather than blame the sensor.
+  TEST_ASSERT_FALSE(monitor.checkStall(4000, 1000));
+  TEST_ASSERT_TRUE(monitor.stats().ready);
+  bool stalled = false;
+  uint32_t now = 4000;
+  while (!stalled && now < 6000) {
+    now += 100;
+    stalled = monitor.checkStall(now, 1000);
+  }
+  TEST_ASSERT_TRUE(stalled);  // a real silence after the restart still counts, about 1 s later
+  TEST_ASSERT_TRUE(now >= 5000 && now <= 5100);
 }
 
 void setUp() {}
@@ -233,6 +287,9 @@ int main() {
   RUN_TEST(test_sensor_name_is_exposed);
   RUN_TEST(test_stalled_sensor_is_marked_not_ready_and_reinitialised);
   RUN_TEST(test_checkstall_ignores_a_sensor_that_keeps_delivering);
+  RUN_TEST(test_stall_detection_survives_a_millis_wrap);
+  RUN_TEST(test_sensor_that_never_delivers_is_detected);
+  RUN_TEST(test_a_blocked_loop_is_not_a_stall);
   RUN_TEST(test_retry_recovers_a_sensor_that_was_missed_at_boot);
   RUN_TEST(test_retry_keeps_trying_at_the_interval_while_the_sensor_stays_missing);
   return UNITY_END();

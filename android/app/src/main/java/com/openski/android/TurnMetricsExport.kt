@@ -45,14 +45,11 @@ object TurnMetricsExport {
             val window = if (usable) TurnMetricsExtractor.shapeWindow(ordered, movement) else emptyList()
             val start = window.firstOrNull()?.timeMs
             val end = window.lastOrNull()?.timeMs
-            // The yaw functions only read samples inside [start, end]; hand them just that slice, not the whole session.
-            val slice = if (start != null && end != null) {
-                ordered.subList(TurnMetricsExtractor.firstIndexAtOrAfter(ordered, start), TurnMetricsExtractor.firstIndexAfter(ordered, end))
-            } else emptyList()
+            // The window is already the contiguous run of samples from start to end, which is all the yaw functions read.
             TurnMetricsRow(side, if (m.positive == positiveLeft) "LEFT" else "RIGHT", m,
-                if (start != null && end != null) YawTurnShape.turnShape(slice, start, end) else null,
-                if (start != null && end != null) YawTurnShape.turnClosure(slice, start, end) else null,
-                if (start != null && end != null) YawTurnShape.yawLeadMs(slice, start, end) else null)
+                if (start != null && end != null) YawTurnShape.turnShape(window, start, end) else null,
+                if (start != null && end != null) YawTurnShape.turnClosure(window, start, end) else null,
+                if (start != null && end != null) YawTurnShape.yawLeadMs(window, start, end) else null)
         }
     }
 

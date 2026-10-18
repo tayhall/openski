@@ -18,8 +18,18 @@ import kotlin.math.sqrt
  * or the two ends disagree.
  */
 object ClockAlign {
+    /**
+     * Time-ordered samples. The arrays must not be modified after construction: the medians below are cached,
+     * and the window search relies on the times being non-decreasing, which is checked here.
+     */
     class Series(val timesSec: DoubleArray, val values: DoubleArray) {
-        init { require(timesSec.size == values.size) { "times and values differ in length" } }
+        init {
+            require(timesSec.size == values.size) { "times and values differ in length" }
+            for (i in timesSec.indices) {
+                require(timesSec[i].isFinite()) { "time at index $i is not finite" }
+                if (i > 0) require(timesSec[i] >= timesSec[i - 1]) { "times must be non-decreasing (index $i)" }
+            }
+        }
         val size get() = timesSec.size
         /** Computed once per series: [align] and its helpers ask for these repeatedly. */
         val medianValue: Double by lazy { median(values) }
@@ -117,8 +127,9 @@ object ClockAlign {
     private class Peak(val timeSec: Double, val status: Status)
 
     private fun findTransient(s: Series, w: Window, cfg: Config): Peak {
-        val lo = firstIndexAtOrAfter(s.timesSec, w.fromSec)
-        val hi = firstIndexAfter(s.timesSec, w.toSec)
+        val ts = s.timesSec
+        val lo = SortedTimes.firstAtOrAfter(ts.size, w.fromSec) { ts[it] }
+        val hi = SortedTimes.firstAfter(ts.size, w.toSec) { ts[it] }
         if (hi - lo < 20) return Peak(Double.NaN, Status.FLAT)
         val t = DoubleArray(hi - lo) { s.timesSec[lo + it] }
         val m = DoubleArray(hi - lo) { s.values[lo + it] }
@@ -201,22 +212,6 @@ object ClockAlign {
         val span = ts[hi] - ts[lo]
         val u = if (span <= 0.0) 0.0 else (t - ts[lo]) / span
         return s.values[lo] + u * (s.values[hi] - s.values[lo]) - centre
-    }
-
-    /** First index whose time is >= [t] (the series is time-ordered). */
-    private fun firstIndexAtOrAfter(ts: DoubleArray, t: Double): Int {
-        var lo = 0
-        var hi = ts.size
-        while (lo < hi) { val mid = (lo + hi) ushr 1; if (ts[mid] < t) lo = mid + 1 else hi = mid }
-        return lo
-    }
-
-    /** First index whose time is > [t]. */
-    private fun firstIndexAfter(ts: DoubleArray, t: Double): Int {
-        var lo = 0
-        var hi = ts.size
-        while (lo < hi) { val mid = (lo + hi) ushr 1; if (ts[mid] <= t) lo = mid + 1 else hi = mid }
-        return lo
     }
 
     private fun median(x: DoubleArray): Double {

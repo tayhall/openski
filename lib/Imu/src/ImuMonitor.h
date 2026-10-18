@@ -31,6 +31,8 @@ class ImuMonitor {
 
   // A sensor that is ready but produces no new sample for stallMs (data-ready never rises, or every read fails)
   // is marked not ready so retryBegin() re-initialises it. Call from the service loop with a millisecond clock.
+  // If the caller itself went quiet (the loop was blocked for half the window or more), the clock restarts
+  // instead of declaring a stall, so a long blocking tick elsewhere never re-initialises a healthy sensor.
   // Returns true on the call that detects the stall.
   bool checkStall(uint32_t nowMs, uint32_t stallMs);
 
@@ -48,5 +50,6 @@ class ImuMonitor {
   bool progressInit_ = false;
   uint32_t progressSamples_ = 0;
   uint32_t progressMs_ = 0;
+  uint32_t lastCheckMs_ = 0;
 };
 }  // namespace openski::imu

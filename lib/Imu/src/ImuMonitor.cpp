@@ -15,11 +15,13 @@ bool ImuMonitor::retryBegin(uint32_t nowMs, uint32_t intervalMs) {
 }
 
 bool ImuMonitor::checkStall(uint32_t nowMs, uint32_t stallMs) {
+  const uint32_t sinceLastCheck = nowMs - lastCheckMs_;  // unsigned: safe across a millis() wrap
+  lastCheckMs_ = nowMs;
   if (!stats_.ready) {
     progressInit_ = false;
     return false;
   }
-  if (!progressInit_ || stats_.samples != progressSamples_) {
+  if (!progressInit_ || stats_.samples != progressSamples_ || sinceLastCheck >= stallMs / 2) {
     progressInit_ = true;
     progressSamples_ = stats_.samples;
     progressMs_ = nowMs;

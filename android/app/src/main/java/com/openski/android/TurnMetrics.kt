@@ -83,10 +83,11 @@ object TurnMetricsExtractor {
     /**
      * The detector's start and end lag the roll (low-pass, hysteresis), which would skew phase and rates.
      * Shape metrics use the raw samples from the roll's own return to near zero before the peak to the one after it.
+     * [ordered] must be sorted by time (the extractor sorts; the window search is a binary search).
      */
     internal fun shapeWindow(ordered: List<BootRoll>, m: DryMovement): List<BootRoll> {
-        val first = firstIndexAtOrAfter(ordered, m.startMs)
-        val last = firstIndexAfter(ordered, m.endMs) - 1
+        val first = SortedTimes.firstAtOrAfter(ordered.size, m.startMs) { ordered[it].timeMs }
+        val last = SortedTimes.firstAfter(ordered.size, m.endMs) { ordered[it].timeMs } - 1
         if (first > last) return emptyList()
         var peak = first
         for (k in first..last) if (abs(ordered[k].degrees) > abs(ordered[peak].degrees)) peak = k
@@ -95,22 +96,6 @@ object TurnMetricsExtractor {
         var hi = peak
         while (hi < ordered.size - 1 && abs(ordered[hi].degrees) > NEUTRAL_DEGREES && ordered[hi + 1].timeMs - ordered[hi].timeMs <= MAX_GAP_MS) hi++
         return ordered.subList(lo, hi + 1)
-    }
-
-    /** First index whose time is >= [t] in a time-ordered list. */
-    internal fun firstIndexAtOrAfter(ordered: List<BootRoll>, t: Double): Int {
-        var lo = 0
-        var hi = ordered.size
-        while (lo < hi) { val mid = (lo + hi) ushr 1; if (ordered[mid].timeMs < t) lo = mid + 1 else hi = mid }
-        return lo
-    }
-
-    /** First index whose time is > [t] in a time-ordered list. */
-    internal fun firstIndexAfter(ordered: List<BootRoll>, t: Double): Int {
-        var lo = 0
-        var hi = ordered.size
-        while (lo < hi) { val mid = (lo + hi) ushr 1; if (ordered[mid].timeMs <= t) lo = mid + 1 else hi = mid }
-        return lo
     }
 
     private fun build(window: List<BootRoll>, abs: List<Double>, peakIndex: Int, peak: Double): Double? {
