@@ -98,6 +98,7 @@ Observed on the Pixel 9a emulator (13 October 2026): the Ready screen's GPS row 
 - [ ] Refusals read sensibly and are not guesses: no end stomp (no clear stomp), a double stomp in one window (more than one comparable stomp), a stomp on one boot only, a recording under 45 s (too short), one boot missing.
 - [ ] Compare stomp and ping offsets over several sessions and note the typical difference and its sign; this measures the ping bias described in `docs/clock-sync-design.md` ('Known bias').
 - [ ] A session with only live samples (flash not recovered) is accepted but rougher (20 ms samples); note the difference from a recovered session.
+- [ ] End ping burst (`EndBurstPlanner`, JVM-tested only): stop a normal recording and let a run end by itself, both boots connected. The Record screen says "syncing boot clocks" for about 3 s, then the save and flash recovery start; `clock-sync.csv` has about 8 pairs per boot in the last few seconds of the session. Repeat with one boot switched off just before the stop: the save still starts after about 3 s, with pairs from the other boot only. A test recording or drill saves at once with no end pairs.
 
 ## Owed on hardware (research round)
 
@@ -118,5 +119,13 @@ Phone motion recording (gyroscope, accelerometer, game rotation vector at about 
 
 - [ ] Timestamp base on the target phone: record briefly and read the `phone_clock_check offset_ms=...` line in `events.csv` or the `phone-motion.csv` header. Near zero (a few ms) means sensor events share the `elapsedRealtimeNanos` base; a large value means they do not.
 - [ ] Delivery with the screen off: record 5 minutes with the phone locked in a pocket; `phone-motion.csv` should cover the whole session at about 100 rows per second with no multi-second holes. Repeat with battery saver on, since some phones throttle background sensors.
-- [ ] Battery drain over 30 minutes: compare a 30 minute recording with phone motion on against the same with `PhoneMotionSettings.enabled` off, and record the difference in `docs/bench-results.md`.
+- [ ] Battery drain over 30 minutes: compare a 30 minute recording with phone motion on against the same with the Geek mode switch off, and record the difference in `docs/bench-results.md`.
 - [ ] A phone without a game rotation vector (or an emulator) still records the boots and notes `phone_motion unavailable`.
+- [ ] Switch (Geek mode, Test lab, "Record phone motion (experimental)"; the rules are JVM-tested in `PhoneMotionTest`, the screen is not): it is on for a fresh install; turn it off, record, and the export has no `phone-motion.csv` rows and `events.csv` has `phone_motion off (setting)`; turning it on during a recording changes nothing until the next one, also across a service restart (the decision logged at the start, `phone_motion on/off (setting)`, is reused); the setting survives an app restart. A drill (Today or Path tab) with the switch on records `phone-motion.csv` (garden trials T3 and T4); a Test lab test recording does not.
+
+## Garden trials checklist screen (check by hand)
+
+Geek mode, Test lab, "Garden trials checklist (T0 to T6)" opens `TrialChecklistActivity` (dark Geek mode look). The content is the pure list in `GardenTrials.kt`, and `GardenTrialsTest` checks it covers T0 to T6 and that the titles and export file names match `docs/garden-trial-protocol.md`; the screen itself has not been opened on a phone.
+
+- [ ] Seven cards, T0 to T6, each with the trial title, numbered steps, the export files and the `trial_report.py` command; text is readable at the largest font size and the screen scrolls.
+- [ ] Ticking a box updates the "n of 7 done" line, and the ticks survive leaving the screen and restarting the app.
