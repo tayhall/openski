@@ -47,6 +47,13 @@ class SensorSessionService : Service() {
     private val captures = mutableMapOf<String, SensorCapture>()
     private data class Pending(val sessionId: String, val record: RecordedSample)
     private val pendingSamples = mutableListOf<Pending>()
+    private class PendingMag(val sessionId: String, val row: StoredMag)
+    private val pendingMag = mutableListOf<PendingMag>()
+    /** Protocol clock sync: ping bursts, the per-boot fit and the drift monitor. Pairs are stored while recording. */
+    private val clockSync by lazy { ClockSyncCoordinator(mainHandler, { clients[it] }, { recorderSupported[it] == true },
+        onPair = { row -> activeSessionId?.let { id -> io.execute { try { store.addClockPairs(id, listOf(row)) }
+            catch (error: Exception) { mainHandler.post { if (!destroyed) storageError(error) } } } } },
+        onGestureOnly = { side -> activeSessionId?.let { logEvent(it, "$side boot has no time sync; gesture sync only") }; updateInfo(side) }) }
     private data class Wait(val opcode: Int, val timeout: Runnable, val action: (RecorderStatus) -> Unit)
     private val waits = mutableMapOf<String, Wait>()
     private data class Transfer(val capture: SensorCapture, val validator: TransferValidator, val generation: Int)
@@ -385,6 +392,7 @@ class SensorSessionService : Service() {
         batteryLevels.remove(side)
         batteryTimes.remove(side)
         rssiLevels.remove(side)
+        clockSync.connecting(side, address)
         val remote = supplied ?: try {
             (getSystemService(BLUETOOTH_SERVICE) as BluetoothManager).adapter?.getRemoteDevice(address)
         } catch (_: Exception) { null }
@@ -396,6 +404,7 @@ class SensorSessionService : Service() {
                 lastSampleTime[side] = SystemClock.elapsedRealtime()
                 if (wasStale) reportStatus(side, "Live stream ready")
                 listener?.onSensorSample(side, sample)
+                clockSync.onLiveSample(side, sample.sequence)
                 val receivedAt=System.currentTimeMillis()
                 activeSessionId?.let { id -> pendingSamples.add(Pending(id, RecordedSample(side, receivedAt, sample))) }
                 acceptOrientation(side,receivedAt,sample)
@@ -407,6 +416,7 @@ class SensorSessionService : Service() {
                 recorderSupported[side] = supported
                 updateInfo(side)
                 if (supported && !recoveryPaused) requestInfo(side)
+                clockSync.becameReady(side, supported)
             },
             onRecorder = { status -> handleRecorder(side, status) },
             onChunk = { chunk -> handleChunk(side, chunk) },
@@ -430,7 +440,11 @@ class SensorSessionService : Service() {
                 listener?.onSkiState(side, SkierFrame.of(side, state))
             },
             onHeadingTurn = { turn -> listener?.onHeadingTurn(side, turn) },
+            onMagnetometer = { frame -> activeSessionId?.let { id ->
+                pendingMag.add(PendingMag(id, StoredMag(side, frame.timeMs, System.currentTimeMillis(), frame.x, frame.y, frame.z, frame.flags))) } },
+            onPong = { pong, recvNs -> clockSync.onPong(side, pong, recvNs) },
             onDisconnected = {
+                clockSync.disconnected(side)
                 latestOrientation.remove(side)
                 listener?.onBootOrientation(side,null)
                 invalidate(side)
@@ -970,9 +984,19 @@ class SensorSessionService : Service() {
             orientationTrackers.clear(); movementTrackers.clear(); latestOrientation.clear(); guidedTrial=null
             activeSessionId = id
             acquireWakeLock()
+            startClockSync(id)
             listener?.onRecordingChanged(id, if(testSession) "Test recording · hold neutral for two seconds, then calibrate" else "Recording · continues with screen off")
             clients.keys.toList().forEach { side -> if (recorderSupported[side] == true) requestInfo(side) }
         } catch (error: Exception) { storageError(error) }
+    }
+
+    /** Stores the clock reference and the recent pings with the new session, then pings both boots (interleaved). */
+    private fun startClockSync(id: String) {
+        val recent = clockSync.recentPairs()
+        logEvent(id, "clock_ref wall_ms=${System.currentTimeMillis()} elapsed_ns=${SystemClock.elapsedRealtimeNanos()}")
+        io.execute { try { store.addClockPairs(id, recent) } catch (error: Exception) { mainHandler.post { if (!destroyed) storageError(error) } } }
+        clockSync.recordingStarted(SystemClock.elapsedRealtime())
+        clockSync.burst(clients.keys.toList())
     }
 
     private fun stopRecording() {
@@ -994,7 +1018,18 @@ class SensorSessionService : Service() {
         }
     }
 
+    private fun flushMag() {
+        if (pendingMag.isEmpty()) return
+        val batch = pendingMag.toList()
+        pendingMag.clear()
+        io.execute {
+            try { batch.groupBy { it.sessionId }.forEach { (id, rows) -> store.addMagSamples(id, rows.map { it.row }) } }
+            catch (error: Exception) { mainHandler.post { if (!destroyed) { pendingMag.addAll(0, batch); storageError(error) } } }
+        }
+    }
+
     private fun flush() {
+        if (!storageFailed) flushMag()
         if (pendingSamples.isEmpty() || storageFailed) return
         val batch = pendingSamples.toList()
         pendingSamples.clear()
@@ -1033,6 +1068,7 @@ class SensorSessionService : Service() {
         override fun run() {
             flush()
             val now = SystemClock.elapsedRealtime()
+            clockSync.tick(now, activeSessionId != null && !storageFailed)
             if(now-lastHealthPoll>=5000) {
                 lastHealthPoll=now
                 clients.values.forEach { it.pollRssi() }
@@ -1081,7 +1117,8 @@ class SensorSessionService : Service() {
                     (if (state.recording) " · recording" else "") +
                     (if (state.full) " · full" else "") +
                     (if (state.storageError) " · storage error" else "")
-        sensorInfo[side] = "$battery · ${rssiLevels[side]?.first?.let { "$it dBm" } ?: "RSSI not reported"}\n$flash"
+        sensorInfo[side] = "$battery · ${rssiLevels[side]?.first?.let { "$it dBm" } ?: "RSSI not reported"}" +
+            (if (clockSync.isGestureOnly(side)) " · gesture sync only" else "") + "\n$flash"
         listener?.onSensorInfo(side, sensorInfo[side]!!)
     }
 
@@ -1160,6 +1197,7 @@ class SensorSessionService : Service() {
     override fun onDestroy() {
         destroyed = true
         mainHandler.removeCallbacks(runTick)
+        clockSync.stop()
         stopCoaching()
         gps.stop()
         mainHandler.removeCallbacks(tick)
