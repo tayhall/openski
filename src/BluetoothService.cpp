@@ -11,6 +11,9 @@
 
 #include "AppConfig.h"
 #include "ImuService.h"
+#include "MagFrame.h"
+#include "MagService.h"
+#include "TimeSyncFrames.h"
 #include "ModeService.h"
 #include "MotionService.h"
 #include "RecorderService.h"
@@ -62,6 +65,7 @@ enum class RecorderResult : uint8_t {
 
 struct ControlRequest {
   uint8_t length;
+  uint64_t receivedUs;  // esp_timer_get_time() when the write arrived, for the time-sync opcode
   uint8_t bytes[kControlRequestSize];
 };
 
@@ -151,6 +155,7 @@ class ControlCallbacks final : public NimBLECharacteristicCallbacks {
     const std::string value = characteristic->getValue();
     if (value.empty() || value.size() > kControlRequestSize) return;
     ControlRequest request{};
+    request.receivedUs = static_cast<uint64_t>(esp_timer_get_time());  // read here, not when dequeued
     request.length = static_cast<uint8_t>(value.size());
     memcpy(request.bytes, value.data(), value.size());
     xQueueSend(controlQueue, &request, 0);
@@ -320,6 +325,52 @@ bool notifyHeartbeat() {
   return true;
 }
 
+uint8_t recorderFlags(const recorder::Status& state) {
+  return (state.storageReady ? 0x01 : 0x00) |
+         (state.recording ? 0x02 : 0x00) |
+         (state.hasSession ? 0x04 : 0x00) |
+         (state.full ? 0x08 : 0x00) |
+         (state.storageError ? 0x10 : 0x00) |
+         (downloadActive ? 0x20 : 0x00) |
+         (mode::production() ? 0x40 : 0x00);
+}
+
+// Version 5 magnetometer frame at 10 Hz, diagnostics mode only, when a magnetometer answers and a client is
+// connected. Experimental raw counts. Returns true if a frame was sent.
+bool notifyMagnetometer() {
+  static unsigned long lastMs = 0;
+  static uint32_t lastSamples = 0;
+  static uint32_t lastErrors = 0;
+  static uint16_t sequence = 0;
+  const magnetometer::Status mag = magnetometer::status();
+  if (!mag.present || !mag.hasSample || mode::production() || !clientConnected ||
+      movementCharacteristic == nullptr) {
+    // Nothing is sent, so do not attribute earlier errors to a later frame.
+    lastSamples = mag.samples;
+    lastErrors = mag.readErrors;
+    return false;
+  }
+  const unsigned long now = millis();
+  if (now - lastMs < 100UL) return false;
+  if (mag.samples == lastSamples) return false;  // no fresh sample since the last frame
+  lastMs = now;
+  motion::MagFrame m;
+  m.nearRail = motion::magNearRail(mag.rawX, mag.rawY, mag.rawZ);
+  m.gap = mag.readErrors != lastErrors;
+  m.sequence = sequence++;
+  m.timeMs = static_cast<uint32_t>(esp_timer_get_time() / 1000ULL);  // same clock as the live frame
+  m.rawX = mag.rawX;
+  m.rawY = mag.rawY;
+  m.rawZ = mag.rawZ;
+  lastSamples = mag.samples;
+  lastErrors = mag.readErrors;
+  uint8_t frame[motion::kMagFrameSize];
+  motion::encodeMagFrame(m, frame);
+  movementCharacteristic->setValue(frame, sizeof(frame));
+  movementCharacteristic->notify();
+  return true;
+}
+
 void notifyRecorderResponse(uint8_t opcode, RecorderResult result) {
   if (recorderControlCharacteristic == nullptr) return;
   const recorder::Status state = recorder::status();
@@ -327,13 +378,7 @@ void notifyRecorderResponse(uint8_t opcode, RecorderResult result) {
   frame[0] = kRecorderProtocolVersion;
   frame[1] = opcode;
   frame[2] = static_cast<uint8_t>(result);
-  frame[3] = (state.storageReady ? 0x01 : 0x00) |
-             (state.recording ? 0x02 : 0x00) |
-             (state.hasSession ? 0x04 : 0x00) |
-             (state.full ? 0x08 : 0x00) |
-             (state.storageError ? 0x10 : 0x00) |
-             (downloadActive ? 0x20 : 0x00) |
-             (mode::production() ? 0x40 : 0x00);
+  frame[3] = recorderFlags(state);
   putUint32(frame + 4, state.samples);
   putUint32(frame + 8, state.droppedSamples);
   putUint32(frame + 12, state.maxSamples);
@@ -344,6 +389,24 @@ void notifyRecorderResponse(uint8_t opcode, RecorderResult result) {
 void processRecorderCommand(const ControlRequest& request) {
   if (request.length == 0) return;
   const uint8_t opcode = request.bytes[0];
+  // Time sync needs no flash and works in both modes; the clock was read when the write arrived.
+  if (opcode == motion::kTimeSyncOpcode) {
+    uint16_t token = 0;
+    uint8_t frame[motion::kControlResponseSize];
+    if (motion::parseTimeSyncRequest(request.bytes, request.length, token)) {
+      motion::encodeTimeSyncResponse(kRecorderProtocolVersion, static_cast<uint8_t>(RecorderResult::kOk),
+                                     recorderFlags(recorder::status()), token, request.receivedUs, frame);
+    } else {
+      motion::encodeTimeSyncResponse(kRecorderProtocolVersion,
+                                     static_cast<uint8_t>(RecorderResult::kInvalidCommand),
+                                     recorderFlags(recorder::status()), 0, 0, frame);
+    }
+    if (recorderControlCharacteristic != nullptr) {
+      recorderControlCharacteristic->setValue(frame, sizeof(frame));
+      recorderControlCharacteristic->notify();
+    }
+    return;
+  }
   // Zero and mode work without flash storage, so they are handled before the storage check.
   switch (motion::parseMotionCommand(request.bytes, request.length)) {
     case motion::MotionCommandKind::kZero:
@@ -558,8 +621,10 @@ void tick() {
   if (statusCharacteristic != nullptr) updateStatus();
   notifyLatestSample();
   // One frame on the movement characteristic per loop: half-turns first, then heading turns, then tilt events,
-  // then the once-a-second state frame.
-  if (!notifySkiEvents() && !notifyHeadingTurns() && !notifyMovementEvents()) notifyHeartbeat();
+  // then the once-a-second state frame, then the 10 Hz magnetometer frame (left boot builds only).
+  if (!notifySkiEvents() && !notifyHeadingTurns() && !notifyMovementEvents() && !notifyHeartbeat()) {
+    notifyMagnetometer();
+  }
   notifyNextRecordChunk();
 }
 }  // namespace openski::bluetooth

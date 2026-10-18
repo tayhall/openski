@@ -63,7 +63,7 @@ One notification is sent per excursion, at most one per firmware loop. A client 
 
 ### Frame versions on this characteristic
 
-The first byte selects the frame. Version 1 is the `tilt_v1` event above, version 2 the `ski_v0` half-turn, version 3 the `ski_v0` state and version 4 the heading turn. Clients must ignore versions they do not know, so a client built before version 4 skips it. One frame is sent per firmware loop at most, and the last-sent sequence is tracked per type, so one type never hides another.
+The first byte selects the frame. Version 1 is the `tilt_v1` event above, version 2 the `ski_v0` half-turn, version 3 the `ski_v0` state, version 4 the heading turn and version 5 the magnetometer (left boot only, experimental). Clients must ignore versions they do not know, so a client built before version 4 skips it. One frame is sent per firmware loop at most, and the last-sent sequence is tracked per type, so one type never hides another.
 
 ### `ski_v0` half-turn (version 2, 18 bytes, experimental)
 
@@ -117,16 +117,48 @@ Sent once a second while a client is connected, in both modes.
 | 12 | 2 | vibration | unsigned, value / 100 gives m/s², RMS of high-passed acceleration over the second |
 | 14 | 2 | gyro activity | unsigned, value / 10 gives degrees per second, RMS over the second |
 
+### Magnetometer (version 5, 16 bytes, experimental)
+
+Sent only by builds with a LIS3MDL magnetometer (the left boot, `OPENSKI_MAG_LIS3MDL`), only in diagnostics mode (never in production), only while a client is connected, at 10 Hz (the latest sample each 100 ms; no frame if there is no new sample). Live only: magnetometer data is not written to flash. Values are raw sensor counts at +-4 gauss, 6842 counts per gauss, with no calibration, hard-iron or soft-iron correction and no heading; treat them as uncalibrated and unvalidated on a boot. Clients that do not know version 5 ignore it.
+
+| Offset | Size | Field | Notes |
+| --- | ---: | --- | --- |
+| 0 | 1 | version | `5` |
+| 1 | 1 | flags | bit 0 a raw axis is within 100 counts of the +-4 gauss limit (27368 counts), bit 1 reads failed since the previous magnetometer frame; other bits 0 |
+| 2 | 2 | sequence | `uint16`, own counter, wraps |
+| 4 | 4 | time | `uint32` milliseconds, the same clock as the live frame (`esp_timer_get_time() / 1000`) |
+| 8 | 2 | raw X | `int16` counts |
+| 10 | 2 | raw Y | `int16` counts |
+| 12 | 2 | raw Z | `int16` counts |
+| 14 | 2 | reserved | `0` |
+
 ### Modes and motion commands
 
 The boot has two runtime modes. **Diagnostics** is the default after every boot: Wi-Fi, the HTTP API, OTA and the 50 Hz live stream are on. **Production** turns Wi-Fi and the live stream off to save battery; half-turn events and the state frame still flow, and flash recording is unaffected. Mode is never stored: a power cycle returns to diagnostics.
 
-Two commands are written to the recorder control characteristic. They work even when flash storage is unavailable, and the 16-byte response carries the usual flags plus bit 6 (set = production mode).
+Three commands are written to the recorder control characteristic. They work even when flash storage is unavailable, and the 16-byte response carries the usual flags plus bit 6 (set = production mode).
 
 | Command | Bytes | Meaning |
 | --- | --- | --- |
 | Zero | `07` | Capture the neutral pose from the next still second (under 0.12 rad/s, within 5% of 1 g, roughly upright on the leg). Stand upright in the ski stance first. |
 | Set mode | `08 mode` | `00` diagnostics, `01` production. Any other value or length returns result `6`. |
+| Time sync | `09 token[2]` | Return the sensor clock; see below. Length must be 3, else result `6`. |
+
+### Time sync (opcode `09`)
+
+Lets the phone map each boot's clock to its own. Additive: the control version stays `3`, and a firmware without it answers result `6`. It works without flash storage and in both modes. Request: `09 token_lo token_hi`, the token a little-endian `uint16` chosen by the phone. The 16-byte response uses its own layout after the usual first four bytes:
+
+| Offset | Size | Field |
+| --- | ---: | --- |
+| 0 | 1 | protocol version `3` |
+| 1 | 1 | opcode `09` |
+| 2 | 1 | result (`0` success, `6` wrong length) |
+| 3 | 1 | flags, as in every response |
+| 4 | 2 | token echoed from the request |
+| 6 | 8 | sensor time in microseconds, `uint64`, little-endian (`esp_timer_get_time()`, the clock behind the 32-bit timestamps) |
+| 14 | 2 | reserved `0` |
+
+The sensor time is read in the BLE host task when the write arrives, not when the firmware later processes it (one queued request is handled per loop tick), so queueing delay does not enter the value. On a result `6` response the token and time fields are zero.
 
 ## Recording and synchronization
 

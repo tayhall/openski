@@ -4,6 +4,7 @@
 #include "BatteryService.h"
 #include "BluetoothService.h"
 #include "ImuService.h"
+#include "MagService.h"
 #include "MotionService.h"
 #include "OtaService.h"
 #include "RecorderService.h"
@@ -18,6 +19,7 @@ void setup() {
   openski::battery::begin();  // before the radio starts, so the first reading is not under Wi-Fi load
   openski::recorder::begin();
   openski::imu::begin();
+  openski::magnetometer::begin();  // after the IMU, which starts the shared I2C bus
   openski::wifi::begin();
   openski::telemetry::begin();
 #ifdef OPENSKI_LOW_POWER_RADIO
@@ -33,6 +35,7 @@ void setup() {
 
 void loop() {
   openski::imu::tick();
+  openski::magnetometer::tick();
   openski::motion::tick();
   openski::recorder::tick(openski::imu::monitor());
   openski::wifi::tick();
