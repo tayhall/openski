@@ -151,6 +151,7 @@ object SessionExport {
                 .put("rail_note",RAIL_NOTE)
                 .put("dropped_before_samples",q.droppedBefore)) } })
             entry("analysis-summary.json") { it.write(summary.toString(2)) }
+            entry("session-health.json") { it.write(SessionHealth.build(data).toJson()) }
         }
     }
     private fun quote(s: String) = "\"" + s.replace("\"", "\"\"") + "\""
