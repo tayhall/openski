@@ -97,12 +97,31 @@ object PhoneMotionExport {
     }
 }
 
-/** The skier's switch for recording phone motion. On by default; there is no screen for it yet, so it is a stored flag. */
+/** Pure rules for the phone motion switch (JVM-tested); [PhoneMotionSettings] only stores the flag. */
+object PhoneMotionRule {
+    /** On unless the skier has turned it off, as before the switch had a screen. */
+    const val DEFAULT_ENABLED = true
+    const val TITLE = "Record phone motion (experimental)"
+    const val DESCRIPTION = "Phone in your jacket pocket as an upper-body reference; uses extra battery. Applies from the next recording."
+
+    /** [stored] is null when nothing was ever saved. */
+    fun enabled(stored: Boolean?): Boolean = stored ?: DEFAULT_ENABLED
+
+    /** Read once when a session starts: drills and test recordings never record the phone; other sessions follow the switch. */
+    fun recordsPhone(switchOn: Boolean, testSession: Boolean): Boolean = switchOn && !testSession
+
+    /** The session event written when the switch kept the phone source off. */
+    const val OFF_EVENT = "phone_motion off (setting)"
+}
+
+/** The skier's switch for recording phone motion, shown in Geek mode's Test lab. */
 class PhoneMotionSettings(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("openski-phone-motion", Context.MODE_PRIVATE)
     var enabled: Boolean
-        get() = prefs.getBoolean("enabled", true)
-        set(value) { prefs.edit().putBoolean("enabled", value).apply() }
+        get() = PhoneMotionRule.enabled(if (prefs.contains(KEY)) prefs.getBoolean(KEY, PhoneMotionRule.DEFAULT_ENABLED) else null)
+        set(value) { prefs.edit().putBoolean(KEY, value).apply() }
+
+    private companion object { const val KEY = "enabled" }
 }
 
 /**

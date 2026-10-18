@@ -61,6 +61,25 @@ class PhoneMotionTest {
         assertEquals("10000000000,1000.000,0.5,-0.25,0.0,0.0,0.0,9.81,1.0,0.0,0.0,0.0", lines[4])
     }
 
+    @Test fun theSwitchIsOnUntilTheSkierTurnsItOff() {
+        assertTrue(PhoneMotionRule.enabled(null))
+        assertTrue(PhoneMotionRule.enabled(true))
+        assertFalse(PhoneMotionRule.enabled(false))
+    }
+
+    @Test fun onlyFullSessionsWithTheSwitchOnRecordThePhone() {
+        assertTrue(PhoneMotionRule.recordsPhone(switchOn = true, testSession = false))
+        assertFalse(PhoneMotionRule.recordsPhone(switchOn = false, testSession = false))
+        assertFalse(PhoneMotionRule.recordsPhone(switchOn = true, testSession = true))
+        assertFalse(PhoneMotionRule.recordsPhone(switchOn = false, testSession = true))
+    }
+
+    @Test fun theSwitchTextIsExperimentalAndHonest() {
+        assertTrue(PhoneMotionRule.TITLE.contains("experimental"))
+        listOf("pocket", "upper-body", "battery").forEach { assertTrue(it, PhoneMotionRule.DESCRIPTION.contains(it)) }
+        assertTrue(PhoneMotionRule.OFF_EVENT.startsWith("phone_motion "))
+    }
+
     @Test fun csvWithoutClockCheckLeavesElapsedBlank() {
         val lines = PhoneMotionExport.csv(listOf(row(1)), emptyList(), 5L).trim().lines()
         assertTrue(lines[1].contains("unknown"))

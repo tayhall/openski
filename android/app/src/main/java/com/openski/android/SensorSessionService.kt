@@ -138,7 +138,7 @@ class SensorSessionService : Service() {
             val problem = startCoaching(CoachSettingsStore(this@SensorSessionService).settings, demo)
             if (problem != null) {
                 // Coaching could not start (for example the earbuds went away): do not run without it.
-                if (demo) runSessionId?.let { store.finishSession(it, System.currentTimeMillis()) } else stopRecording()
+                if (demo) runSessionId?.let { store.finishSession(it, System.currentTimeMillis()) } else stopRecording(endBurst = false)
                 runSessionId = null
                 return problem
             }
@@ -989,7 +989,7 @@ class SensorSessionService : Service() {
             activeSessionId = id
             acquireWakeLock()
             startClockSync(id)
-            if (!testSession) startPhoneMotion(id)  // drills and test recordings do not need the phone source
+            startPhoneMotion(id, testSession)
             listener?.onRecordingChanged(id, if(testSession) "Test recording · hold neutral for two seconds, then calibrate" else "Recording · continues with screen off")
             clients.keys.toList().forEach { side -> if (recorderSupported[side] == true) requestInfo(side) }
         } catch (error: Exception) { storageError(error) }
@@ -1004,11 +1004,17 @@ class SensorSessionService : Service() {
         clockSync.burst(clients.keys.toList())
     }
 
-    /** Starts the phone's own motion sensors for this session when the switch is on; a failure only skips the phone source. */
-    private fun startPhoneMotion(id: String) {
+    /**
+     * Starts the phone's own motion sensors for this session when the switch (read here, as the session starts) is on;
+     * drills and test recordings never record the phone. A failure only skips the phone source.
+     */
+    private fun startPhoneMotion(id: String, testSession: Boolean = false) {
         phoneBuffer.drain() // rows left over from a session that ended in a storage error belong to no live session
         phoneSessionId = null
-        if (!PhoneMotionSettings(this).enabled) return
+        if (!PhoneMotionRule.recordsPhone(PhoneMotionSettings(this).enabled, testSession)) {
+            if (!testSession) logEvent(id, PhoneMotionRule.OFF_EVENT)
+            return
+        }
         try {
             val recorder = PhoneMotionRecorder(this, phoneBuffer) { line ->
                 // Called on the sensor thread; the service may already be shutting its executor down.
@@ -1034,7 +1040,32 @@ class SensorSessionService : Service() {
         }
     }
 
-    private fun stopRecording() {
+    /** The save waiting for the end ping burst; it runs after the burst whatever the replies, never later. */
+    private var pendingSave: Runnable? = null
+
+    /**
+     * Stops the recording. With [endBurst] a full recording or run first gets a short ping burst while the boots are
+     * still connected (EndBurstPlanner, about 3 s), and the save and flash recovery follow at its fixed deadline.
+     */
+    private fun stopRecording(endBurst: Boolean = true) {
+        val id = activeSessionId ?: return
+        if (endBurst) when (val d = clockSync.endBurst(id, testRecording, clients.keys.toList())) {
+            is EndBurstPlanner.Decision.Burst -> {
+                val save = Runnable { pendingSave = null; if (activeSessionId == id) finishRecording() }
+                pendingSave = save
+                mainHandler.postDelayed(save, d.saveDelayMs)
+                listener?.onRecordingChanged(id, "Stopping · syncing boot clocks for a few seconds, then saving")
+                return
+            }
+            EndBurstPlanner.Decision.AlreadyScheduled -> if (pendingSave != null) return
+            EndBurstPlanner.Decision.SaveNow -> Unit
+        }
+        finishRecording()
+    }
+
+    private fun finishRecording() {
+        pendingSave?.let(mainHandler::removeCallbacks)
+        pendingSave = null
         val id = activeSessionId ?: return
         activeSessionId = null
         guidedTrial=null
@@ -1134,7 +1165,7 @@ class SensorSessionService : Service() {
             if (now - lastStorageCheck > 30_000) {
                 lastStorageCheck = now
                 if (activeSessionId != null && StatFs(filesDir.absolutePath).availableBytes < 10L * 1024 * 1024) {
-                    stopRecording()
+                    stopRecording(endBurst = false)
                     listener?.onRecordingChanged(null, "Recording stopped · phone storage is low")
                 }
             }
@@ -1232,6 +1263,8 @@ class SensorSessionService : Service() {
     private fun releaseWakeLock() { recordingWakeLock?.let { if (it.isHeld) it.release() }; recordingWakeLock = null }
 
     override fun onDestroy() {
+        // A stop that was waiting for the end ping burst saves now rather than leaving the session open.
+        pendingSave?.let { mainHandler.removeCallbacks(it); it.run() }
         destroyed = true
         stopPhoneMotion()
         mainHandler.removeCallbacks(runTick)

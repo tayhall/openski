@@ -67,6 +67,14 @@ object ClockSyncDefaults {
     const val PERIODIC_PING_MS = 60_000L
     /** An extra burst requested by the drift monitor is at most this often per boot. */
     const val MIN_EXTRA_BURST_INTERVAL_MS = 30_000L
+    /**
+     * Burst just before a recording or run is saved. Spread over about 3 s rather than 0.7 s so the pings land on
+     * different connection events, which gives the min-RTT filter more to choose from (all 8 still form one cluster).
+     */
+    const val END_BURST_PINGS = 8
+    const val END_BURST_SPACING_MS = 400L
+    /** Time left after the last end-burst ping for its reply; the save then goes ahead whether or not it came. */
+    const val END_BURST_REPLY_GRACE_MS = 300L
 }
 
 data class ClockSyncConfig(
@@ -331,6 +339,46 @@ object PingPlan {
         return (0 until count).flatMap { round ->
             boots.mapIndexed { k, boot -> Slot(round * spacingMs + k * spacingMs / boots.size, boot) }
         }.sortedBy { it.delayMs }
+    }
+}
+
+/**
+ * The ping burst just before a recording or run is saved, so the clock map has fresh pairs at the end and not only
+ * the last one-a-minute ping (docs/clock-sync-design.md). Pure: the coordinator sends the pings and the service saves
+ * after [Decision.Burst.saveDelayMs] whether or not any reply came, so a lost reply or a dropped link never holds the
+ * save up for longer than the burst itself.
+ */
+class EndBurstPlanner(
+    private val count: Int = ClockSyncDefaults.END_BURST_PINGS,
+    private val spacingMs: Long = ClockSyncDefaults.END_BURST_SPACING_MS,
+    private val replyGraceMs: Long = ClockSyncDefaults.END_BURST_REPLY_GRACE_MS,
+) {
+    /** [timeSync] is false for a boot without a recorder or one that answered opcode 09 with a non-zero result. */
+    data class Boot(val side: String, val connected: Boolean, val timeSync: Boolean)
+
+    sealed interface Decision {
+        /** Nothing to ping (a test or drill recording, or no boot able to answer): save at once. */
+        data object SaveNow : Decision
+        /** Send [slots], then save after [saveDelayMs] whatever happened. */
+        data class Burst(val slots: List<PingPlan.Slot>, val saveDelayMs: Long) : Decision
+        /** This session's burst is already under way and its save is already scheduled. */
+        data object AlreadyScheduled : Decision
+    }
+
+    /** The longest a burst can hold the save up: the last slot is under count * spacing, plus the reply grace. */
+    val maxDelayMs: Long get() = count * spacingMs + replyGraceMs
+
+    private var burstSession: String? = null
+
+    fun request(sessionId: String, testSession: Boolean, boots: List<Boot>): Decision {
+        if (burstSession == sessionId) return Decision.AlreadyScheduled
+        if (testSession) return Decision.SaveNow   // drills and test recordings skip the extra sync, as they skip phone motion
+        val sides = boots.filter { it.connected && it.timeSync }.map { it.side }.distinct().sorted()
+        if (sides.isEmpty()) return Decision.SaveNow
+        val slots = PingPlan.burst(sides, count, spacingMs)
+        if (slots.isEmpty()) return Decision.SaveNow
+        burstSession = sessionId
+        return Decision.Burst(slots, slots.maxOf { it.delayMs } + replyGraceMs)
     }
 }
 
