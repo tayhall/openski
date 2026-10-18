@@ -101,3 +101,12 @@ Nothing below has been run on a real boot. The JVM and host tests cover the pars
 - [ ] Mount check: the Analysis tab line "Mount check" and `mount_slip` in `analysis-summary.json` stay unflagged for a session recorded with the strap untouched, and flag a session where the sensor is deliberately rotated about 15 degrees around the leg part-way through a repeated leaning set (the replay is simulation-validated only; tilt slips under 15 degrees are expected to be missed).
 - [ ] On the first snow day, a side-by-side of roll-lobe candidates against heading-rate candidates against video, following `docs/first-snow-protocol.md` in the research repo.
 - [ ] Re-measure the accelerometer and gyro calibration under the research acquisition profile (16 g, 20 Hz); until then `/api/v1/acquisition` reports `recogniser_calibration_matches_profile: false` on research builds.
+
+## Phone motion logging checks
+
+Phone motion recording (gyroscope, accelerometer, game rotation vector at about 100 Hz, `phone-motion.csv`) is covered on the JVM only for row assembly, batching and the CSV, and the database round trip is written into the instrumentation check but has not been run. Delivery with the screen off and the sensor clock base are checked only on a phone; none of the items below has been done.
+
+- [ ] Timestamp base on the target phone: record briefly and read the `phone_clock_check offset_ms=...` line in `events.csv` or the `phone-motion.csv` header. Near zero (a few ms) means sensor events share the `elapsedRealtimeNanos` base; a large value means they do not.
+- [ ] Delivery with the screen off: record 5 minutes with the phone locked in a pocket; `phone-motion.csv` should cover the whole session at about 100 rows per second with no multi-second holes. Repeat with battery saver on, since some phones throttle background sensors.
+- [ ] Battery drain over 30 minutes: compare a 30 minute recording with phone motion on against the same with `PhoneMotionSettings.enabled` off, and record the difference in `docs/bench-results.md`.
+- [ ] A phone without a game rotation vector (or an emulator) still records the boots and notes `phone_motion unavailable`.

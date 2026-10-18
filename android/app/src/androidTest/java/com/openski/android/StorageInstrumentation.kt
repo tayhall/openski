@@ -192,9 +192,13 @@ class StorageInstrumentation : Instrumentation() {
                     store.addMagSamples(id,listOf(StoredMag("L",500,1_000_250L,6842,-3421,32767,3)))
                     check(store.clockPairs(id).size==9 && store.clockPairs(id).count { !it.accepted }==1)
                     check(store.magSamples(id).single().let { it.x==6842 && it.y==-3421 && it.z==32767 && it.flags==3 })
+                    store.addPhoneSamples(id,listOf(StoredPhone(5_000_000_000_000L,0.5f,-0.25f,0f,0f,0f,9.81f,1f,0f,0f,0f),
+                        StoredPhone(5_000_010_000_000L,0.6f,-0.2f,0.1f,0.1f,0f,9.8f,0.99f,0.01f,0f,0f)))
+                    check(store.phoneSamples(id).let { it.size==2 && it[0].gx==0.5f && it[1].qw==0.99f && it[1].phoneNs==5_000_010_000_000L }) { "phone rows round trip" }
                     store.finishSession(id,1_100_000L)
                     val loaded=store.loadData(id)!!
-                    check(loaded.clockPairs.size==9 && loaded.mag.size==1) { "loadData omitted clock or magnetometer rows" }
+                    check(loaded.clockPairs.size==9 && loaded.mag.size==1 && loaded.phone.size==2) { "loadData omitted clock, magnetometer or phone rows" }
+                    check(store.loadData(id,includeSync=false)!!.phone.isEmpty()) { "phone rows loaded without includeSync" }
                     val zipped=ByteArrayOutputStream()
                     SessionExport.write(loaded,zipped)
                     val files=mutableMapOf<String,String>()
@@ -204,9 +208,10 @@ class StorageInstrumentation : Instrumentation() {
                     check(files.getValue("clock-sync.csv").trim().lines().size==10) { "clock-sync.csv rows" }
                     check(JSONObject(files.getValue("clock-sync-fit.json")).getJSONObject("L").getBoolean("available")) { "clock-sync-fit.json" }
                     check(files.getValue("magnetometer.csv").trim().lines().let { it.size==2 && it[1].endsWith("uncalibrated") }) { "magnetometer.csv" }
+                    check(files.getValue("phone-motion.csv").trim().lines().let { l -> l.count { !it.startsWith("#") }==3 }) { "phone-motion.csv rows" }
                     check(files.getValue("samples.csv").trim().lines().size==1) { "raw samples changed" }
                     check(store.deleteSession(id)) { "clock session delete" }
-                    listOf("clock_sync","mag_samples").forEach { table ->
+                    listOf("clock_sync","mag_samples","phone_samples").forEach { table ->
                         check(store.readableDatabase.rawQuery("SELECT COUNT(*) FROM $table WHERE session_id=?",arrayOf(id)).use { it.moveToFirst() && it.getInt(0)==0 }) { "$table not deleted with the session" }
                     }
                 }

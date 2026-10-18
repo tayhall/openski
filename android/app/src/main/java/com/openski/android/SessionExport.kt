@@ -87,6 +87,7 @@ object SessionExport {
             entry("clock-sync.csv") { w -> w.write(ClockSyncExport.clockCsv(data,clockSyncs)) }
             entry("clock-sync-fit.json") { it.write(ClockSyncExport.fitJson(data,clockSyncs).toString(2)) }
             entry("magnetometer.csv") { w -> w.write(ClockSyncExport.magnetometerCsv(data)) }
+            entry("phone-motion.csv") { w -> w.write(PhoneMotionExport.csv(data.phone, data.events, ClockSyncExport.reference(data.events)?.elapsedNs)) }
             val rollBySide=orientation.groupBy { it.side }
             val detections=listOf("L","R").associateWith { side -> DrySkiAnalysis.detectTrials(rollBySide[side].orEmpty(),data.markers) }
             fun positiveLeft(side: String)=settings.optJSONObject(side)?.optBoolean("positive_left",true) ?: true
