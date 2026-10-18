@@ -66,6 +66,21 @@ class SessionHealthTest {
         assertEquals(0, stream(report, "L", "live").droppedFlagCount)
         assertEquals(7, report.boots.first().captureDroppedSamples)
     }
+    @Test fun flashAt104HzUsesItsOwnNominalInterval() {
+        val c = capture()
+        fun at104(skip: (Int) -> Boolean) = (0 until 3000).filter { !skip(it) }.map {
+            val us = Math.round(it * 1_000_000.0 / 104)
+            StoredFlash(c, it, FlashRecord(us, sample(us / 1000), ByteArray(16)))
+        }
+        val clean = stream(SessionHealth.build(data(flash = at104 { false }, captures = listOf(c))), "L", "flash")
+        assertEquals(104.0, clean.rateHz!!, 0.2)
+        assertEquals(0, clean.gapCount)
+        assertEquals(HealthVerdict.USABLE, clean.verdict)
+        // Losing one sample in twelve (8%) must show as a shortfall; against a fixed 100 Hz it would read as only 4%.
+        val lossy = stream(SessionHealth.build(data(flash = at104 { it % 12 == 5 }, captures = listOf(c))), "L", "flash")
+        assertTrue(lossy.verdict != HealthVerdict.USABLE)
+        assertTrue(lossy.gapTotalMs < 250 * 9.7)  // each gap counts one lost interval of about 9.6 ms, not 10 ms
+    }
     @Test fun flashTimestampWrapIsNotAGap() {
         val c = capture()
         val base = 0x1_0000_0000L - 5 * 10_000L

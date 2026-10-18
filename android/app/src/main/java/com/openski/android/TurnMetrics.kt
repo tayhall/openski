@@ -84,7 +84,7 @@ object TurnMetricsExtractor {
      * The detector's start and end lag the roll (low-pass, hysteresis), which would skew phase and rates.
      * Shape metrics use the raw samples from the roll's own return to near zero before the peak to the one after it.
      */
-    private fun shapeWindow(ordered: List<BootRoll>, m: DryMovement): List<BootRoll> {
+    internal fun shapeWindow(ordered: List<BootRoll>, m: DryMovement): List<BootRoll> {
         val inside = ordered.indices.filter { ordered[it].timeMs in m.startMs..m.endMs }
         val peak = inside.maxByOrNull { abs(ordered[it].degrees) } ?: return emptyList()
         var lo = peak

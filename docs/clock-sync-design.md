@@ -1,6 +1,6 @@
 # Clock sync design (proposal, not built)
 
-Status: design only. Nothing here is implemented, and every number is a starting value to tune on hardware. Written 18 October 2026 while the XIAO ESP32S3 and LSM6DSOX kit was on order.
+Status: design only for the time-sync opcode, the `clock_sync` table and the drift monitor: none of that is implemented. The offline gesture aligner (`ClockAlign.kt`) is built and validated on public data; see 'Gesture sync results'. Every number is a starting value to tune on hardware. Written 18 October 2026 while the XIAO ESP32S3 and LSM6DSOX kit was on order.
 
 ## Why
 

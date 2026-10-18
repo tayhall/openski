@@ -285,6 +285,8 @@ namespace imuProfile = imu::lsmProfile;
 #else
 namespace imuProfile = imu::mpuProfile;
 #endif
+static_assert(imuProfile::kSampleRateHz == config::kImuNominalRateHz,
+              "the profile sample rate and config::kImuNominalRateHz must agree");
 
 void handleAcquisition() {
   const auto& monitor = imu::monitor();
@@ -294,6 +296,11 @@ void handleAcquisition() {
   const char* measuredProfile = calibration::kMeasuredAcquisitionProfile;
   const bool calibrationNone = strcmp(measuredProfile, "none") == 0;
   const bool calibrationMatches = calibrationNone || strcmp(measuredProfile, imuProfile::kId) == 0;
+  // 0 means the bandwidth has not been verified for this profile: report null, not a placeholder.
+  char bandwidth[12] = "null";
+  if (imuProfile::kNominalGyroBandwidthHz != 0) {
+    snprintf(bandwidth, sizeof(bandwidth), "%u", static_cast<unsigned>(imuProfile::kNominalGyroBandwidthHz));
+  }
   char body[2100];
   snprintf(body, sizeof(body),
       "{\"schema_version\":1,\"profile_id\":\"%s\","
@@ -305,7 +312,7 @@ void handleAcquisition() {
       "\"boot_side\":null,"
       "\"sensor_to_boot_rotation\":null,\"calibration_reference\":null,"
       "\"nominal_sample_rate_hz\":%u,\"accel_full_scale_g\":%u,"
-      "\"gyro_full_scale_deg_s\":%u,\"nominal_gyro_bandwidth_hz\":%u,"
+      "\"gyro_full_scale_deg_s\":%u,\"nominal_gyro_bandwidth_hz\":%s,"
       "\"timestamp_unit\":\"us\",\"timestamp_bits\":32,"
       "\"timestamp_reference\":\"device_read_completion\","
       "\"accel_unit\":\"m/s2\",\"gyro_unit\":\"rad/s\","
@@ -319,7 +326,7 @@ void handleAcquisition() {
       imuProfile::kId, monitor.sensorName(), stats.ready ? "true" : "false",
       config::kHostname, config::kBuildId, measuredProfile, calibrationMatches ? "true" : "false",
       imuProfile::kSampleRateHz, imuProfile::kAccelRangeG,
-      imuProfile::kGyroRangeDps, imuProfile::kNominalGyroBandwidthHz,
+      imuProfile::kGyroRangeDps, bandwidth,
       static_cast<unsigned long>(stats.samples), static_cast<unsigned long>(stats.readFailures),
       static_cast<unsigned long>(stats.timestampGaps), static_cast<unsigned long>(stats.timestampWraps),
       static_cast<unsigned long>(stats.lastIntervalUs), static_cast<unsigned long>(stats.maxIntervalUs),

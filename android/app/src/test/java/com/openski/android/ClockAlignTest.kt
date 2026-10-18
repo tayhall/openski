@@ -65,6 +65,17 @@ class ClockAlignTest {
         assertEquals(ppm, r.driftPpm, tolPpm)
     }
 
+    @Test fun oneCountBlipInAConstantSeriesIsNotATransient() {
+        // More than half the window equals the median, so the robust noise estimate is zero; a 0.01 m/s2 blip must
+        // still be refused by the absolute floor.
+        val n = (duration * fs).toInt()
+        fun flat() = ClockAlign.Series(DoubleArray(n) { it / fs },
+            DoubleArray(n) { if (abs(it / fs - 5.0) < 0.006 || abs(it / fs - 610.0) < 0.006) 9.81 else 9.80 })
+        val r = ClockAlign.align(flat(), flat(), windows(5.0, 0.0, 0.0, 0.0), windows(610.0, 0.0, 0.0, 0.0))
+        assertFalse(r.ok)
+        assertEquals(ClockAlign.Reject.NO_TRANSIENT, r.reject)
+    }
+
     @Test fun cleanOffsetAndSkewAreRecoveredToAFractionOfASample() {
         val r = run(offset = 1.2, ppm = 50.0)
         assertRecovered(r, 1.2, 50.0, 1.0, 3.0)

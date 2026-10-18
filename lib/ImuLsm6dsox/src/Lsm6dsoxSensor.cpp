@@ -51,6 +51,7 @@ bool Lsm6dsoxSensor::begin() {
   for (const auto& check : checks) {
     if (!bus_.readRegisters(check.reg, &value, 1) || value != check.expected) return false;
   }
+  settleRemaining_ = kSettleSamples;
   initialized_ = true;
   return true;
 }
@@ -65,6 +66,10 @@ ReadResult Lsm6dsoxSensor::read(Sample& out) {
 
   uint8_t data[14]{};
   if (!bus_.readRegisters(kRegOutTempL, data, sizeof(data))) return ReadResult::kError;
+  if (settleRemaining_ > 0) {  // filter turn-on transient: consume and discard
+    --settleRemaining_;
+    return ReadResult::kNoData;
+  }
 
   const int16_t temperature = toSignedWord(data[0], data[1]);
   const int16_t gyroX = toSignedWord(data[2], data[3]);
@@ -78,12 +83,16 @@ ReadResult Lsm6dsoxSensor::read(Sample& out) {
   // Same near-rail diagnostic as the MPU-6050 driver (within 8 counts of full scale).
   const auto nearRail = [](int16_t v) { return v >= 32760 || v <= -32760; };
   if (nearRail(accelX) || nearRail(accelY) || nearRail(accelZ)) sample.qualityFlags |= kAccelNearRail;
-  if (nearRail(gyroX) || nearRail(gyroY) || nearRail(gyroZ)) sample.qualityFlags |= kGyroNearRail;
   sample.timestampUs = nowUs_();
   const float accelScale = kAccelMgPerLsb / 1000.0f * kStandardGravity;
   sample.accelMps2 = {accelX * accelScale, accelY * accelScale, accelZ * accelScale};
   const float gyroScale = kGyroMdpsPerLsb / 1000.0f * kDegreesToRadians;
   sample.gyroRadps = {gyroX * gyroScale, gyroY * gyroScale, gyroZ * gyroScale};
+  const auto overEncodable = [](float v) { return v >= kGyroEncodableRadps || v <= -kGyroEncodableRadps; };
+  if (nearRail(gyroX) || nearRail(gyroY) || nearRail(gyroZ) || overEncodable(sample.gyroRadps.x) ||
+      overEncodable(sample.gyroRadps.y) || overEncodable(sample.gyroRadps.z)) {
+    sample.qualityFlags |= kGyroNearRail;
+  }
   sample.temperatureC = temperature / kTemperatureLsbPerC + kTemperatureOffsetC;
   out = sample;
   return ReadResult::kSample;

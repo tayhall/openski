@@ -41,6 +41,12 @@ object ClockAlign {
         val doubleGapSec: Double = 0.12,
         /** The peak must stand this many robust standard deviations above the window's median level. */
         val minSnr: Double = 8.0,
+        /**
+         * Absolute floor for the peak, in the series' own units. It stops a one-count blip in a quantised or
+         * constant stretch (where the robust noise estimate collapses to zero) passing as a transient. The default
+         * suits acceleration magnitude in m/s2, where a stomp is tens of m/s2; use about 1 for gyro magnitude in rad/s.
+         */
+        val minPeak: Double = 2.0,
         val maxDriftPpm: Double = 2000.0,
         val minSpanSec: Double = 1.0,
     )
@@ -115,7 +121,7 @@ object ClockAlign {
         val noise = max(1.4826 * median(f), 1e-9)
         var i = 0
         for (k in f.indices) if (f[k] > f[i]) i = k
-        if (f[i] < cfg.minSnr * noise) return Peak(Double.NaN, Status.FLAT)
+        if (f[i] < cfg.minSnr * noise || f[i] < cfg.minPeak) return Peak(Double.NaN, Status.FLAT)
         var tp = t[i]
         if (i > 0 && i < f.size - 1) {
             val den = f[i - 1] - 2 * f[i] + f[i + 1]

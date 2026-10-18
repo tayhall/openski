@@ -31,6 +31,7 @@ class Lis3mdlMagnetometer {
   static constexpr uint8_t kRegCtrl2 = 0x21;
   static constexpr uint8_t kRegCtrl3 = 0x22;
   static constexpr uint8_t kRegCtrl4 = 0x23;
+  static constexpr uint8_t kRegCtrl5 = 0x24;
   static constexpr uint8_t kRegStatus = 0x27;
   static constexpr uint8_t kRegOutXL = 0x28;
   static constexpr uint8_t kWhoAmIValue = 0x3D;
@@ -38,7 +39,8 @@ class Lis3mdlMagnetometer {
   static constexpr uint8_t kCtrl2Value = 0x00;     // +-4 gauss
   static constexpr uint8_t kCtrl3Value = 0x00;     // continuous conversion
   static constexpr uint8_t kCtrl4Value = 0x0C;     // OMZ = UHP
-  static constexpr uint8_t kAutoIncrement = 0x80;  // sub-address MSB for multi-byte I2C reads
+  static constexpr uint8_t kCtrl5Value = 0x40;     // BDU: block data update, so a burst never mixes two conversions
+  static constexpr uint8_t kAutoIncrement = 0x80; // sub-address MSB for multi-byte I2C reads
   static constexpr uint8_t kStatusZyxReady = 0x08;
   static constexpr float kCountsPerGauss = 6842.0f;
 

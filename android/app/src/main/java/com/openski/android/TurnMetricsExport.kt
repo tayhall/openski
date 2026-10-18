@@ -37,10 +37,18 @@ object TurnMetricsExport {
     fun rows(side: String, rolls: List<BootRoll>, movements: List<DryMovement>, headingTurns: List<HeadingTurn>,
              positiveLeft: Boolean): List<TurnMetricsRow> {
         val ordered = rolls.sortedBy { it.timeMs }
-        return TurnMetricsExtractor.extract(ordered, movements, headingTurns).map { m ->
+        // extract() returns one TurnMetrics per movement, in order.
+        return TurnMetricsExtractor.extract(ordered, movements, headingTurns).zip(movements).map { (m, movement) ->
+            val usable = m.peakPhase != null
+            // Yaw descriptors use the same neutral-to-neutral window as the roll shape metrics, and are blank when
+            // those are (the detector's own start and end lag the roll).
+            val window = if (usable) TurnMetricsExtractor.shapeWindow(ordered, movement) else emptyList()
+            val start = window.firstOrNull()?.timeMs
+            val end = window.lastOrNull()?.timeMs
             TurnMetricsRow(side, if (m.positive == positiveLeft) "LEFT" else "RIGHT", m,
-                YawTurnShape.turnShape(ordered, m.startMs, m.endMs), YawTurnShape.turnClosure(ordered, m.startMs, m.endMs),
-                YawTurnShape.yawLeadMs(ordered, m.startMs, m.endMs))
+                if (start != null && end != null) YawTurnShape.turnShape(ordered, start, end) else null,
+                if (start != null && end != null) YawTurnShape.turnClosure(ordered, start, end) else null,
+                if (start != null && end != null) YawTurnShape.yawLeadMs(ordered, start, end) else null)
         }
     }
 

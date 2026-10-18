@@ -114,10 +114,20 @@ void test_init_write_failure_fails_begin() {
   TEST_ASSERT_FALSE(s.begin());
 }
 
+// begin() then read and discard the filter-settling samples, so a test sees its own data first.
+void beginSettled(Lsm6dsoxSensor& s, FakeBus& bus) {
+  TEST_ASSERT_TRUE(s.begin());
+  bus.setData(0, 0, 0, 0, 0, 0);
+  Sample ignored{};
+  for (int i = 0; i < Lsm6dsoxSensor::kSettleSamples; ++i) {
+    TEST_ASSERT_EQUAL(static_cast<int>(ReadResult::kNoData), static_cast<int>(s.read(ignored)));
+  }
+}
+
 void test_scaling_at_several_values() {
   FakeBus bus;
   Lsm6dsoxSensor s(bus, fakeNowUs, noDelay);
-  TEST_ASSERT_TRUE(s.begin());
+  beginSettled(s, bus);
   // 2049 LSB at 0.488 mg/LSB is about 1 g; 1000 LSB * 70 mdps = 70 dps.
   bus.setData(1000, -1000, 0, 2049, -4098, 0, 256);
   fakeNow = 123456;
@@ -141,7 +151,7 @@ void test_scaling_at_several_values() {
 void test_near_rail_flags() {
   FakeBus bus;
   Lsm6dsoxSensor s(bus, fakeNowUs, noDelay);
-  TEST_ASSERT_TRUE(s.begin());
+  beginSettled(s, bus);
   Sample out{};
   bus.setData(0, 0, 0, 32760, 0, 0);
   s.read(out);
@@ -152,7 +162,7 @@ void test_near_rail_flags() {
   bus.setData(0, 0, 32767, 0, -32760, 0);
   s.read(out);
   TEST_ASSERT_EQUAL_UINT8(kAccelNearRail | kGyroNearRail, out.qualityFlags);
-  bus.setData(32759, -32759, 0, 32759, -32759, 0);
+  bus.setData(20000, -20000, 0, 32759, -32759, 0);  // accel one count inside the rail; gyro well inside the encodable limit
   s.read(out);
   TEST_ASSERT_EQUAL_UINT8(0, out.qualityFlags);
 }
@@ -160,7 +170,7 @@ void test_near_rail_flags() {
 void test_no_data_until_both_sensors_ready() {
   FakeBus bus;
   Lsm6dsoxSensor s(bus, fakeNowUs, noDelay);
-  TEST_ASSERT_TRUE(s.begin());
+  beginSettled(s, bus);
   Sample out{};
   out.timestampUs = 77;
   bus.regs[0x1E] = 0x01;  // only accelerometer
@@ -182,6 +192,36 @@ void test_read_error_leaves_output_unchanged() {
   TEST_ASSERT_EQUAL_UINT32(99, out.timestampUs);
 }
 
+void test_first_samples_after_start_are_discarded() {
+  FakeBus bus;
+  Lsm6dsoxSensor s(bus, fakeNowUs, noDelay);
+  TEST_ASSERT_TRUE(s.begin());
+  bus.setData(1, 2, 3, 4, 5, 6);
+  Sample out{};
+  for (int i = 0; i < Lsm6dsoxSensor::kSettleSamples; ++i) {
+    TEST_ASSERT_EQUAL(static_cast<int>(ReadResult::kNoData), static_cast<int>(s.read(out)));
+  }
+  TEST_ASSERT_EQUAL(static_cast<int>(ReadResult::kSample), static_cast<int>(s.read(out)));
+}
+
+void test_gyro_flagged_above_encodable_limit() {
+  FakeBus bus;
+  Lsm6dsoxSensor s(bus, fakeNowUs, noDelay);
+  beginSettled(s, bus);
+  Sample out{};
+  // 70 mdps/LSB: 26000 LSB is 1820 dps = 31.8 rad/s (encodable); 27000 LSB is 1890 dps = 33.0 rad/s, which
+  // the int16 rad/s x 1000 wire format clips even though the raw value is not within 8 counts of full scale.
+  bus.setData(26000, 0, 0, 0, 0, 0);
+  s.read(out);
+  TEST_ASSERT_EQUAL_UINT8(0, out.qualityFlags);
+  bus.setData(0, 27000, 0, 0, 0, 0);
+  s.read(out);
+  TEST_ASSERT_EQUAL_UINT8(kGyroNearRail, out.qualityFlags);
+  bus.setData(0, 0, -27000, 0, 0, 0);
+  s.read(out);
+  TEST_ASSERT_EQUAL_UINT8(kGyroNearRail, out.qualityFlags);
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_init_writes_expected_configuration);
@@ -193,6 +233,8 @@ int main(int, char**) {
   RUN_TEST(test_scaling_at_several_values);
   RUN_TEST(test_near_rail_flags);
   RUN_TEST(test_no_data_until_both_sensors_ready);
+  RUN_TEST(test_first_samples_after_start_are_discarded);
+  RUN_TEST(test_gyro_flagged_above_encodable_limit);
   RUN_TEST(test_read_error_leaves_output_unchanged);
   return UNITY_END();
 }

@@ -7,14 +7,15 @@ bool Lis3mdlMagnetometer::begin() {
   uint8_t value = 0;
   if (!bus_.readRegisters(kRegWhoAmI, &value, 1) || value != kWhoAmIValue) return false;
   if (!bus_.writeRegister(kRegCtrl1, kCtrl1Value) || !bus_.writeRegister(kRegCtrl2, kCtrl2Value) ||
-      !bus_.writeRegister(kRegCtrl4, kCtrl4Value) || !bus_.writeRegister(kRegCtrl3, kCtrl3Value)) {
+      !bus_.writeRegister(kRegCtrl4, kCtrl4Value) || !bus_.writeRegister(kRegCtrl5, kCtrl5Value) ||
+      !bus_.writeRegister(kRegCtrl3, kCtrl3Value)) {  // CTRL3 last: conversions start once configured
     return false;
   }
   const struct {
     uint8_t reg;
     uint8_t expected;
   } checks[] = {{kRegCtrl1, kCtrl1Value}, {kRegCtrl2, kCtrl2Value},
-                {kRegCtrl3, kCtrl3Value}, {kRegCtrl4, kCtrl4Value}};
+                {kRegCtrl3, kCtrl3Value}, {kRegCtrl4, kCtrl4Value}, {kRegCtrl5, kCtrl5Value}};
   for (const auto& check : checks) {
     if (!bus_.readRegisters(check.reg, &value, 1) || value != check.expected) return false;
   }

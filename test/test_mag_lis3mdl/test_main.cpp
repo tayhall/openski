@@ -45,6 +45,7 @@ void test_init_configures_uhp_80hz_4gauss_continuous() {
   TEST_ASSERT_EQUAL_UINT8(0x00, bus.regs[0x21]);
   TEST_ASSERT_EQUAL_UINT8(0x00, bus.regs[0x22]);
   TEST_ASSERT_EQUAL_UINT8(0x0C, bus.regs[0x23]);
+  TEST_ASSERT_EQUAL_UINT8(0x40, bus.regs[0x24]);  // BDU on
 }
 
 void test_who_am_i_mismatch_fails() {
