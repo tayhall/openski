@@ -4,6 +4,20 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class PhoneMotionTest {
+    @Test fun theClockCheckUsesTheLeastNegativeDeltaSoDeliveryLatencyDoesNotBiasIt() {
+        // Delivery latency only makes the timestamp-minus-now delta more negative; the best of many is closest to the base.
+        val deltas = listOf(-12_000_000L, -30_000_000L, -2_500_000L, -9_000_000L)
+        assertEquals("phone_clock_check offset_ms=-2.500", PhoneMotionExport.clockCheckEvent(deltas))
+    }
+
+    @Test fun theStreamedCsvIsIdenticalToTheStringCsv() {
+        val rows = (0 until 5).map { StoredPhone(1_000L * it, 0.1f, 0.2f, 0.3f, 1f, 2f, 9.8f, 1f, 0f, 0f, 0f) }
+        val events = listOf(0L to "phone_clock_check offset_ms=-1.000")
+        val out = StringBuilder()
+        PhoneMotionExport.write(out, rows, events, 500L)
+        assertEquals(PhoneMotionExport.csv(rows, events, 500L), out.toString())
+    }
+
     private fun row(n: Long) = StoredPhone(n, 0f, 0f, 0f, 0f, 0f, 0f, 1f, 0f, 0f, 0f)
 
     @Test fun gyroRowsWaitForAccelAndRotationThenHoldLatest() {

@@ -86,9 +86,9 @@ object SessionExport {
             val clockSyncs=ClockSyncExport.replay(data)
             entry("clock-sync.csv") { w -> w.write(ClockSyncExport.clockCsv(data,clockSyncs)) }
             entry("clock-sync-fit.json") { it.write(ClockSyncExport.fitJson(data,clockSyncs).toString(2)) }
-            entry("gesture-sync.json") { it.write(GestureSync.toJson(GestureSync.analyse(data,clockSyncs)).toString(2)) }
+            entry("gesture-sync.json") { it.write(runCatching { GestureSync.toJson(GestureSync.analyse(data,clockSyncs)).toString(2) }.getOrElse { e -> JSONObject().put("format_version", 1).put("experimental", true).put("status", "error").put("reason", e.message ?: "analysis failed").toString(2) }) }
             entry("magnetometer.csv") { w -> w.write(ClockSyncExport.magnetometerCsv(data)) }
-            entry("phone-motion.csv") { w -> w.write(PhoneMotionExport.csv(data.phone, data.events, ClockSyncExport.reference(data.events)?.elapsedNs)) }
+            entry("phone-motion.csv") { w -> PhoneMotionExport.write(w, data.phone, data.events, ClockSyncExport.reference(data.events)?.elapsedNs) }
             val rollBySide=orientation.groupBy { it.side }
             val detections=listOf("L","R").associateWith { side -> DrySkiAnalysis.detectTrials(rollBySide[side].orEmpty(),data.markers) }
             fun positiveLeft(side: String)=settings.optJSONObject(side)?.optBoolean("positive_left",true) ?: true

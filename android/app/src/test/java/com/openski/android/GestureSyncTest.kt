@@ -90,6 +90,42 @@ class GestureSyncTest {
         assertTrue("ping and stomp should agree, got ${report.disagreementMs}", GestureSync.agrees(report, 20.0)!!)
     }
 
+    @Test fun anEndStompMadeBeforeTheAutoEndQuietPeriodIsStillFound() {
+        // A run ends on its own 20 s after the last half-turn, so the stomp as the skier stops is 25 s from the end here.
+        val stomps = listOf(Stomp(5.0), Stomp(95.0))
+        val report = GestureSync.analyse(standard(false, stompsL = stomps, stompsR = stomps))
+        assertTrue(report.reason, report.ok)
+        assertEquals(95.0, report.result!!.end!!.refTimeSec - offL, 0.1)
+    }
+
+    @Test fun aBootClockThatWentBackwardsIsRefusedNotMixedUp() {
+        val reset = listOf(
+            StoredLive("L", 1L, sample(0, 50_000, 9.8)),
+            StoredLive("L", 2L, sample(1, 10_000, 9.8)),   // the boot restarted: its clock is back near zero
+        )
+        val d = data(flash("L", ::leftClock, both, 120.0, 1), flash("R", ::rightClock, both, 120.0, 2), liveL = reset)
+        val report = GestureSync.analyse(d)
+        assertEquals(GestureSync.Status.CLOCK_RESET, report.status)
+        assertTrue(report.reason!!.contains("backwards"))
+    }
+
+    @Test fun aRolloverOfTheLiveClockIsNotAReset() {
+        val wrap = listOf(
+            StoredLive("L", 1L, sample(0, 4_294_000, 9.8)),
+            StoredLive("L", 2L, sample(1, 20, 9.8)),
+        )
+        assertNull(GestureSync.clockProblem(data(emptyList(), emptyList(), liveL = wrap), "L"))
+    }
+
+    @Test fun aBootRecordedInTwoSegmentsIsRefused() {
+        val second = SensorCapture("c2", "s", "L", "addr", 0, "done", 0, 0, "")
+        val d = SessionData(session, emptyList(), flash("L", ::leftClock, both, 120.0, 1) + flash("R", ::rightClock, both, 120.0, 2),
+            listOf(capture("L"), second, capture("R")), emptyList())
+        val report = GestureSync.analyse(d)
+        assertEquals(GestureSync.Status.CLOCK_RESET, report.status)
+        assertTrue(report.reason!!.contains("more than one segment"))
+    }
+
     @Test fun recoversWithoutPingsUsingTheDefaultWindows() {
         val report = GestureSync.analyse(standard(false))
         assertTrue(report.reason, report.ok)

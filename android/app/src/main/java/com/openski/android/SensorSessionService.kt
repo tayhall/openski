@@ -248,6 +248,7 @@ class SensorSessionService : Service() {
         createNotificationChannel()
         activeSessionId = store.latestOpenSessionId()
         testRecording=activeSessionId?.let { store.getSession(it)?.testSession } ?: false
+        activeSessionId?.let { id -> if (!testRecording) { logEvent(id, "phone_motion resumed after service restart"); startPhoneMotion(id) } }
         activeSessionId?.let { id -> store.getSession(id)?.let { session -> store.calibrations(session).forEach { c ->
             orientationTrackers[c.side]=BootOrientation.Tracker(c)
             movementTrackers[c.side]=DrySkiAnalysis.Tracker()
@@ -922,7 +923,7 @@ class SensorSessionService : Service() {
         flush()
         io.execute {
             try {
-                val data=store.loadData(id) ?: error("Session unavailable")
+                val data=store.loadData(id, includeSync = false) ?: error("Session unavailable")
                 val timeline=SessionAnalysis.build(data).timeline.corrected(::correctionFor)
                 val end=timeline.filter { it.side==side }.maxOfOrNull { it.timeMs } ?: error("No samples for this boot")
                 if(System.currentTimeMillis()-end>2000) error("Boot stream is stale")
@@ -944,7 +945,7 @@ class SensorSessionService : Service() {
         flush()
         io.execute {
             try {
-                val data=store.loadData(id) ?: error("Session unavailable")
+                val data=store.loadData(id, includeSync = false) ?: error("Session unavailable")
                 val calibration=store.calibrations(data.session).firstOrNull { it.side==side } ?: error("Calibrate neutral first")
                 val timeline=SessionAnalysis.build(data).timeline.corrected(::correctionFor)
                 val end=timeline.filter { it.side==side }.maxOfOrNull { it.timeMs } ?: error("No boot samples")
@@ -988,7 +989,7 @@ class SensorSessionService : Service() {
             activeSessionId = id
             acquireWakeLock()
             startClockSync(id)
-            startPhoneMotion(id)
+            if (!testSession) startPhoneMotion(id)  // drills and test recordings do not need the phone source
             listener?.onRecordingChanged(id, if(testSession) "Test recording · hold neutral for two seconds, then calibrate" else "Recording · continues with screen off")
             clients.keys.toList().forEach { side -> if (recorderSupported[side] == true) requestInfo(side) }
         } catch (error: Exception) { storageError(error) }
@@ -1009,7 +1010,10 @@ class SensorSessionService : Service() {
         phoneSessionId = null
         if (!PhoneMotionSettings(this).enabled) return
         try {
-            val recorder = PhoneMotionRecorder(this, phoneBuffer) { line -> logEvent(id, line) }
+            val recorder = PhoneMotionRecorder(this, phoneBuffer) { line ->
+                // Called on the sensor thread; the service may already be shutting its executor down.
+                try { logEvent(id, line) } catch (_: java.util.concurrent.RejectedExecutionException) {}
+            }
             if (recorder.start()) { phoneRecorder = recorder; phoneSessionId = id } else logEvent(id, "phone_motion unavailable")
         } catch (error: Exception) { logEvent(id, "phone_motion failed: ${error.message}") }
     }

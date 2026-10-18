@@ -60,6 +60,15 @@ object PhoneMotionExport {
     fun clockCheckEvent(sensorEventNs: Long, elapsedRealtimeNs: Long) =
         "phone_clock_check offset_ms=${ms((sensorEventNs - elapsedRealtimeNs) / 1e6)}"
 
+    /** Events whose timestamp-minus-now deltas are compared for the clock base check. */
+    const val CLOCK_CHECK_EVENTS = 50
+
+    /**
+     * The check event from the first few deltas (event timestamp minus elapsedRealtimeNanos at delivery). Delivery
+     * latency only ever makes a delta more negative, so the largest delta is the closest to the true base offset.
+     */
+    fun clockCheckEvent(deltasNs: List<Long>) = "phone_clock_check offset_ms=${ms(deltasNs.max() / 1e6)}"
+
     /** Pulls the offset back out of the session events; null when the line is missing (older sessions, or the switch was off). */
     fun clockOffsetMs(events: List<Pair<Long, String>>): Double? = events.firstNotNullOfOrNull { (_, m) ->
         if (m.startsWith("phone_clock_check offset_ms=")) m.substringAfter("offset_ms=").trim().toDoubleOrNull() else null
@@ -69,12 +78,16 @@ object PhoneMotionExport {
      * [clockRefElapsedNs] is the recording-start elapsedRealtimeNanos from the `clock_ref` event, used only for the
      * elapsed column (blank when it or the clock check is unknown). Raw values are written as stored.
      */
-    fun csv(rows: List<StoredPhone>, events: List<Pair<Long, String>>, clockRefElapsedNs: Long?): String = buildString {
+    fun csv(rows: List<StoredPhone>, events: List<Pair<Long, String>>, clockRefElapsedNs: Long?): String =
+        StringBuilder().also { write(it, rows, events, clockRefElapsedNs) }.toString()
+
+    /** Streams the CSV to [out] row by row, so a long session never needs the whole text in memory as one string. */
+    fun write(out: Appendable, rows: List<StoredPhone>, events: List<Pair<Long, String>>, clockRefElapsedNs: Long?) = out.run {
         val offset = clockOffsetMs(events)
         append("# Phone motion sensors (gyroscope, accelerometer, game rotation vector) from the phone carried during the session. Values are uncalibrated phone sensors.\n")
         append("# phone_ns is SensorEvent.timestamp. Clock base check: ")
         append(if (offset == null) "no phone_clock_check event was recorded, so the base is unknown.\n"
-            else "offset_ms=${ms(offset)} (first event timestamp minus elapsedRealtimeNanos; near zero means the sensor clock shares the elapsedRealtimeNanos base used by clock-sync.csv).\n")
+            else "offset_ms=${ms(offset)} (event timestamp minus elapsedRealtimeNanos, least negative of the first $CLOCK_CHECK_EVENTS events to cut delivery latency; near zero means the sensor clock shares the elapsedRealtimeNanos base used by clock-sync.csv).\n")
         append("# One row per gyroscope event; accelerometer and quaternion hold the latest value seen (not sample-aligned).\n")
         append(COLUMNS)
         rows.forEach { r ->
@@ -101,7 +114,7 @@ class PhoneMotionRecorder(context: Context, val buffer: PhoneMotionBuffer, priva
     private val manager = context.applicationContext.getSystemService(Context.SENSOR_SERVICE) as SensorManager
     private val assembler = PhoneMotionAssembler()
     private var thread: HandlerThread? = null
-    private var checked = false
+    private val clockDeltas = ArrayList<Long>()
 
     /** Returns false when the phone lacks a gyroscope, accelerometer or game rotation vector. */
     fun start(): Boolean {
@@ -121,6 +134,7 @@ class PhoneMotionRecorder(context: Context, val buffer: PhoneMotionBuffer, priva
     fun stop() {
         manager.unregisterListener(this)
         thread?.quitSafely()
+        runCatching { thread?.join(300) }   // let queued events finish before the service shuts its executor down
         thread = null
     }
 
@@ -130,7 +144,10 @@ class PhoneMotionRecorder(context: Context, val buffer: PhoneMotionBuffer, priva
             Sensor.TYPE_ACCELEROMETER -> assembler.onAccelerometer(v[0], v[1], v[2])
             Sensor.TYPE_GAME_ROTATION_VECTOR -> if (v.size >= 4) assembler.onRotation(v[0], v[1], v[2], v[3])
             Sensor.TYPE_GYROSCOPE -> assembler.onGyroscope(event.timestamp, v[0], v[1], v[2])?.let { row ->
-                if (!checked) { checked = true; onClockCheck(PhoneMotionExport.clockCheckEvent(event.timestamp, SystemClock.elapsedRealtimeNanos())) }
+                if (clockDeltas.size < PhoneMotionExport.CLOCK_CHECK_EVENTS) {
+                    clockDeltas.add(event.timestamp - SystemClock.elapsedRealtimeNanos())
+                    if (clockDeltas.size == PhoneMotionExport.CLOCK_CHECK_EVENTS) onClockCheck(PhoneMotionExport.clockCheckEvent(clockDeltas))
+                }
                 buffer.add(row)
             }
         }

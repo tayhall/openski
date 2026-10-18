@@ -15,6 +15,12 @@ import kotlin.math.sqrt
 object GestureSync {
     /** Seconds at each end of a recording searched for the stomp. */
     const val WINDOW_SEC = 20.0
+    /**
+     * Seconds at the end of a recording searched for the end stomp. Wider than the start window because a run that
+     * ends on its own does so only after 20 s without a half-turn, so a stomp made as the skier stops lands about
+     * 20 s or more before the last sample.
+     */
+    const val END_WINDOW_SEC = 45.0
     /** A recording shorter than this cannot hold two well separated windows. */
     const val MIN_SPAN_SEC = 45.0
     /** Extra seconds either side of the second boot's window when no ping estimate exists. */
@@ -25,7 +31,7 @@ object GestureSync {
         "recording and aligns them; it refuses rather than guesses. The ping comparison is an independent cross-check, " +
         "and the ping estimate may carry a bias of about half a connection interval. Raw data is unchanged."
 
-    enum class Status { MEASURED, REFUSED, TOO_SHORT, MISSING_BOOT }
+    enum class Status { MEASURED, REFUSED, TOO_SHORT, MISSING_BOOT, CLOCK_RESET }
 
     class Report(
         val status: Status,
@@ -97,7 +103,32 @@ object GestureSync {
         return ClockAlign.Series(DoubleArray(order.size) { times[order[it]] }, DoubleArray(order.size) { values[order[it]] })
     }
 
+    /**
+     * Why this boot's samples cannot be put on one clock, or null. A boot that reset or was recorded in more than one
+     * segment (new capture) has a restarted sensor clock, and merging its segments by timestamp would interleave
+     * two epochs, so the stomp sync refuses instead of guessing.
+     */
+    internal fun clockProblem(data: SessionData, side: String): String? {
+        if (data.captures.count { it.side == side } > 1) return "the ${sideName(side)} boot was recorded in more than one segment, so its clock may have restarted"
+        var prev: Long? = null
+        for (l in data.live) {
+            if (l.side != side) continue
+            val t = l.sample.timestampMs
+            val p = prev
+            if (p != null && t < p - 1000) {
+                val rollover = p > 4_200_000 && t < 100_000   // the 32-bit microsecond counter, shown in ms, wraps at about 4,295,000
+                if (!rollover) return "the ${sideName(side)} boot's clock went backwards during the session (a reset)"
+            }
+            prev = t
+        }
+        return null
+    }
+
+    private fun sideName(side: String) = if (side == "L") "left" else "right"
+
     fun analyse(data: SessionData, syncs: Map<String, ClockSync> = ClockSyncExport.replay(data)): Report {
+        val problem = clockProblem(data, "L") ?: clockProblem(data, "R")
+        if (problem != null) return Report(Status.CLOCK_RESET, null, null, problem, null, null, null, null, null, null, false)
         val a = series(data, "L")
         val b = series(data, "R")
         if (a == null || b == null) {
@@ -113,21 +144,21 @@ object GestureSync {
         val right = syncs["R"]?.timeline()
         val pings = left != null && right != null
         fun ping(tSec: Double): Aligned? = if (!pings) null else BootAlignment.map(left!!, right!!, (tSec * 1e6).roundToLong())
-        fun windowB(from: Double, to: Double, ownFrom: Double): ClockAlign.Window {
+        fun windowB(from: Double, to: Double, ownFrom: Double, lengthSec: Double): ClockAlign.Window {
             val lo = ping(from); val hi = ping(to)
             return if (lo != null && hi != null) {
                 val margin = PING_MARGIN_SEC + 2 * maxOf(lo.uncertaintyNs, hi.uncertaintyNs) / 1e9
                 ClockAlign.Window(lo.value / 1e6 - margin, hi.value / 1e6 + margin)
-            } else ClockAlign.Window(ownFrom - DEFAULT_MARGIN_SEC, ownFrom + WINDOW_SEC + DEFAULT_MARGIN_SEC)
+            } else ClockAlign.Window(ownFrom - DEFAULT_MARGIN_SEC, ownFrom + lengthSec + DEFAULT_MARGIN_SEC)
         }
         val startA = ClockAlign.Window(aStart, aStart + WINDOW_SEC)
-        val endA = ClockAlign.Window(aEnd - WINDOW_SEC, aEnd)
-        val start = ClockAlign.EndWindows(startA, windowB(startA.fromSec, startA.toSec, bStart))
-        val end = ClockAlign.EndWindows(endA, windowB(endA.fromSec, endA.toSec, bEnd - WINDOW_SEC))
+        val endA = ClockAlign.Window(aEnd - END_WINDOW_SEC, aEnd)
+        val start = ClockAlign.EndWindows(startA, windowB(startA.fromSec, startA.toSec, bStart, WINDOW_SEC))
+        val end = ClockAlign.EndWindows(endA, windowB(endA.fromSec, endA.toSec, bEnd - END_WINDOW_SEC, END_WINDOW_SEC))
         val result = ClockAlign.align(a, b, start, end)
 
         val startRef = if (result.ok) result.refTimeSec else aStart + WINDOW_SEC / 2
-        val endRef = if (result.ok) result.end!!.refTimeSec else aEnd - WINDOW_SEC / 2
+        val endRef = if (result.ok) result.end!!.refTimeSec else aEnd - END_WINDOW_SEC / 2
         val pingStart = ping(startRef)
         val pingEnd = ping(endRef)
         val pingOffset = pingStart?.let { it.value / 1e6 - startRef }
@@ -160,7 +191,7 @@ object GestureSync {
         val o = JSONObject().put("format_version", 1).put("experimental", true).put("note", NOTE)
             .put("convention", "offsets are right boot sensor clock minus left boot sensor clock, in the left clock's time")
             .put("status", r.status.name.lowercase())
-            .put("search_window_s", WINDOW_SEC)
+            .put("search_window_s", WINDOW_SEC).put("end_search_window_s", END_WINDOW_SEC)
             .put("second_boot_windows_from_pings", r.windowsUsedPings)
         if (r.reason != null) o.put("reason", r.reason)
         if (r.reject != null) o.put("reject", r.reject.name.lowercase())
