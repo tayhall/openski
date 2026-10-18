@@ -101,6 +101,9 @@ object SessionExport {
                     w.write("$side,$direction,${t.positive},${t.startMs},${t.endMs},${t.endMs-t.startMs},${t.peakRateDps},${t.changeDegrees},experimental_heading_rate\n")
                 } }
             }
+            val turnMetricRows=listOf("L","R").associateWith { side -> TurnMetricsExport.rows(side,rollBySide[side].orEmpty(),
+                detections.getValue(side).movements,headingTurns.getValue(side),positiveLeft(side)) }
+            entry("turn-metrics.csv") { w -> w.write(TurnMetricsExport.csv(turnMetricRows.values.flatten())) }
             val summary=JSONObject().put("data_origin",session.origin)
                 .put("detector","experimental_dry_roll").put("entry_deg",8).put("neutral_deg",3)
                 .put("filter_time_constant_ms",100).put("label_tolerance_ms",500)
@@ -150,6 +153,9 @@ object SessionExport {
                 .put("rail_samples",q.railSamples).put("rail_percent",q.railPercent)
                 .put("rail_note",RAIL_NOTE)
                 .put("dropped_before_samples",q.droppedBefore)) } })
+            summary.put("turn_metrics",TurnMetricsExport.toJson(TurnMetricsExport.block(turnMetricRows,
+                TurnMetricsExport.agreementPairs(rollBySide["L"].orEmpty(),rollBySide["R"].orEmpty(),
+                    detections.getValue("L").movements,detections.getValue("R").movements,positiveLeft("L"),positiveLeft("R")))))
             entry("analysis-summary.json") { it.write(summary.toString(2)) }
         }
     }

@@ -42,6 +42,8 @@ Starter calculations and parameters to try for each are in [turn metric starters
 
 How these map to what is built: principle 1 is `earlyRateDps`, principle 2 is `BootAgreement.derivativeSimilarity` (the roll-curve correlation `agreement`, now sharing its resampler, is kept to compare against), principle 3 is not measurable with the current placement, and principle 4 applies only if a combined score is added.
 
+Export status: these metrics are now written by the session export (`TurnMetricsExport`, called from `SessionExport`). `turn-metrics.csv` has one row per detected roll candidate per boot (all `TurnMetrics` fields, a `usable` flag, direction from the saved per-boot polarity, plus the yaw shape, closure and lead descriptors), with `#` comment lines at the top saying the data is experimental. `analysis-summary.json` gains a `turn_metrics` block: per-boot `TurnMetricsSummary` spreads and, for each left candidate paired with its most-overlapping right candidate, derivative similarity, roll-curve Pearson and wedge fraction (both boots put on a positive-roll-is-left convention first), with their means. Everything is still unvalidated: it has only been unit-tested on synthetic signals and has not been compared with video or labelled real recordings, so treat the numbers as things to look at, not scores.
+
 ## Not available from this IMU placement
 
 True edge angle (no snow reference), pressure, weight release and lateral g in a snow frame (cuff mount, no slope plane). Do not label any metric above with those names.
