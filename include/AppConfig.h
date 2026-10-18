@@ -30,7 +30,23 @@ inline constexpr char kBleName[] = "OpenSki-ski";
 #endif
 inline constexpr int kImuSdaPin = OPENSKI_IMU_SDA_PIN;
 inline constexpr int kImuSclPin = OPENSKI_IMU_SCL_PIN;
-inline constexpr uint8_t kImuI2cAddress = 0x68;
+// 0x68 for the MPU-6050; the LSM6DSOX builds (OPENSKI_IMU_LSM6DSOX) use 0x6A (0x6B with SDO high).
+#ifndef OPENSKI_IMU_I2C_ADDRESS
+#ifdef OPENSKI_IMU_LSM6DSOX
+#define OPENSKI_IMU_I2C_ADDRESS 0x6A
+#else
+#define OPENSKI_IMU_I2C_ADDRESS 0x68
+#endif
+#endif
+inline constexpr uint8_t kImuI2cAddress = OPENSKI_IMU_I2C_ADDRESS;
+// Nominal IMU output rate, for capacity estimates and messages only. Every consumer takes its time step
+// from the sample timestamps, so a rate other than 100 Hz needs no resampling. The LSM6DSOX has no 100 Hz
+// setting and runs at 104 Hz; the recorder keeps every sample with its own timestamp.
+#ifdef OPENSKI_IMU_LSM6DSOX
+inline constexpr unsigned kImuNominalRateHz = 104;
+#else
+inline constexpr unsigned kImuNominalRateHz = 100;
+#endif
 inline constexpr uint32_t kImuI2cFrequencyHz = 400000;
 // Battery sense: an ADC1 pin at the midpoint of a resistor divider across the cell. Only builds that
 // define OPENSKI_BATTERY_ADC_PIN sample it. The ratio is (top + bottom) / bottom: 2.0 for 1k + 1k.

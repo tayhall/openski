@@ -28,7 +28,7 @@ Each 20-byte frame uses little-endian fields and fits the default BLE ATT payloa
 | 17 | 2 | gyro Z | signed integer, value × 1000 gives rad/s |
 | 19 | 1 | quality | OR of the quality flags of every IMU sample since the previous notification, including the samples skipped by decimation; bit 0 accelerometer near rail, bit 1 gyro near rail, bit 2 timestamp gap, bit 3 timestamp wrap; bits 4 to 7 `0` |
 
-Notifications carry every second IMU sample, a steady 50 Hz (an earlier time-based limit measured only about 38 Hz). The IMU continues sampling at 100 Hz; the Android client can use timestamps and sequence numbers to detect stream gaps. Temperature is available in the status characteristic. The quality byte is cleared after each notification and while live notifications are off (production mode or no client), so it never describes samples from before the previous frame. The rail bits mean a raw axis lay within 8 counts of full scale; they are not proof that no clipping happened between reads (see [IMU data](imu-data.md)).
+Notifications carry every second IMU sample, a steady 50 Hz (an earlier time-based limit measured only about 38 Hz; 52 Hz on LSM6DSOX builds, which sample at 104 Hz). The IMU continues sampling at 100 Hz; the Android client can use timestamps and sequence numbers to detect stream gaps. Temperature is available in the status characteristic. The quality byte is cleared after each notification and while live notifications are off (production mode or no client), so it never describes samples from before the previous frame. The rail bits mean a raw axis lay within 8 counts of full scale; they are not proof that no clipping happened between reads (see [IMU data](imu-data.md)).
 
 ## Status characteristic
 

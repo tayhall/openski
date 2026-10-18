@@ -27,6 +27,7 @@ struct Options {
   float spikeAt = -1, gapFrom = -1, gapTo = -1;
   float wobbleG = 0;                           // accel noise amplitude in g
   uint32_t clockOffsetUs = 0;                  // added to every timestamp (wraps like the ESP32 clock)
+  float sampleDt = 0.01f;                      // seconds between samples (0.01 = 100 Hz)
 };
 
 void cross(const float* a, const float* b, float* out) {
@@ -53,7 +54,7 @@ void upVector(const Options& o, Pose p, float* sensor) {
 
 // 100 Hz trace: 2 s still (zero() is called first), then the profile.
 void run(SkiTracker& tracker, const Profile& profile, float seconds, const Options& o = {}) {
-  const float dt = 0.01f;
+  const float dt = o.sampleDt;
   float previous[3];
   upVector(o, profile(0), previous);
   tracker.zero();
@@ -104,6 +105,23 @@ int main() {
       check(out[i].positive == (i % 2 == 0), "signs alternate starting positive");
       check(absf(absf(out[i].peakRollDegrees) - 30) < 3, "peak roll within 3 degrees");
       check(!out[i].outsideEnvelope, "plausible turn is inside the envelope");
+    }
+  }
+  {  // The LSM6DSOX runs at 104 Hz: the same swings must give the same half-turns, with times from the timestamps.
+    Options o104;
+    o104.sampleDt = 1.0f/104.0f;
+    for (float period : {1.0f, 2.0f, 3.0f}) {
+      SkiTracker tracker(base.mounting);
+      run(tracker, swings(30, period, 5), 3 + 5*period + 2, o104);
+      const uint8_t n = tracker.recent(out, 16);
+      check(tracker.count() == 9 && n == 9, "104 Hz: five periods give nine completed half-turns");
+      for (uint8_t i = 0; i < n; ++i) {
+        check(out[i].positive == (i % 2 == 0), "104 Hz: signs alternate starting positive");
+        check(absf(absf(out[i].peakRollDegrees) - 30) < 3, "104 Hz: peak roll within 3 degrees");
+        const float expectedMs = period*500.0f;  // a half-turn is half a period
+        check(absf(static_cast<float>(out[i].endUs - out[i].startUs)/1000.0f - expectedMs) < 0.35f*expectedMs,
+              "104 Hz: half-turn duration from timestamps");
+      }
     }
   }
   {  // 20 degrees of forward flex all the time must not hide the turns or leak into roll
@@ -220,6 +238,18 @@ int main() {
     HeadingTurn turns[16];
     const uint8_t n = t.recentHeading(turns, 16);
     check(n >= 3 && turns[1].positive != turns[0].positive, "heading turn signs alternate");
+  }
+  {  // Heading turns at 104 Hz (9615 us steps) match the 100 Hz result in count and sign pattern.
+    SkiTracker t(Mounting{{0, 1}, {1, 1}, {2, -1}});
+    uint32_t us = 0;
+    for (int i = 0; i < 2080; ++i, us += 9615U) {
+      const float rate = 1.0f*std::sin(2*kPi*i/416.0f);  // same 57 deg/s peak, 4 s period
+      t.update(us, kG, 0, 0, rate, 0, 0);
+    }
+    check(t.headingCount() >= 3, "104 Hz: heading turns found from vertical rotation");
+    HeadingTurn turns[16];
+    const uint8_t n = t.recentHeading(turns, 16);
+    check(n >= 3 && turns[1].positive != turns[0].positive, "104 Hz: heading turn signs alternate");
   }
   {  // An impact-gated sample is marked on the open segment and does not corrupt the rate.
     SkiTracker t(Mounting{{0, 1}, {1, 1}, {2, -1}});

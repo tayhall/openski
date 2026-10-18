@@ -35,7 +35,8 @@ constexpr size_t kMovementEventSize = 15;
 constexpr size_t kRecordSize = 16;
 constexpr size_t kTransferHeaderSize = 4;
 constexpr size_t kControlRequestSize = 5;
-// The IMU samples at 100 Hz. Sending every second sample gives a steady 50 Hz that fits the default ATT MTU.
+// The IMU samples at 100 Hz (104 Hz on the LSM6DSOX builds). Sending every second sample gives a steady 50 Hz
+// (52 Hz on those builds) that fits the default ATT MTU; every frame carries its own timestamp.
 // Counting samples, rather than timing sends against a loop tick, avoids the 20/30 ms quantisation that measured 38 Hz.
 constexpr uint32_t kLiveDecimation = 2;
 constexpr unsigned long kTransferRateLimitMs = 10;
