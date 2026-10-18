@@ -41,7 +41,7 @@ class GardenDressRehearsalTest {
 
     private val expectedEntries = listOf("session.json", "samples.csv", "events.csv", "boot-roll.csv", "labels.csv", "sensor-health.csv",
         "clock-sync.csv", "clock-sync-fit.json", "gesture-sync.json", "magnetometer.csv", "phone-motion.csv", "detected-movements.csv",
-        "heading-turns.csv", "turn-metrics.csv", "analysis-summary.json", "session-health.json")
+        "heading-turns.csv", "turn-metrics.csv", "torso-metrics.csv", "analysis-summary.json", "session-health.json")
 
     private val outputDir: File? = (System.getProperty("OPENSKI_DRESS_REHEARSAL_DIR") ?: System.getenv("OPENSKI_DRESS_REHEARSAL_DIR"))
         ?.takeIf { it.isNotBlank() }?.let { File(it).also { dir -> dir.mkdirs() } }
@@ -426,6 +426,99 @@ class GardenDressRehearsalTest {
         assertTrue("gyro noise scale", gyro.map { abs(it) }.max() < 0.1)
         val q = csv.rows.indices.map { i -> sqrt(listOf("quat_w", "quat_x", "quat_y", "quat_z").sumOf { csv.doubles(it)[i].let { v -> v * v } }) }
         assertEquals(1.0, q.average(), 1e-3)
+    }
+
+    private fun torso(e: Export) = e.json("analysis-summary.json").getJSONObject("torso_metrics")
+
+    @Test fun cleanTorsoMetricsAreComputedWithPingTimingAndNoInventedYaw() {
+        val e = clean
+        val tm = torso(e)
+        assertEquals(tm.getString("reason"), "computed", tm.getString("status"))
+        assertTrue(tm.getBoolean("experimental"))
+        assertTrue(tm.getString("placement_note").contains("unverified"))
+        val csv = e.csv("torso-metrics.csv")
+        assertEquals(TorsoMetricsExport.HEADER, csv.header)
+        assertEquals("one row per boot candidate", 40, csv.rows.size)
+        assertTrue(csv.doubles("phone_coverage_fraction").all { it > 0.95 })
+        // Each boot's analysis timeline sits after the true sample time by its smallest observed transport delay. The truth
+        // of that bias at mid-session: the timeline time of the sensor clock reading there minus the true (phone) time of it.
+        val timeline = SessionAnalysis.build(e.garden.data).timeline
+        val mid = (e.truth.wallMs(0.0) + e.truth.wallMs(e.truth.p.durationSec)) / 2.0
+        for (side in listOf("L", "R")) {
+            val t = tm.getJSONObject("timing").getJSONObject(side)
+            assertEquals("ping", t.getString("source"))
+            val anchor = ClockAlignment.anchor(timeline, side)!!
+            val clockMs = mid - anchor.anchorMs
+            val trueBias = mid - e.truth.wallMs(0.0) - 1000.0 * e.truth.trueTimeOfSensor(side, clockMs / 1000.0)
+            val unc = t.getDouble("max_uncertainty_ms")
+            assertTrue("$side true bias $trueBias ms is a transport delay of 10 to 25 ms", trueBias in 10.0..25.0)
+            assertEquals("$side measured bias against the truth", trueBias, t.getDouble("bias_removed_ms"), 3.0)
+            assertTrue(t.toString(), abs(t.getDouble("bias_removed_ms") - trueBias) <= unc && unc < 15.0)
+        }
+        val gb = tm.getJSONObject("phone_gyro_bias")
+        assertTrue("still periods between the turn groups give a bias estimate", gb.getBoolean("estimated"))
+        // The default phone track has no gyro bias, only 0.01 rad/s noise per axis (about 1 dps of magnitude) plus the small
+        // sway the still blocks still allow near the turns: the floor sits just above 1 dps.
+        assertTrue(gb.toString(), gb.getDouble("still_gyro_rms_dps") in 0.95..1.3)
+        assertTrue(csv.strings("timing_source").all { it == "ping" })
+        // The default phone track only sways about the vertical against a boot that does not turn: yaw figures stay null.
+        val yaw = tm.getJSONObject("per_boot").getJSONObject("L").getJSONObject("yaw")
+        assertEquals(0, yaw.getInt("turns"))
+        assertTrue(yaw.isNull("sign_agreement_fraction"))
+        assertTrue(csv.strings("torso_to_boot_heading_ratio").all { it.isEmpty() })
+        assertTrue(tm.getJSONObject("quietness").getDouble("run_gyro_rms_dps") < 3.0)
+    }
+
+    @Test fun torsoMetricsMatchTheTorsoTruth() {
+        val m = GardenTorso()
+        val e = run("torso", GardenParams(torso = m, bootHeadingPerTurnDeg = 40.0))
+        val tm = torso(e)
+        assertEquals(tm.getString("reason"), "computed", tm.getString("status"))
+        val csv = e.csv("torso-metrics.csv")
+        assertEquals(40, csv.rows.size)
+        assertEquals(40, tm.getInt("rows_with_metrics"))
+        for (side in listOf("L", "R")) {
+            val b = tm.getJSONObject("per_boot").getJSONObject(side)
+            val tilt = b.getJSONObject("tilt_vs_roll")
+            // The torso leans sideways 0.4 of the left boot's roll (no fore-aft pitch here, so total tilt = that lean); the
+            // right boot repeats the roll 60 ms later, so it sees the same ratio.
+            assertEquals("$side tilt ratio", m.leanGain, tilt.getJSONObject("tilt_to_roll_ratio").getDouble("mean"), 0.01)
+            assertTrue("$side tilt correlation ${tilt.getDouble("correlation_across_turns")}", tilt.getDouble("correlation_across_turns") > 0.99)
+            val yaw = b.getJSONObject("yaw")
+            assertEquals(20, yaw.getInt("turns"))
+            // Left: the torso turns with the left boot, so the ratio is the injected 0.5. Right: its window is 60 ms later
+            // than the torso's turn, so a little of the torso's heading falls outside it (0.475 here).
+            assertEquals("$side heading ratio", if (side == "L") m.yawGain else 0.475, yaw.getJSONObject("torso_to_boot_heading_ratio").getDouble("mean"), 0.01)
+            assertEquals(1.0, yaw.getDouble("sign_agreement_fraction"), 0.0)
+            assertTrue(yaw.getJSONObject("yaw_rate_correlation").getDouble("mean") > if (side == "L") 0.99 else 0.95)
+            assertTrue(yaw.getDouble("heading_change_correlation_across_turns") > 0.99)
+        }
+        val rows = csv.where("side", "L")
+        rows.doubles("torso_tilt_peak_deg").zip(rows.doubles("boot_roll_peak_deg")).forEachIndexed { i, (tilt, roll) ->
+            assertEquals("turn $i tilt", m.leanGain * roll, tilt, 0.03 * m.leanGain * roll)
+        }
+        // Signed heading: the torso turns the same way as the boot, by about half.
+        rows.doubles("torso_heading_change_deg").zip(rows.doubles("boot_heading_change_deg")).forEach { (torso, boot) ->
+            assertTrue("same sign: torso $torso, boot $boot", torso * boot > 0)
+        }
+        assertEquals("timing-limited rows", 0, tm.getInt("rows_timing_limited"))
+        // Raw phone rows are exported as stored.
+        assertEquals(e.truth.phoneRows, e.csv("phone-motion.csv").rows.size)
+    }
+
+    @Test fun noPhoneOrNoClockCheckRefusesTheTorsoMetricsWithAReason() {
+        val e = run("fault-no-phone", GardenParams(includePhone = false))
+        val tm = torso(e)
+        assertEquals("refused", tm.getString("status"))
+        assertTrue(tm.getString("reason"), tm.getString("reason").contains("no phone motion rows"))
+        assertEquals(0, e.csv("torso-metrics.csv").rows.size)
+        assertEquals(TorsoMetricsExport.HEADER, e.csv("torso-metrics.csv").header)
+        val unchecked = run("fault-phone-clock-unchecked", GardenParams(phoneClockCheck = false))
+        val u = torso(unchecked)
+        assertEquals("refused", u.getString("status"))
+        assertTrue(u.getString("reason"), u.getString("reason").contains("phone_clock_check"))
+        assertEquals(0, unchecked.csv("torso-metrics.csv").rows.size)
+        assertTrue(unchecked.csv("phone-motion.csv").rows.isNotEmpty())
     }
 
     @Test fun magnetometerRowsHaveTheRightCountAndScale() {

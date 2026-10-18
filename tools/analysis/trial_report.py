@@ -635,8 +635,79 @@ def t4(ex, explicit):
             rows.append(Row(T, "phone largest gap", f"{gap:.0f} ms", f"< {PHONE_GAP_WARN_MS:.0f} ms (fail at {PHONE_GAP_FAIL_MS:.0f})", st, num=gap))
     rows.append(Row(T, "phone storage error", "n/a", "none", NA, "a storage error is not recorded in the export: check by hand"))
     rows.append(Row(T, "phone battery drain over 30 min", "n/a", "note only", NA, "needs the phone battery readings, not in the export: note by hand"))
-    rows.append(Row(T, "phone gyro vs boot roll rate", "n/a", "observation only", NA, "observation only: no torso metric is built, so the tool computes nothing here"))
+    rows += torso_rows(ex)
     return rows
+
+
+def spread_text(d, nd=3):
+    """'mean (sd x, n k)' from a {n, mean, sd} spread block; 'n/a' when it is null."""
+    mean = jnum(d, "mean")
+    if not fin(mean):
+        return "n/a"
+    sd, n = jnum(d, "sd"), jnum(d, "n")
+    return f"{mean:.{nd}g}" + (f" (sd {sd:.{nd}g}" if fin(sd) else " (sd n/a") + (f", n {int(n)})" if fin(n) else ")")
+
+
+def torso_rows(ex):
+    """T4 torso metrics (experimental, unvalidated): INFO when computed, WARN when refused or marginal, never FAIL."""
+    T = "T4"
+    line = "observation only (experimental, unvalidated)"
+    a = ex.json("analysis-summary.json")
+    tm = a.get("torso_metrics") if isinstance(a, dict) else None
+    if not isinstance(tm, dict):
+        return [Row(T, "torso metrics status", "n/a", line, NA, "analysis-summary.json has no torso_metrics block (an export from before the torso metrics)")]
+    rows = []
+    status = tm.get("status")
+    reason = tm.get("reason") or ""
+    if status != "computed":
+        rows.append(Row(T, "torso metrics status", str(status), line, WARN, reason or "torso metrics not computed"))
+        return rows
+    n, nm, lim = jnum(tm, "rows"), jnum(tm, "rows_with_metrics"), jnum(tm, "rows_timing_limited")
+    rows.append(Row(T, "torso metrics status", f"computed: {fm(n, 0)} rows, {fm(nm, 0)} with metrics, run coverage {fm(jnum(tm, 'run_coverage_fraction') * 100, 0)} %",
+                    line, INFO, reason))
+    timing = tm.get("timing") if isinstance(tm.get("timing"), dict) else {}
+    parts, unmeasured = [], []
+    for side in EXPECTED_SIDES:
+        t = timing.get(side)
+        if not isinstance(t, dict):
+            continue
+        if t.get("source") != "ping":
+            unmeasured.append(side)
+        parts.append(f"{side} {t.get('source')} bias removed {fm(jnum(t, 'bias_removed_ms'), 1)} ms, uncertainty <= {fm(jnum(t, 'max_uncertainty_ms'), 1)} ms")
+    val = "; ".join(parts) + f"; {fm(lim, 0)} rows timing-limited"
+    if unmeasured:
+        rows.append(Row(T, "torso timing", val, line, WARN, f"boot {', '.join(unmeasured)}: no ping measurement of the phone-to-boot timeline bias, so an allowance of tens of ms is used"))
+    else:
+        rows.append(Row(T, "torso timing", val, line, INFO))
+    q = tm.get("quietness") if isinstance(tm.get("quietness"), dict) else {}
+    rows.append(Row(T, "torso quietness", f"run gyro RMS {fm(jnum(q, 'run_gyro_rms_dps'), 2)} dps (still floor {fm(jnum(q, 'still_gyro_rms_dps'), 2)} dps), horizontal accel SD {fm(jnum(q, 'run_horizontal_accel_sd_mps2'), 3)} m/s^2; "
+                    f"per turn gyro RMS {spread_text(q.get('per_turn_gyro_rms_dps'))} dps", line + "; lower = quieter upper body, not a score", INFO, num=jnum(q, "run_gyro_rms_dps")))
+    pb = tm.get("per_boot") if isinstance(tm.get("per_boot"), dict) else {}
+    for side in EXPECTED_SIDES:
+        b = pb.get(side)
+        if not isinstance(b, dict):
+            continue
+        lv = b.get("tilt_vs_roll") if isinstance(b.get("tilt_vs_roll"), dict) else {}
+        ratio = lv.get("tilt_to_roll_ratio")
+        if fin(jnum(ratio, "mean")):
+            rows.append(Row(T, f"torso tilt vs boot roll {side}", f"tilt/roll {spread_text(ratio)}, correlation across turns {fm(jnum(lv, 'correlation_across_turns'), 3)}, "
+                            f"tilt {spread_text(lv.get('torso_tilt_peak_deg'))} deg", line + "; total tilt (sideways and fore-aft), magnitudes, not lateral roll", INFO, num=jnum(ratio, "mean")))
+        else:
+            rows.append(Row(T, f"torso tilt vs boot roll {side}", "n/a", line, NA, "no candidate with a torso tilt and a boot roll peak"))
+        yw = b.get("yaw") if isinstance(b.get("yaw"), dict) else {}
+        turns = jnum(yw, "turns")
+        if fin(turns) and turns > 0:
+            rows.append(Row(T, f"torso yaw vs boot heading {side}", f"{int(turns)} turns, torso/boot heading {spread_text(yw.get('torso_to_boot_heading_ratio'))}, "
+                            f"yaw-rate correlation {spread_text(yw.get('yaw_rate_correlation'))}, sign agreement {fm(jnum(yw, 'sign_agreement_fraction'), 2)}",
+                            line, INFO, num=jnum(jnum_dict(yw, "torso_to_boot_heading_ratio"), "mean")))
+        else:
+            rows.append(Row(T, f"torso yaw vs boot heading {side}", "n/a", line, NA, "the boot did not turn by the minimum heading change in any candidate, so the yaw comparison is not meaningful"))
+    return rows
+
+
+def jnum_dict(d, k):
+    v = d.get(k) if isinstance(d, dict) else None
+    return v if isinstance(v, dict) else {}
 
 
 # ---------------------------------------------------------------- T5
@@ -1125,6 +1196,36 @@ def _selftest(d, tmp):
     st = get(compare_summaries(smooth, rough), "T3", "rough vs smooth: usable share or roughness")[0].status
     check("R10 a 2-candidate boot cannot drive the roughness direction (pooled 4.7 < 5, not the unweighted 11.5)", st != PASS and abs(mean_roughness(rough) - 4.7) < 1e-9, f"{st}, pooled {mean_roughness(rough)}")
 
+    # R11 torso metrics (experimental): never a FAIL, whatever the block says
+    def torso_nulls(o):
+        tm = o["torso_metrics"]
+        tm.update(run_coverage_fraction=None, rows_timing_limited=None)
+        tm["quietness"].update(run_gyro_rms_dps=None, per_turn_gyro_rms_dps=None)
+        for b in tm.get("per_boot", {}).values():
+            b["tilt_vs_roll"].update(tilt_to_roll_ratio=None, correlation_across_turns=None)
+            b["yaw"].update(turns=None)
+        for t in tm.get("timing", {}).values():
+            t.update(bias_removed_ms=None, max_uncertainty_ms=None)
+    mutate(clean, P("torso-null.zip"), {"analysis-summary.json": edit_json(torso_nulls)})
+    rows = get(run_checks(P("torso-null.zip"), ["T4"]), "T4", "torso")
+    check("R11 null torso numbers: rows present, no tool error, no FAIL", rows and not [r for r in rows if r.status == FAIL] and all(r.check != "tool error" for r in rows),
+          "; ".join(f"{r.check}={r.status}" for r in rows))
+    def torso_refused(o):
+        o["torso_metrics"] = {"experimental": True, "status": "refused", "reason": "refused: the phone covers 20 % of the session, under 50 %"}
+    mutate(clean, P("torso-refused.zip"), {"analysis-summary.json": edit_json(torso_refused)})
+    st = get(run_checks(P("torso-refused.zip"), ["T4"]), "T4", "torso metrics status")
+    check("R11 a refused torso block is WARN with its reason", st and st[0].status == WARN and "covers" in st[0].why, st[0].why if st else "no row")
+    def torso_missing(o):
+        o.pop("torso_metrics", None)
+    mutate(clean, P("torso-missing.zip"), {"analysis-summary.json": edit_json(torso_missing)})
+    st = get(run_checks(P("torso-missing.zip"), ["T4"]), "T4", "torso")
+    check("R11 an export without a torso block is one N/A row", len(st) == 1 and st[0].status == NA and "no torso_metrics block" in st[0].why, "; ".join(r.why for r in st))
+    def torso_unmeasured(o):
+        o["torso_metrics"]["timing"]["R"]["source"] = "unmeasured"
+    mutate(clean, P("torso-unmeasured.zip"), {"analysis-summary.json": edit_json(torso_unmeasured)})
+    st = get(run_checks(P("torso-unmeasured.zip"), ["T4"]), "T4", "torso timing")
+    check("R11 unmeasured torso timing is WARN, not FAIL", st and st[0].status == WARN and "allowance" in st[0].why, st[0].why if st else "no row")
+
     w = max(len(n) for n, _, _ in results)
     for n, ok, dtl in results:
         print(f"{n.ljust(w)} | {'ok' if ok else 'FAILED'}" + ("" if ok or not dtl else f" | {dtl}"))
@@ -1202,6 +1303,17 @@ def build_expectations():
     E.append(Expect("fault-long-uptime.zip", "T1", "stomp minus ping", (PASS,), "boots up for hours (3 and 5 clock wraps): stomp and ping in one frame agree"))
     E.append(Expect("fault-long-uptime.zip", "T3", "left-right alignment", (INFO,), "boots up for hours: the stomp is applied", reason_has="agrees with the pings"))
     E.append(Expect("fault-long-uptime.zip", "T1", "", ok, "boots up for hours: no FAIL in T1"))
+    # torso metrics (T4, experimental: INFO, WARN or N/A, never FAIL)
+    E.append(Expect("clean.zip", "T4", "torso metrics status", (INFO,), "clean: torso metrics computed", reason_has="computed"))
+    E.append(Expect("clean.zip", "T4", "torso timing", (INFO,), "clean: pings measure the phone-to-boot timeline bias", reason_has="ping"))
+    E.append(Expect("clean.zip", "T4", "torso yaw vs boot heading", (NA,), "the default garden boots do not turn about the vertical", reason_has="did not turn"))
+    for t in ("T0", "T1", "T3", "T4", "T5", "T6"):
+        nofail("torso.zip", t, "the torso-truth session has no FAIL in " + t)
+    E.append(Expect("torso.zip", "T4", "torso tilt vs boot roll", (INFO,), "torso tilts 0.4 of the boot roll (sideways only in this session)"))
+    E.append(Expect("torso.zip", "T4", "torso yaw vs boot heading", (INFO,), "torso turns half the boot heading, same sign"))
+    E.append(Expect("fault-no-phone.zip", "T4", "torso metrics status", (WARN,), "no phone rows: torso metrics refused", reason_has="no phone motion rows"))
+    E.append(Expect("fault-phone-clock-unchecked.zip", "T4", "torso metrics status", (WARN,), "no phone clock check: torso metrics refused", reason_has="phone_clock_check"))
+    E.append(Expect("fault-phone-clock-unchecked.zip", "T4", "phone clock offset", (FAIL,), "the phone clock check is missing", reason_has="phone_clock_check"))
     return E
 
 
@@ -1258,6 +1370,20 @@ def cmd_regress(d):
                         f"aligned {fm(al, 1)} ms, unaligned {fm(un, 1)} ms", good))
         except (ExportError, KeyError, TypeError) as e:
             res.append(("fault-right-timeline-late.zip aligned onset lag", "WRONG", str(e), False))
+    # numeric: the torso-truth session reads its known tilt (0.4 x boot roll) and heading (0.5 x boot heading; 0.475 on the
+    # right boot, whose window is 60 ms after the torso's turn) ratios
+    if "torso.zip" in zips:
+        try:
+            pb = Export(zips["torso.zip"]).json("analysis-summary.json")["torso_metrics"]["per_boot"]
+            for side in EXPECTED_SIDES:
+                tilt = jnum(pb[side]["tilt_vs_roll"]["tilt_to_roll_ratio"], "mean")
+                yaw = jnum(pb[side]["yaw"]["torso_to_boot_heading_ratio"], "mean")
+                want_yaw = 0.5 if side == "L" else 0.475
+                good = fin(tilt) and fin(yaw) and abs(tilt - 0.4) <= 0.01 and abs(yaw - want_yaw) <= 0.01
+                res.append((f"torso.zip {side} tilt and heading ratios near the truth (0.4, {want_yaw})", "ok" if good else "WRONG",
+                            f"tilt/roll {fm(tilt, 3)}, torso/boot heading {fm(yaw, 3)}", good))
+        except (ExportError, KeyError, TypeError) as e:
+            res.append(("torso.zip torso ratios", "WRONG", str(e), False))
     # numeric: the biased ping must disagree more than the clean one
     try:
         cl = [r for r in rows_for("clean.zip") if r.check == "stomp minus ping"][0]

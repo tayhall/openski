@@ -68,11 +68,48 @@ data class GardenParams(
      */
     val rightLiveExtraDelaySec: Double = 0.0,
     val includePhone: Boolean = true,
+    /** False leaves out the phone_clock_check event while keeping the phone rows (the torso metrics must refuse). */
+    val phoneClockCheck: Boolean = true,
+    /**
+     * When set, the phone rows follow this torso model (lean and heading tied to the left boot's half-turns, phone at an
+     * arbitrary fixed angle in the pocket) instead of the small default sway. Off by default, so the default ZIPs keep
+     * their phone rows.
+     */
+    val torso: GardenTorso? = null,
+    /** Heading change of each boot per half-turn (deg, the turn's direction: positive roll turns left). 0 keeps the boots' heading still. */
+    val bootHeadingPerTurnDeg: Double = 0.0,
     val includeMagnetometer: Boolean = true,
     /** The left boot resets at this true time (its clock restarts), and the phone reconnects [reconnectAfterSec] later. */
     val leftClockResetAtSec: Double? = null,
     val reconnectAfterSec: Double = 5.0,
 )
+
+/**
+ * Known-truth torso for the phone rows: lean = [leanGain] x the left boot's roll (about the torso's forward axis), torso
+ * heading rate = [yawGain] x the boot heading rate; the phone sits at the fixed rotation [pocket] (device to torso: the
+ * phone's device-to-world rotation is torso x pocket) and the game rotation vector has the arbitrary yaw reference
+ * [gameYawRad]. Noise is fixed to the torso. No fore-aft pitch, so the phone's total tilt equals the sideways lean.
+ */
+data class GardenTorso(
+    val leanGain: Double = 0.4,
+    val yawGain: Double = 0.5,
+    val pocket: GardenQuat = GardenQuat.axis(Vector3(0.3, -0.8, 0.5), 2.1),
+    val gameYawRad: Double = 0.7,
+    val gyroNoiseRadps: Double = 0.01,
+    val accelNoiseMps2: Double = 0.05,
+)
+
+/** Device-to-world rotation as a unit quaternion (w, x, y, z), for the synthetic phone. */
+data class GardenQuat(val w: Double, val x: Double, val y: Double, val z: Double) {
+    operator fun times(q: GardenQuat) = GardenQuat(w * q.w - x * q.x - y * q.y - z * q.z, w * q.x + x * q.w + y * q.z - z * q.y,
+        w * q.y - x * q.z + y * q.w + z * q.x, w * q.z + x * q.y - y * q.x + z * q.w)
+    fun conj() = GardenQuat(w, -x, -y, -z)
+    fun rotate(v: Vector3): Vector3 { val r = this * GardenQuat(0.0, v.x, v.y, v.z) * conj(); return Vector3(r.x, r.y, r.z) }
+    companion object {
+        val IDENTITY = GardenQuat(1.0, 0.0, 0.0, 0.0)
+        fun axis(ax: Vector3, angle: Double): GardenQuat { val u = ax.unit(); val s = sin(angle / 2); return GardenQuat(cos(angle / 2), u.x * s, u.y * s, u.z * s) }
+    }
+}
 
 data class GardenTurn(val startSec: Double, val durationSec: Double, val signedPeakDeg: Double)
 
@@ -193,6 +230,19 @@ object SyntheticGardenSession {
         return 0.0 to 0.0
     }
 
+    /** Boot heading rate (deg/s) at true time [t]: a sin^2 lobe per half-turn whose integral is [perTurnDeg] in the turn's direction. */
+    private fun headingRate(turns: List<GardenTurn>, t: Double, perTurnDeg: Double): Double {
+        if (perTurnDeg == 0.0) return 0.0
+        for (turn in turns) {
+            val u = t - turn.startSec
+            if (u >= 0 && u < turn.durationSec) {
+                val x = PI * u / turn.durationSec
+                return (if (turn.signedPeakDeg > 0) perTurnDeg else -perTurnDeg) * 2 / turn.durationSec * sin(x) * sin(x)
+            }
+        }
+        return 0.0
+    }
+
     private class Piece(val tTo: Double, val sensor0: Double, val tOf: (Double) -> Double, val flash: Boolean)
 
     private val gyroBias = Triple(0.012, -0.008, 0.005)
@@ -271,9 +321,11 @@ object SyntheticGardenSession {
                     val ax = 0.03 + rng.nextGaussian() * 0.04
                     val ay = -0.02 + G * sin(phi) + rng.nextGaussian() * 0.04
                     val az = 0.05 + G * cos(phi) + ring + rng.nextGaussian() * 0.04
+                    // Heading: rotation about the vertical, which is (0, sin phi, cos phi) in the sensor frame (zero by default).
+                    val h = Math.toRadians(headingRate(turns, t - lag, p.bootHeadingPerTurnDeg))
                     val gx = Math.toRadians(rateDps) + gyroBias.first + rng.nextGaussian() * 0.004
-                    val gy = gyroBias.second + ring / p.stompAmplitude + rng.nextGaussian() * 0.004
-                    val gz = gyroBias.third + rng.nextGaussian() * 0.004
+                    val gy = gyroBias.second + ring / p.stompAmplitude + rng.nextGaussian() * 0.004 + h * sin(phi)
+                    val gz = gyroBias.third + rng.nextGaussian() * 0.004 + h * cos(phi)
                     var flags = 0
                     if (rng.nextDouble() < p.accelClipShare) flags = flags or SensorSample.QUALITY_ACCEL_RAIL
                     if (rng.nextDouble() < p.gyroClipShare) flags = flags or SensorSample.QUALITY_GYRO_RAIL
@@ -324,7 +376,7 @@ object SyntheticGardenSession {
 
         val clockPairs = if (p.includePings) pings(p, truth, sides) else emptyList()
         val mag = if (p.includeMagnetometer) magnetometer(p, truth) else emptyList()
-        val phone = if (p.includePhone) phoneRows(p, truth, turns) else emptyList()
+        val phone = if (!p.includePhone) emptyList() else p.torso?.let { torsoRows(p, truth, turns, it) } ?: phoneRows(p, truth, turns)
         truth.magRows = mag.size
         truth.phoneRows = phone.size
 
@@ -332,12 +384,12 @@ object SyntheticGardenSession {
         events.add(truth.wallMs(0.0) to "clock_ref wall_ms=${truth.wallMs(0.0)} elapsed_ns=${truth.phoneNs(0.0)}")
         if (p.includeLeftFlash) events.add(truth.wallMs(0.35) to "L sensor flash recording started")
         if (p.includeRightBoot && p.includeRightFlash) events.add(truth.wallMs(0.4) to "R sensor flash recording started")
-        if (p.includePhone) {
+        if (p.includePhone && p.phoneClockCheck) {
             val rng = Random(p.seed + 99)
             val deltas = List(PhoneMotionExport.CLOCK_CHECK_EVENTS) { -((200_000 + rng.nextInt(3_800_000)).toLong()) }
             truth.phoneClockCheckOffsetMs = deltas.max() / 1e6
             events.add(truth.wallMs(0.5) to PhoneMotionExport.clockCheckEvent(deltas))
-        } else events.add(truth.wallMs(0.5) to "phone_motion unavailable")
+        } else if (!p.includePhone) events.add(truth.wallMs(0.5) to "phone_motion unavailable")
         p.leftClockResetAtSec?.let { events.add(truth.wallMs(it) to "L boot disconnected; live samples unavailable until reconnect") }
         events.sortBy { it.first }
 
@@ -442,6 +494,33 @@ object SyntheticGardenSession {
             out.add(StoredPhone(truth.phoneNs(t), (rng.nextGaussian() * 0.01).toFloat(), (rng.nextGaussian() * 0.01).toFloat(), gz.toFloat(),
                 (0.3 + rng.nextGaussian() * 0.05).toFloat(), (rng.nextGaussian() * 0.05).toFloat(), (G + rng.nextGaussian() * 0.05).toFloat(),
                 cos(yaw / 2).toFloat(), 0f, 0f, sin(yaw / 2).toFloat()))
+        }
+        return out
+    }
+
+    private fun torsoRows(p: GardenParams, truth: GardenTruth, turns: List<GardenTurn>, m: GardenTorso): List<StoredPhone> {
+        val rng = Random(p.seed + 900)
+        val out = ArrayList<StoredPhone>()
+        val up = Vector3(0.0, 0.0, 1.0)
+        var heading = 0.0
+        var i = 0
+        while (true) {
+            val t = i * 0.01 + rng.nextGaussian() * 0.0002
+            i++
+            if (t >= p.durationSec) break
+            val (rollDeg, rateDps) = roll(turns, t)
+            val hRate = Math.toRadians(m.yawGain * headingRate(turns, t, p.bootHeadingPerTurnDeg))
+            heading += hRate * 0.01
+            val yawQ = GardenQuat.axis(up, m.gameYawRad + heading)
+            val torso = yawQ * GardenQuat.axis(Vector3(1.0, 0.0, 0.0), Math.toRadians(m.leanGain * rollDeg))
+            val q = torso * m.pocket
+            val noiseW = torso.rotate(Vector3(rng.nextGaussian(), rng.nextGaussian(), rng.nextGaussian()) * m.gyroNoiseRadps)
+            val noiseA = torso.rotate(Vector3(rng.nextGaussian(), rng.nextGaussian(), rng.nextGaussian()) * m.accelNoiseMps2)
+            val w = up * hRate + yawQ.rotate(Vector3(1.0, 0.0, 0.0)) * Math.toRadians(m.leanGain * rateDps) + noiseW
+            val gyro = q.conj().rotate(w)
+            val acc = q.conj().rotate(Vector3(0.0, 0.0, G) + noiseA)
+            out.add(StoredPhone(truth.phoneNs(t), gyro.x.toFloat(), gyro.y.toFloat(), gyro.z.toFloat(), acc.x.toFloat(), acc.y.toFloat(), acc.z.toFloat(),
+                q.w.toFloat(), q.x.toFloat(), q.y.toFloat(), q.z.toFloat()))
         }
         return out
     }

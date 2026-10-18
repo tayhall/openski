@@ -117,6 +117,17 @@ object SessionExport {
             val turnMetricRows=listOf("L","R").associateWith { side -> TurnMetricsExport.rows(side,rollBySide[side].orEmpty(),
                 detections.getValue(side).movements,headingTurns.getValue(side),positiveLeft(side)) }
             entry("turn-metrics.csv") { w -> w.write(TurnMetricsExport.csv(turnMetricRows.values.flatten())) }
+            // Experimental torso metrics: the phone (jacket pocket) against each boot turn candidate, on each boot's own timeline.
+            val clockRef=ClockSyncExport.reference(data.events)
+            val userOffsets=mapOf("L" to session.leftOffsetMs.toDouble(),"R" to session.rightOffsetMs.toDouble())
+            // Exception only: an OutOfMemoryError or other Error must not be turned into a refusal.
+            val torso=try { TorsoMetricsExport.analyse(data.phone,PhoneMotionExport.clockOffsetMs(data.events),clockRef,
+                TorsoMetricsExport.candidates(turnMetricRows.values.flatten()),rollBySide,
+                listOf("L","R").associateWith { side -> TorsoMetricsExport.SideTiming(ClockAlignment.anchor(analysis.timeline,side),
+                    clockSyncs[side],clockRef,userOffsets.getValue(side)) },
+                session.startedAtMs.toDouble(),(session.endedAtMs ?: System.currentTimeMillis()).toDouble(),
+                alignment.source.name.lowercase(),userOffsets) } catch (e: Exception) { TorsoMetricsExport.failed("refused: torso metrics failed (${e.message ?: "error"})") }
+            entry("torso-metrics.csv") { w -> w.write(TorsoMetricsExport.csv(torso.rows,torso.reason)) }
             val summary=JSONObject().put("data_origin",session.origin)
                 .put("detector","experimental_dry_roll").put("entry_deg",8).put("neutral_deg",3)
                 .put("filter_time_constant_ms",100).put("label_tolerance_ms",500)
@@ -184,6 +195,7 @@ object SessionExport {
                 TurnMetricsExport.agreementPairs(rollBySide["L"].orEmpty(),alignedRight,
                     detections.getValue("L").movements,alignedRightDetection.movements,positiveLeft("L"),positiveLeft("R"),
                     alignment.uncertaintyMs),alignment)))
+            summary.put("torso_metrics",TurnMetricsExport.toJson(torso.block))
             entry("analysis-summary.json") { it.write(summary.toString(2)) }
             entry("session-health.json") { it.write(SessionHealth.build(data).toJson()) }
         }
