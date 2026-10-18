@@ -29,6 +29,7 @@ ImuMonitor imuMonitor(sensor);
 uint32_t lastLoggedSampleCount = 0;
 unsigned long lastSampleLogMs = 0;
 constexpr uint32_t kRetryIntervalMs = 2000;
+constexpr uint32_t kStallMs = 1000;  // a healthy IMU delivers 100 samples a second
 }  // namespace
 
 void begin() {
@@ -45,6 +46,10 @@ void tick() {
     Serial.printf("IMU ready after retry: %s\n", imuMonitor.sensorName());
   }
   imuMonitor.poll();
+  if (imuMonitor.checkStall(millis(), kStallMs)) {
+    Serial.printf("IMU stalled: no new sample for 1 s, re-initialising (stall %lu)\n",
+                  static_cast<unsigned long>(imuMonitor.stats().stalls));
+  }
   const Stats& stats = imuMonitor.stats();
   const unsigned long now = millis();
   if (!imuMonitor.hasSample() || stats.samples == lastLoggedSampleCount ||

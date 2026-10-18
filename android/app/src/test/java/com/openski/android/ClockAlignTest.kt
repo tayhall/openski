@@ -65,6 +65,15 @@ class ClockAlignTest {
         assertEquals(ppm, r.driftPpm, tolPpm)
     }
 
+    @Test fun unsortedOrNonFiniteTimesAreRefusedAtConstruction() {
+        assertThrows(IllegalArgumentException::class.java) {
+            ClockAlign.Series(doubleArrayOf(0.0, 2.0, 1.0), doubleArrayOf(0.0, 0.0, 0.0))
+        }
+        assertThrows(IllegalArgumentException::class.java) {
+            ClockAlign.Series(doubleArrayOf(0.0, Double.NaN), doubleArrayOf(0.0, 0.0))
+        }
+    }
+
     @Test fun oneCountBlipInAConstantSeriesIsNotATransient() {
         // More than half the window equals the median, so the robust noise estimate is zero; a 0.01 m/s2 blip must
         // still be refused by the absolute floor.

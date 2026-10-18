@@ -18,9 +18,24 @@ import kotlin.math.sqrt
  * or the two ends disagree.
  */
 object ClockAlign {
+    /**
+     * Time-ordered samples. The arrays must not be modified after construction: the medians below are cached,
+     * and the window search relies on the times being non-decreasing, which is checked here.
+     */
     class Series(val timesSec: DoubleArray, val values: DoubleArray) {
-        init { require(timesSec.size == values.size) { "times and values differ in length" } }
+        init {
+            require(timesSec.size == values.size) { "times and values differ in length" }
+            for (i in timesSec.indices) {
+                require(timesSec[i].isFinite()) { "time at index $i is not finite" }
+                if (i > 0) require(timesSec[i] >= timesSec[i - 1]) { "times must be non-decreasing (index $i)" }
+            }
+        }
         val size get() = timesSec.size
+        /** Computed once per series: [align] and its helpers ask for these repeatedly. */
+        val medianValue: Double by lazy { median(values) }
+        val medianDt: Double by lazy {
+            if (size < 2) 0.0 else median(DoubleArray(size - 1) { timesSec[it + 1] - timesSec[it] })
+        }
     }
 
     /** A search window in one stream's own clock, in seconds. */
@@ -101,7 +116,7 @@ object ClockAlign {
         if (ta.status == Status.FLAT || tb.status == Status.FLAT) return End(null, Reject.NO_TRANSIENT)
         if (ta.status == Status.DOUBLE || tb.status == Status.DOUBLE) return End(null, Reject.AMBIGUOUS)
         val r = refine(a, b, ta.timeSec, tb.timeSec, cfg) ?: return End(null, Reject.NO_MATCH)
-        val dt = max(medianStep(a), medianStep(b))
+        val dt = max(a.medianDt, b.medianDt)
         val sigma = 0.5 * dt * (1 + 2 * (1 - r.second))
         val fit = EndFit(ta.timeSec, r.first, r.second, sigma)
         // A low-correlation fit is kept for diagnostics only; the caller must not use it.
@@ -112,10 +127,12 @@ object ClockAlign {
     private class Peak(val timeSec: Double, val status: Status)
 
     private fun findTransient(s: Series, w: Window, cfg: Config): Peak {
-        val idx = (0 until s.size).filter { s.timesSec[it] >= w.fromSec && s.timesSec[it] <= w.toSec }
-        if (idx.size < 20) return Peak(Double.NaN, Status.FLAT)
-        val t = DoubleArray(idx.size) { s.timesSec[idx[it]] }
-        val m = DoubleArray(idx.size) { s.values[idx[it]] }
+        val ts = s.timesSec
+        val lo = SortedTimes.firstAtOrAfter(ts.size, w.fromSec) { ts[it] }
+        val hi = SortedTimes.firstAfter(ts.size, w.toSec) { ts[it] }
+        if (hi - lo < 20) return Peak(Double.NaN, Status.FLAT)
+        val t = DoubleArray(hi - lo) { s.timesSec[lo + it] }
+        val m = DoubleArray(hi - lo) { s.values[lo + it] }
         val base = median(m)
         val f = DoubleArray(m.size) { abs(m[it] - base) }
         val noise = max(1.4826 * median(f), 1e-9)
@@ -141,8 +158,8 @@ object ClockAlign {
     private fun refine(a: Series, b: Series, pa: Double, pb: Double, cfg: Config): Pair<Double, Double>? {
         val g = cfg.gridSec
         val n = (2 * cfg.patchHalfSec / g).toInt() + 1
-        val medA = median(a.values)
-        val medB = median(b.values)
+        val medA = a.medianValue
+        val medB = b.medianValue
         val pat = DoubleArray(n)
         for (k in 0 until n) {
             val v = interp(a, pa - cfg.patchHalfSec + k * g, medA)
@@ -195,11 +212,6 @@ object ClockAlign {
         val span = ts[hi] - ts[lo]
         val u = if (span <= 0.0) 0.0 else (t - ts[lo]) / span
         return s.values[lo] + u * (s.values[hi] - s.values[lo]) - centre
-    }
-
-    private fun medianStep(s: Series): Double {
-        if (s.size < 2) return 0.0
-        return median(DoubleArray(s.size - 1) { s.timesSec[it + 1] - s.timesSec[it] })
     }
 
     private fun median(x: DoubleArray): Double {

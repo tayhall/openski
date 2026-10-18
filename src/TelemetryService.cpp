@@ -316,7 +316,7 @@ void handleAcquisition() {
       "\"timestamp_unit\":\"us\",\"timestamp_bits\":32,"
       "\"timestamp_reference\":\"device_read_completion\","
       "\"accel_unit\":\"m/s2\",\"gyro_unit\":\"rad/s\","
-      "\"sample_count\":%lu,\"read_failures\":%lu,"
+      "\"sample_count\":%lu,\"read_failures\":%lu,\"stalls\":%lu,"
       "\"gap_review_threshold_us\":20000,\"timestamp_gaps\":%lu,"
       "\"timestamp_wraps\":%lu,\"last_interval_us\":%lu,\"max_interval_us\":%lu,"
       "\"accel_near_rail_samples\":%lu,\"gyro_near_rail_samples\":%lu,"
@@ -328,6 +328,7 @@ void handleAcquisition() {
       imuProfile::kSampleRateHz, imuProfile::kAccelRangeG,
       imuProfile::kGyroRangeDps, bandwidth,
       static_cast<unsigned long>(stats.samples), static_cast<unsigned long>(stats.readFailures),
+      static_cast<unsigned long>(stats.stalls),
       static_cast<unsigned long>(stats.timestampGaps), static_cast<unsigned long>(stats.timestampWraps),
       static_cast<unsigned long>(stats.lastIntervalUs), static_cast<unsigned long>(stats.maxIntervalUs),
       static_cast<unsigned long>(stats.accelNearRailSamples),
