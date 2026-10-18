@@ -91,6 +91,28 @@ Validation used the Beuken run10 file (10 IMUs on one clock), decimated from 714
 - The reported uncertainty (about 5 ms offset, 12 ppm over 600 s) is deliberately conservative, several times the observed error. Tune it against hardware.
 - Not yet checked: real stomps on a boot, the effect of the boot's own bandwidth, and agreement with the protocol-level sync, which does not exist yet.
 
+## Gesture sync in the app
+
+Built 18 October 2026 on `feat/gesture-sync-app`; tested only on synthetic two-boot sessions.
+
+What is built:
+
+- `GestureSync.kt` (pure, JVM tested in `GestureSyncTest`) builds each boot's acceleration magnitude (m/s2) in its own sensor-clock seconds. Flash samples are used inside the span each capture covers and live samples fill the rest, as the graphs do. Flash timestamps are unwrapped like `SessionHealth` does, starting from the 32-bit wrap count nearest the boot's live clock (or its first ping when there is no live data).
+- It runs `ClockAlign.align` with the left boot as stream A and the right boot as stream B. The report gives offset (right minus left, in the left clock's time), drift, uncertainty, or the reject reason, and says when it could not run at all (a boot missing, or either recording under 45 s).
+- When ping pairs exist it also maps the left time of the stomp through the two boots' `ClockTimeline`s and reports the ping offset and the stomp minus ping difference in ms. It uses the latest epoch's timeline, so a session with a reconnect compares against that epoch only.
+- Export: `gesture-sync.json` in the session ZIP (result or reject reason, ping comparison, experimental note). The Details tab shows one line under Recording health, computed on the io thread with the rest of the load.
+- Prompts ask the skier to stomp: the run Ready, Running and Done screens and the Geek mode Record screen (`GestureSyncPrompts.kt`). The run state machine is unchanged.
+
+Window choice: the first and last 20 s of the left boot's recording. For the right boot, with pings, the same window mapped through the ping offset and widened by 1 s plus twice the ping uncertainty either side; without pings, the right boot's own first and last 20 s widened by 5 s either side (so the two recordings must have started within a few seconds of each other, which holds when both start from one tap). Windows are in each boot's own clock, so a boot that started its clock hours earlier is fine as long as pings or the shared start make the mapping right.
+
+What is not built or not known:
+
+- Not run on real boots or real stomps. The stomp shape, the boots' bandwidth and the 8 sigma and 0.7 correlation limits are unproven on hardware.
+- The stomp offset is reported, not applied: nothing yet corrects exports or the analysis with it. If it disagrees with the ping offset by more than a sample or two, the stomp result is the one to trust (see 'Known bias in the ping estimate').
+- Only one start and one end stomp are used; no check that the stomp happened at the right moment, and a bigger transient than the stomp inside a window (a jump, a pole plant) makes the window refused or, worse, matched to the wrong event if it is present on both boots.
+- Live samples carry 1 ms timestamps at 50 Hz, so a session without a flash copy aligns only to a sample or two of 20 ms.
+- Runs that end by themselves or are stopped without the end stomp have no end window event and are refused (no transient).
+
 ## Files that change together
 
 - `docs/ble-protocol.md` (opcode `09` and the response layout), `src/BluetoothService.cpp` (queue field, handler), a host test of the response encoding.
