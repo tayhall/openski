@@ -9,7 +9,7 @@ Principle: few manual steps, each one producing a defined file. Use the exports 
 - **Boots:** left boot `xiao-left-mag` (XIAO ESP32S3, LSM6DSOX, LIS3MDL; hostname `ski-xiao-l`), right boot `xiao-right` (XIAO ESP32S3, LSM6DSOX; hostname `ski-xiao-r`). Both sample at 104 Hz and are not resampled.
 - **Phone:** in the ski jacket pocket, so it is the upper-body reference. Screen off during trials unless a step says otherwise.
 - **Firmware and app:** built from the same `main`. The first flash of each XIAO is by USB (it carries the 8 MB partition table); later updates go over the air. Check the serial output at boot for `IMU ready: LSM6DSOX`, the recorder line (`... at 104 Hz`) and, on the left unit only, the magnetometer.
-- **Battery:** confirm polarity with a meter before the first connection, use a protected cell, and note the capacity. The battery divider pin is not defined yet, so battery percentage is not expected to work on the XIAO builds.
+- **Battery:** confirm polarity with a meter before the first connection, use a protected cell, and note the capacity. Battery sense is a 2 x 100 kohm divider with 100 nF on D0 (GPIO1), ratio 2.0 ([battery diagnostics](battery-diagnostics.md)); check `/api/v1/battery` against a multimeter at the start and end of the soak.
 - **App:** pair both boots, set the mounting for each, run the six-face check in Bench tools and save the correction per sensor before any trial that uses roll.
 
 ## Trials
@@ -17,7 +17,7 @@ Principle: few manual steps, each one producing a defined file. Use the exports 
 Each trial lists what to do, what to look at, and a starting pass line. Export the session ZIP after each one.
 
 **T0. Bench soak (10 minutes, boots lying still, phone beside them).**
-Look at: the Details tab health card and `session-health.json`. Pass: both boots usable; sample rate within about 1 Hz of 104 (flash) and 52 (live); no gaps; `stalls` is 0 in `/api/v1/acquisition`; clock slope between each boot and the phone under about 100 ppm; ping round-trip times recorded in `clock-sync.csv`. Also note the gyro bias and its drift over the 10 minutes from the raw samples, and the temperature range.
+Look at: the Details tab health card and `session-health.json`. Pass: both boots usable; sample rate within about 1 Hz of 104 (flash) and 52 (live); no gaps; `stalls` is 0 in `/api/v1/acquisition`; clock slope between each boot and the phone under about 100 ppm; ping round-trip times recorded in `clock-sync.csv`. Also note the gyro bias and its drift over the 10 minutes from the raw samples, the temperature range, and the battery reading against a multimeter (it should agree within about 50 mV; a larger error points at the high-impedance divider).
 
 **T1. Stomp sync (2 minutes, both boots worn).**
 Stand, wait 5 s, stomp both boots together once on a hard floor, stand 90 s, stomp again as you stop. Look at: `gesture-sync.json` and the Details line. Pass: status `measured`; the stomp offset and the ping offset agree to within about 15 ms. A larger, steady disagreement is the half-connection-interval ping bias described in [clock sync design](clock-sync-design.md), which is exactly what this trial exists to measure; record it with the connection interval if known. If the aligner refuses, record the reason and try a harder stomp or a firmer surface.
