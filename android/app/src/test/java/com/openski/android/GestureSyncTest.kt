@@ -126,6 +126,21 @@ class GestureSyncTest {
         assertTrue(report.reason!!.contains("more than one segment"))
     }
 
+    @Test fun theWrapRuleIsOneSharedDefinition() {
+        assertTrue(BootClockWrap.isRollover(4_294_000, 20))
+        assertFalse(BootClockWrap.isRollover(50_000, 20))        // a reset, not a wrap
+        assertFalse(BootClockWrap.isRollover(4_294_000, 200_000)) // too far past zero to be the wrap
+        assertFalse(BootClockWrap.isRollover(20, 4_294_000))      // forwards
+    }
+
+    @Test fun liveSamplesAfterTheWrapJoinTheEpochOfFlashThatStartedBeforeIt() {
+        // Flash covers 4290 s to 4300 s (wrapping at 4294.967 s); live starts at raw 3 s, i.e. 4297.97 s once unwrapped.
+        val flashSpans = listOf(4290.0 to 4300.0)
+        assertEquals(BootClockWrap.WRAP_SEC, GestureSync.nearestWrapShift(3.0, flashSpans), 1e-9)
+        assertEquals(0.0, GestureSync.nearestWrapShift(4295.0, flashSpans), 1e-9)
+        assertEquals(-BootClockWrap.WRAP_SEC, GestureSync.nearestWrapShift(8590.0, flashSpans), 1e-9)
+    }
+
     @Test fun recoversWithoutPingsUsingTheDefaultWindows() {
         val report = GestureSync.analyse(standard(false))
         assertTrue(report.reason, report.ok)

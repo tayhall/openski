@@ -73,7 +73,7 @@ object SessionAnalysis {
             for (record in records) {
                 val old = previous
                 val regression = old != null && record.sample.timestampMs < old.sample.timestampMs
-                val rollover = regression && old!!.sample.timestampMs > 4_200_000 && record.sample.timestampMs < 100_000
+                val rollover = regression && BootClockWrap.isRollover(old!!.sample.timestampMs, record.sample.timestampMs)
                 if (rollover) wrap += 4_294_967.296 // Firmware divides a uint32 microsecond clock by 1000.
                 if (segments.isEmpty() || (regression && !rollover) ||
                     (old != null && record.receivedAtMs - old.receivedAtMs > 30_000)) {
