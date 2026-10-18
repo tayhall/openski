@@ -278,7 +278,7 @@ class DrillActivity : Activity(), SensorSessionService.Listener {
             add(messageView!!)
         }
         val start = Intent(this, SensorSessionService::class.java).setAction(SensorSessionService.ACTION_START_RECORDING)
-            .putExtra("test_session", true)
+            .putExtra("test_session", true).putExtra(SensorSessionService.EXTRA_DRILL, true)
         try { startForegroundService(start); ownsRecording = true }
         catch (error: Exception) { calibrateScreen("Could not start recording: ${error.message ?: "service error"}") }
     }

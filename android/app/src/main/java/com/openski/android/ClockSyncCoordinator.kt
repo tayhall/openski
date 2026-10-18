@@ -63,8 +63,10 @@ class ClockSyncCoordinator(
     /** Pairs worth storing with a session that has just started: the current fit window of each boot. */
     fun recentPairs(): List<StoredClockPair> = syncs.values.flatMap { s -> s.pairs.takeLast(ClockSyncDefaults.WINDOW_PAIRS).map { it.stored() } }
 
+    /** A connect, recording-start or drift-alarm burst. A side whose end burst is running is left alone. */
     fun burst(sides: List<String>) {
-        val sel = sides.filter(::ready).sorted()
+        val now = SystemClock.elapsedRealtime()
+        val sel = sides.filter(::ready).filterNot { endBurstPlanner.blocksOtherBursts(it, now) }.sorted()
         if (sel.isEmpty()) return
         schedule(PingPlan.burst(sel))
     }
@@ -72,12 +74,13 @@ class ClockSyncCoordinator(
     /**
      * The burst just before a recording or run is saved ([EndBurstPlanner]). The caller saves after
      * [EndBurstPlanner.Decision.Burst.saveDelayMs] regardless of replies; a boot that drops mid-burst just misses its pings.
+     * It replaces any burst already running for a side, and no other burst may replace it until it ends.
      */
     fun endBurst(sessionId: String, testSession: Boolean, sides: List<String>): EndBurstPlanner.Decision {
         val boots = sides.distinct().map { side ->
             EndBurstPlanner.Boot(side, client(side)?.isReady == true, firmwareHasRecorder(side) && side !in gestureOnly)
         }
-        return endBurstPlanner.request(sessionId, testSession, boots).also { d ->
+        return endBurstPlanner.request(sessionId, testSession, boots, SystemClock.elapsedRealtime()).also { d ->
             if (d is EndBurstPlanner.Decision.Burst) schedule(d.slots)
         }
     }
@@ -146,6 +149,7 @@ class ClockSyncCoordinator(
 
     private fun extraBurst(side: String) {
         val now = SystemClock.elapsedRealtime()
+        if (endBurstPlanner.blocksOtherBursts(side, now)) return   // the end burst is already pinging this side
         if (now - (lastExtraBurstMs[side] ?: -ClockSyncDefaults.MIN_EXTRA_BURST_INTERVAL_MS) < ClockSyncDefaults.MIN_EXTRA_BURST_INTERVAL_MS) return
         lastExtraBurstMs[side] = now
         burst(listOf(side))

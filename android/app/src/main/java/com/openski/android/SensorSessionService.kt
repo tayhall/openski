@@ -248,7 +248,11 @@ class SensorSessionService : Service() {
         createNotificationChannel()
         activeSessionId = store.latestOpenSessionId()
         testRecording=activeSessionId?.let { store.getSession(it)?.testSession } ?: false
-        activeSessionId?.let { id -> if (!testRecording) { logEvent(id, "phone_motion resumed after service restart"); startPhoneMotion(id) } }
+        activeSessionId?.let { id ->
+            // Reuse the decision made when the session started, not the switch as it is now.
+            val phone = PhoneMotionRule.resumeDecision(store.eventMessages(id, "phone_motion "), testRecording, PhoneMotionSettings(this).enabled)
+            if (phone) { logEvent(id, "phone_motion resumed after service restart"); startPhoneMotion(id, true) }
+        }
         activeSessionId?.let { id -> store.getSession(id)?.let { session -> store.calibrations(session).forEach { c ->
             orientationTrackers[c.side]=BootOrientation.Tracker(c)
             movementTrackers[c.side]=DrySkiAnalysis.Tracker()
@@ -273,7 +277,7 @@ class SensorSessionService : Service() {
                     }
                     settleForeground()
                 }
-                ACTION_START_RECORDING -> startRecording(intent.getBooleanExtra("test_session",false))
+                ACTION_START_RECORDING -> startRecording(intent.getBooleanExtra("test_session",false), drill = intent.getBooleanExtra(EXTRA_DRILL, false))
                 ACTION_STOP_RECORDING -> if (runController.phase() == RunPhase.RUNNING) stopRun() else stopRecording()
                 ACTION_RECOVER -> recoverFlash()
                 ACTION_PAUSE_RECOVERY -> if (activeSessionId == null) pauseRecovery()
@@ -963,7 +967,8 @@ class SensorSessionService : Service() {
         }
     }
 
-    private fun startRecording(testSession: Boolean=false, kind: String="session") {
+    /** [drill] marks a drill's test recording, which follows the phone motion switch (garden trials T3 and T4). */
+    private fun startRecording(testSession: Boolean=false, kind: String="session", drill: Boolean = false) {
         if (activeSessionId != null) { ensureForeground(); return }
         recoveryPaused = false
         ensureForeground() // Meet the foreground-service deadline before opening the database.
@@ -989,7 +994,10 @@ class SensorSessionService : Service() {
             activeSessionId = id
             acquireWakeLock()
             startClockSync(id)
-            startPhoneMotion(id, testSession)
+            // The switch is read once, here; the decision is logged so a service restart can reuse it.
+            val phone = PhoneMotionRule.recordsPhone(PhoneMotionSettings(this).enabled, testSession, drill)
+            logEvent(id, PhoneMotionRule.decisionEvent(phone))
+            startPhoneMotion(id, phone)
             listener?.onRecordingChanged(id, if(testSession) "Test recording · hold neutral for two seconds, then calibrate" else "Recording · continues with screen off")
             clients.keys.toList().forEach { side -> if (recorderSupported[side] == true) requestInfo(side) }
         } catch (error: Exception) { storageError(error) }
@@ -1005,16 +1013,13 @@ class SensorSessionService : Service() {
     }
 
     /**
-     * Starts the phone's own motion sensors for this session when the switch (read here, as the session starts) is on;
-     * drills and test recordings never record the phone. A failure only skips the phone source.
+     * Starts the phone's own motion sensors for this session when [record] (decided once, when the session started:
+     * PhoneMotionRule) is true. A failure only skips the phone source.
      */
-    private fun startPhoneMotion(id: String, testSession: Boolean = false) {
+    private fun startPhoneMotion(id: String, record: Boolean) {
         phoneBuffer.drain() // rows left over from a session that ended in a storage error belong to no live session
         phoneSessionId = null
-        if (!PhoneMotionRule.recordsPhone(PhoneMotionSettings(this).enabled, testSession)) {
-            if (!testSession) logEvent(id, PhoneMotionRule.OFF_EVENT)
-            return
-        }
+        if (!record) return
         try {
             val recorder = PhoneMotionRecorder(this, phoneBuffer) { line ->
                 // Called on the sensor thread; the service may already be shutting its executor down.
@@ -1040,32 +1045,41 @@ class SensorSessionService : Service() {
         }
     }
 
-    /** The save waiting for the end ping burst; it runs after the burst whatever the replies, never later. */
+    /** Stop, end burst and save sequence (pure, StopSequencer); [pendingSave] is its armed timer. */
+    private val stopSequencer = StopSequencer()
     private var pendingSave: Runnable? = null
+
+    private fun cancelPendingSave() { pendingSave?.let(mainHandler::removeCallbacks); pendingSave = null }
 
     /**
      * Stops the recording. With [endBurst] a full recording or run first gets a short ping burst while the boots are
-     * still connected (EndBurstPlanner, about 3 s), and the save and flash recovery follow at its fixed deadline.
+     * still connected (EndBurstPlanner, about 3 s), and the save and flash recovery follow at its fixed deadline. The
+     * session end is the time of this call either way.
      */
     private fun stopRecording(endBurst: Boolean = true) {
         val id = activeSessionId ?: return
-        if (endBurst) when (val d = clockSync.endBurst(id, testRecording, clients.keys.toList())) {
-            is EndBurstPlanner.Decision.Burst -> {
-                val save = Runnable { pendingSave = null; if (activeSessionId == id) finishRecording() }
+        val now = System.currentTimeMillis()
+        val action = if (endBurst) stopSequencer.stop(id, now) { clockSync.endBurst(id, testRecording, clients.keys.toList()) }
+            else stopSequencer.stopNow(now)
+        when (action) {
+            is StopSequencer.Action.Wait -> {
+                cancelPendingSave()
+                lateinit var save: Runnable
+                save = Runnable {
+                    if (pendingSave === save) pendingSave = null
+                    stopSequencer.deadline(action.token, activeSessionId)?.let { finishRecording(it) }
+                }
                 pendingSave = save
-                mainHandler.postDelayed(save, d.saveDelayMs)
+                mainHandler.postDelayed(save, action.delayMs)
                 listener?.onRecordingChanged(id, "Stopping · syncing boot clocks for a few seconds, then saving")
-                return
             }
-            EndBurstPlanner.Decision.AlreadyScheduled -> if (pendingSave != null) return
-            EndBurstPlanner.Decision.SaveNow -> Unit
+            is StopSequencer.Action.SaveNow -> finishRecording(action.stopAtMs)
+            StopSequencer.Action.Ignore -> Unit
         }
-        finishRecording()
     }
 
-    private fun finishRecording() {
-        pendingSave?.let(mainHandler::removeCallbacks)
-        pendingSave = null
+    private fun finishRecording(stopAtMs: Long) {
+        cancelPendingSave()
         val id = activeSessionId ?: return
         activeSessionId = null
         guidedTrial=null
@@ -1073,7 +1087,7 @@ class SensorSessionService : Service() {
         flush()
         io.execute {
             try {
-                store.finishSession(id, System.currentTimeMillis())
+                store.finishSession(id, stopAtMs)
                 mainHandler.post {
                     if (destroyed) return@post
                     listener?.onRecordingChanged(null, "Live session saved · recovering sensor flash")
@@ -1114,6 +1128,8 @@ class SensorSessionService : Service() {
         runLocation.stop()   // fixes could no longer be written, so do not keep the location indicator on
         val id = activeSessionId
         activeSessionId = null
+        cancelPendingSave()        // a stop waiting for its end burst is dropped; the session is closed below
+        stopSequencer.cancel()
         stopPhoneMotion()
         // Stop accepting new samples, retain sensor backups and any pending RAM batch.
         transfers.keys.toList().forEach { side -> invalidate(side); clients.remove(side)?.disconnect() }
@@ -1264,7 +1280,8 @@ class SensorSessionService : Service() {
 
     override fun onDestroy() {
         // A stop that was waiting for the end ping burst saves now rather than leaving the session open.
-        pendingSave?.let { mainHandler.removeCallbacks(it); it.run() }
+        cancelPendingSave()
+        stopSequencer.flush(activeSessionId)?.let { finishRecording(it) }
         destroyed = true
         stopPhoneMotion()
         mainHandler.removeCallbacks(runTick)
@@ -1293,6 +1310,8 @@ class SensorSessionService : Service() {
         const val ACTION_RECOVER = "com.openski.android.RECOVER"
         const val ACTION_PAUSE_RECOVERY = "com.openski.android.PAUSE_RECOVERY"
         const val ACTION_RESUME_RECORDING = "com.openski.android.RESUME_RECORDING"
+        /** With ACTION_START_RECORDING and test_session: the test recording is a drill's. */
+        const val EXTRA_DRILL = "drill"
         const val CHANNEL_ID = "openski_recording"
         const val NOTIFICATION_ID = 107
         const val PREFS = "openski_sensor_assignments"

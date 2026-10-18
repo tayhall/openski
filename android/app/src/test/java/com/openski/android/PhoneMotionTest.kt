@@ -74,10 +74,29 @@ class PhoneMotionTest {
         assertFalse(PhoneMotionRule.recordsPhone(switchOn = false, testSession = true))
     }
 
+    @Test fun aDrillRecordsThePhoneWhenTheSwitchIsOn() {
+        // Garden trials T3 and T4 run drills with the phone in the pocket and read phone-motion.csv.
+        assertTrue(PhoneMotionRule.recordsPhone(switchOn = true, testSession = true, drill = true))
+        assertFalse(PhoneMotionRule.recordsPhone(switchOn = false, testSession = true, drill = true))
+    }
+
+    @Test fun aRestartReusesTheDecisionMadeAtSessionStart() {
+        val on = PhoneMotionRule.decisionEvent(true)
+        val off = PhoneMotionRule.decisionEvent(false)
+        // The switch has since been flipped; the logged decision wins.
+        assertTrue(PhoneMotionRule.resumeDecision(listOf("phone_motion resumed after service restart", on), testSession = true, switchOn = false))
+        assertFalse(PhoneMotionRule.resumeDecision(listOf(off), testSession = false, switchOn = true))
+        assertTrue(PhoneMotionRule.resumeDecision(listOf(off, on), testSession = false, switchOn = false))
+        // Sessions from before the decision was logged keep the old rule.
+        assertTrue(PhoneMotionRule.resumeDecision(emptyList(), testSession = false, switchOn = true))
+        assertFalse(PhoneMotionRule.resumeDecision(listOf("phone_motion unavailable"), testSession = true, switchOn = true))
+    }
+
     @Test fun theSwitchTextIsExperimentalAndHonest() {
         assertTrue(PhoneMotionRule.TITLE.contains("experimental"))
         listOf("pocket", "upper-body", "battery").forEach { assertTrue(it, PhoneMotionRule.DESCRIPTION.contains(it)) }
         assertTrue(PhoneMotionRule.OFF_EVENT.startsWith("phone_motion "))
+        assertTrue(PhoneMotionRule.ON_EVENT.startsWith("phone_motion "))
     }
 
     @Test fun csvWithoutClockCheckLeavesElapsedBlank() {

@@ -107,11 +107,27 @@ object PhoneMotionRule {
     /** [stored] is null when nothing was ever saved. */
     fun enabled(stored: Boolean?): Boolean = stored ?: DEFAULT_ENABLED
 
-    /** Read once when a session starts: drills and test recordings never record the phone; other sessions follow the switch. */
-    fun recordsPhone(switchOn: Boolean, testSession: Boolean): Boolean = switchOn && !testSession
+    /**
+     * Read once when a session starts. Plain test and calibration recordings never record the phone; drills (a test
+     * recording started by DrillActivity, used by garden trials T3 and T4) and ordinary sessions follow the switch.
+     */
+    fun recordsPhone(switchOn: Boolean, testSession: Boolean, drill: Boolean = false): Boolean = switchOn && (!testSession || drill)
 
-    /** The session event written when the switch kept the phone source off. */
+    /** The session events recording that decision, so a service restart reuses it. */
+    const val ON_EVENT = "phone_motion on (setting)"
     const val OFF_EVENT = "phone_motion off (setting)"
+    fun decisionEvent(record: Boolean) = if (record) ON_EVENT else OFF_EVENT
+
+    /**
+     * After a service restart: the last decision logged for the session ([messages] oldest first). A session from
+     * before the decision was logged falls back to the old rule (the switch now, never for a test recording).
+     */
+    fun resumeDecision(messages: List<String>, testSession: Boolean, switchOn: Boolean): Boolean =
+        when (messages.lastOrNull { it == ON_EVENT || it == OFF_EVENT }) {
+            ON_EVENT -> true
+            OFF_EVENT -> false
+            else -> recordsPhone(switchOn, testSession)
+        }
 }
 
 /** The skier's switch for recording phone motion, shown in Geek mode's Test lab. */

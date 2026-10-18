@@ -121,7 +121,7 @@ Phone motion recording (gyroscope, accelerometer, game rotation vector at about 
 - [ ] Delivery with the screen off: record 5 minutes with the phone locked in a pocket; `phone-motion.csv` should cover the whole session at about 100 rows per second with no multi-second holes. Repeat with battery saver on, since some phones throttle background sensors.
 - [ ] Battery drain over 30 minutes: compare a 30 minute recording with phone motion on against the same with the Geek mode switch off, and record the difference in `docs/bench-results.md`.
 - [ ] A phone without a game rotation vector (or an emulator) still records the boots and notes `phone_motion unavailable`.
-- [ ] Switch (Geek mode, Test lab, "Record phone motion (experimental)"; the rules are JVM-tested in `PhoneMotionTest`, the screen is not): it is on for a fresh install; turn it off, record, and the export has no `phone-motion.csv` rows and `events.csv` has `phone_motion off (setting)`; turning it on during a recording changes nothing until the next one; the setting survives an app restart.
+- [ ] Switch (Geek mode, Test lab, "Record phone motion (experimental)"; the rules are JVM-tested in `PhoneMotionTest`, the screen is not): it is on for a fresh install; turn it off, record, and the export has no `phone-motion.csv` rows and `events.csv` has `phone_motion off (setting)`; turning it on during a recording changes nothing until the next one, also across a service restart (the decision logged at the start, `phone_motion on/off (setting)`, is reused); the setting survives an app restart. A drill (Today or Path tab) with the switch on records `phone-motion.csv` (garden trials T3 and T4); a Test lab test recording does not.
 
 ## Garden trials checklist screen (check by hand)
 
