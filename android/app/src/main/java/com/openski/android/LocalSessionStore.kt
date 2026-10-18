@@ -41,14 +41,21 @@ data class StoredFlash(val capture: SensorCapture, val index: Int, val record: F
 data class SessionData(val session: SkiSession, val live: List<StoredLive>, val flash: List<StoredFlash>,
     val captures: List<SensorCapture>, val events: List<Pair<Long, String>>,
     val markers: List<TestMarker> = emptyList(), val health: List<SensorHealth> = emptyList(),
-    val run: RunData? = null)
+    val run: RunData? = null,
+    val clockPairs: List<StoredClockPair> = emptyList(), val mag: List<StoredMag> = emptyList())
+
+/** One time-sync exchange as stored (phone times are elapsedRealtimeNanos; [accepted] means it passed the sanity checks). */
+data class StoredClockPair(val side: String, val token: Int, val sendNs: Long, val recvNs: Long, val sensorUs: Long,
+    val rttNs: Long, val accepted: Boolean)
+/** One raw magnetometer frame; [receiptMs] is phone wall-clock time like samples.received_at_ms. */
+data class StoredMag(val side: String, val sensorMs: Long, val receiptMs: Long, val x: Int, val y: Int, val z: Int, val flags: Int)
 
 data class TestMarker(val id: Long, val timeMs: Long, val label: String, val side: String,
     val source: String, val note: String)
 data class SensorHealth(val side: String, val timeMs: Long, val battery: Int?, val batteryAtMs: Long?,
     val rssi: Int?, val rssiAtMs: Long?)
 
-class LocalSessionStore(context: Context, databaseName: String = "openski-local.db") : SQLiteOpenHelper(context, databaseName, null, 10) {
+class LocalSessionStore(context: Context, databaseName: String = "openski-local.db") : SQLiteOpenHelper(context, databaseName, null, 11) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE sessions (
             id TEXT PRIMARY KEY, started_at_ms INTEGER NOT NULL, ended_at_ms INTEGER,
@@ -69,6 +76,7 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
         addRunSchema(db)
         addQualitySchema(db)
         addTrackSchema(db)
+        addClockSchema(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -81,7 +89,62 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
         if (oldVersion < 8) addRunSchema(db)
         if (oldVersion < 9) addQualitySchema(db)
         if (oldVersion < 10) addTrackSchema(db)
+        if (oldVersion < 11) addClockSchema(db)
     }
+
+    /**
+     * Version 11: protocol clock sync and magnetometer. clock_sync holds the raw ping pairs, mag_samples the raw
+     * magnetometer frames, and phone_samples is created for the phone's own motion sensors (not written yet).
+     */
+    private fun addClockSchema(db: SQLiteDatabase) {
+        db.execSQL("""CREATE TABLE clock_sync(session_id TEXT NOT NULL, side TEXT NOT NULL, token INTEGER NOT NULL,
+            send_ns INTEGER NOT NULL, recv_ns INTEGER NOT NULL, sensor_us INTEGER NOT NULL, rtt_ns INTEGER NOT NULL,
+            accepted INTEGER NOT NULL)""")
+        db.execSQL("CREATE INDEX clock_sync_session_idx ON clock_sync(session_id, side, recv_ns)")
+        db.execSQL("""CREATE TABLE mag_samples(session_id TEXT NOT NULL, side TEXT NOT NULL, sensor_ms INTEGER NOT NULL,
+            phone_receipt_ms INTEGER NOT NULL, x INTEGER NOT NULL, y INTEGER NOT NULL, z INTEGER NOT NULL, flags INTEGER NOT NULL)""")
+        db.execSQL("CREATE INDEX mag_samples_session_idx ON mag_samples(session_id, side, sensor_ms)")
+        db.execSQL("""CREATE TABLE phone_samples(session_id TEXT NOT NULL, phone_ns INTEGER NOT NULL,
+            gx REAL NOT NULL, gy REAL NOT NULL, gz REAL NOT NULL, ax REAL NOT NULL, ay REAL NOT NULL, az REAL NOT NULL,
+            qw REAL NOT NULL, qx REAL NOT NULL, qy REAL NOT NULL, qz REAL NOT NULL)""")
+        db.execSQL("CREATE INDEX phone_samples_session_idx ON phone_samples(session_id, phone_ns)")
+    }
+
+    @Synchronized fun addClockPairs(sessionId: String, pairs: List<StoredClockPair>) {
+        if (pairs.isEmpty()) return
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            pairs.forEach { p -> db.insertOrThrow("clock_sync", null, ContentValues().apply {
+                put("session_id", sessionId); put("side", p.side); put("token", p.token); put("send_ns", p.sendNs)
+                put("recv_ns", p.recvNs); put("sensor_us", p.sensorUs); put("rtt_ns", p.rttNs); put("accepted", if (p.accepted) 1 else 0)
+            }) }
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+    }
+
+    @Synchronized fun addMagSamples(sessionId: String, rows: List<StoredMag>) {
+        if (rows.isEmpty()) return
+        val db = writableDatabase
+        db.beginTransaction()
+        try {
+            rows.forEach { m -> db.insertOrThrow("mag_samples", null, ContentValues().apply {
+                put("session_id", sessionId); put("side", m.side); put("sensor_ms", m.sensorMs); put("phone_receipt_ms", m.receiptMs)
+                put("x", m.x); put("y", m.y); put("z", m.z); put("flags", m.flags)
+            }) }
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+    }
+
+    @Synchronized fun clockPairs(sessionId: String): List<StoredClockPair> = readableDatabase.rawQuery(
+        "SELECT side,token,send_ns,recv_ns,sensor_us,rtt_ns,accepted FROM clock_sync WHERE session_id=? ORDER BY recv_ns,rowid", arrayOf(sessionId),
+    ).use { c -> buildList { while (c.moveToNext()) add(StoredClockPair(c.getString(0), c.getInt(1), c.getLong(2), c.getLong(3),
+        c.getLong(4), c.getLong(5), c.getInt(6) != 0)) } }
+
+    @Synchronized fun magSamples(sessionId: String): List<StoredMag> = readableDatabase.rawQuery(
+        "SELECT side,sensor_ms,phone_receipt_ms,x,y,z,flags FROM mag_samples WHERE session_id=? ORDER BY phone_receipt_ms,rowid", arrayOf(sessionId),
+    ).use { c -> buildList { while (c.moveToNext()) add(StoredMag(c.getString(0), c.getLong(1), c.getLong(2),
+        c.getInt(3), c.getInt(4), c.getInt(5), c.getInt(6))) } }
 
     /** Version 9: signal quality. Live samples carry quality bits; a capture records its flash record format. */
     private fun addQualitySchema(db: SQLiteDatabase) {
@@ -256,7 +319,7 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
         try {
             for (table in listOf("flash_samples", "download_samples")) db.execSQL(
                 "DELETE FROM $table WHERE capture_id IN (SELECT id FROM captures WHERE session_id=?)", arrayOf(id))
-            for (table in listOf("samples", "captures", "session_events", "test_markers", "sensor_health", "run_events", "run_verdicts", "run_info", "run_track")) db.delete(table, "session_id=?", arrayOf(id))
+            for (table in listOf("samples", "captures", "session_events", "test_markers", "sensor_health", "run_events", "run_verdicts", "run_info", "run_track", "clock_sync", "mag_samples", "phone_samples")) db.delete(table, "session_id=?", arrayOf(id))
             db.delete("sessions", "id=?", arrayOf(id))
             db.setTransactionSuccessful()
             return true
@@ -338,7 +401,8 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
         } finally { db.endTransaction() }
     }
 
-    @Synchronized fun loadData(id: String): SessionData? {
+    /** [includeSync] adds the clock pairs and magnetometer rows, which only the export needs; the detail and analysis views skip them. */
+    @Synchronized fun loadData(id: String, includeSync: Boolean = true): SessionData? {
         val session = getSession(id) ?: return null
         val live = readableDatabase.rawQuery("SELECT side,received_at_ms,sensor_time_ms,sequence,ax,ay,az,gx,gy,gz,quality FROM samples WHERE session_id=? ORDER BY id", arrayOf(id)).use { c ->
             buildList { while (c.moveToNext()) add(StoredLive(c.getString(0), c.getLong(1), SensorSample(c.getInt(3), c.getLong(2),
@@ -360,7 +424,8 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
             buildList { while(c.moveToNext()) add(SensorHealth(c.getString(0),c.getLong(1),if(c.isNull(2)) null else c.getInt(2),
                 if(c.isNull(3)) null else c.getLong(3),if(c.isNull(4)) null else c.getInt(4),if(c.isNull(5)) null else c.getLong(5))) }
         }
-        return SessionData(session, live, flash, captures, events,markers,health, if (session.kind == "run") runData(id) else null)
+        return SessionData(session, live, flash, captures, events,markers,health, if (session.kind == "run") runData(id) else null,
+            if (includeSync) clockPairs(id) else emptyList(), if (includeSync) magSamples(id) else emptyList())
     }
 
     @Synchronized fun createSession(id: String, startedAtMs: Long, testSession: Boolean=false, origin: String="sensor", kind: String="session") {

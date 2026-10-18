@@ -129,4 +129,51 @@ class RecorderProtocolTest {
         assertEquals(false, transfer.withFlags)
         assertEquals(2, transfer.recordFormat)
     }
+
+    private fun pong(token: Int = 0x1234, sensorUs: Long = 0x0000_0102_0304_0506L, result: Int = 0) =
+        ByteBuffer.allocate(16).order(ByteOrder.LITTLE_ENDIAN).put(3).put(9).put(result.toByte()).put(0)
+            .putShort(token.toShort()).putLong(sensorUs).putShort(0).array()
+
+    @Test fun encodesTheTimeSyncRequest() {
+        assertArrayEquals(byteArrayOf(9, 0x34, 0x12), RecorderCommand.timeSync(0x1234))
+        assertArrayEquals(byteArrayOf(9, 0xff.toByte(), 0xff.toByte()), RecorderCommand.timeSync(0xffff))
+        assertArrayEquals(byteArrayOf(9, 0, 0), RecorderCommand.timeSync(0))
+    }
+    @Test fun decodesATimeSyncReplyWithA64BitClock() {
+        val reply = ClockPong.decode(pong())!!
+        assertTrue(reply.ok)
+        assertEquals(0x1234, reply.token)
+        assertEquals(0x0000_0102_0304_0506L, reply.sensorUs)
+        // Beyond 2^32 microseconds (71.6 minutes), where a 32-bit stamp would have wrapped.
+        assertEquals(5_000_000_000L, ClockPong.decode(pong(sensorUs = 5_000_000_000L))!!.sensorUs)
+        assertEquals(0xffff, ClockPong.decode(pong(token = 0xffff))!!.token)
+    }
+    @Test fun aTimeSyncReplyWithAnotherTokenOrVersionIsRejected() {
+        assertNotNull(ClockPong.decode(pong(), expectedToken = 0x1234))
+        assertNull(ClockPong.decode(pong(), expectedToken = 0x1235))
+        assertNull(ClockPong.decode(pong().also { it[0] = 2 }))
+        assertNull(ClockPong.decode(pong().also { it[1] = 3 }))
+        assertNull(ClockPong.decode(pong().copyOf(15)))
+        assertNull(ClockPong.decode(pong().copyOf(17)))
+        assertNull(ClockPong.decode(pong(sensorUs = -1)))
+    }
+    @Test fun resultSixMeansTheFirmwareHasNoTimeSync() {
+        val reply = ClockPong.decode(pong(sensorUs = 0, result = 6))!!
+        assertTrue(reply.unsupported)
+        assertFalse(reply.ok)
+        assertEquals(0x1234, reply.token)
+    }
+    @Test fun anyFailureResultToATimeSyncRequestIsNotOkWhateverTheTokenBytesHold() {
+        // Old firmware answers opcode 09 with an ordinary recorder status: result 6 (invalid command) or 1 (flash
+        // not ready), with bytes 4 to 5 holding a sample count, not our token.
+        for (result in listOf(1, 6)) {
+            val reply = ClockPong.decode(pong(token = 0x7f31, sensorUs = 123_456, result = result))!!
+            assertFalse(reply.ok)
+        }
+    }
+    @Test fun timeSyncRepliesAreNotMistakenForRecorderStatus() {
+        assertTrue(ClockPong.isTimeSyncReply(pong()))
+        assertFalse(ClockPong.isTimeSyncReply(ByteArray(16).also { it[0] = 3; it[1] = 0x85.toByte() }))
+        assertFalse(ClockPong.isTimeSyncReply(ByteArray(1)))
+    }
 }
