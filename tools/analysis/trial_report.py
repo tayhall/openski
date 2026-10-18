@@ -4,27 +4,36 @@ Usage:
   python tools/analysis/trial_report.py EXPORT.zip [--trial T0|T1|T2|T3|T4|T5|T6|all] [--json out.json]
   python tools/analysis/trial_report.py EXPORT.zip --trial T3 --compare SMOOTH.zip ROUGH.zip
   python tools/analysis/trial_report.py --regress DIR      # every dress-rehearsal ZIP in DIR against its expected verdicts
+  python tools/analysis/trial_report.py --selftest [DIR]   # hand-made and mutated exports (needs clean.zip from DIR)
 
 Each row is one check: trial, check, measured value, the starting pass line, and PASS / FAIL / WARN / N/A / INFO.
   PASS, FAIL  the measured value is on the right / wrong side of the starting pass line.
   WARN        measured, but the recording does not suit the check or the value is marginal; look by hand.
   N/A         the export cannot show it (the reason is in the last column). Never turned into a number.
   INFO        a measured figure the protocol gives no pass line for (recorded for the bench-results entry).
-Exit code is 1 when any selected check FAILs. Every line below is a STARTING value from
-docs/garden-trial-protocol.md, to be revised once there is real data. The framing stays experimental: these checks judge
-hardware, clocks and the data path, not on-snow technique.
+Exit code: 0 all fine, 1 when any selected check FAILs (a tool error while judging a trial is a FAIL row), 2 when the
+export (or a --compare file) cannot be read at all or the arguments are wrong. Every line below is a STARTING value
+from docs/garden-trial-protocol.md, to be revised once there is real data. The framing stays experimental: these
+checks judge hardware, clocks and the data path, not on-snow technique.
 
-With --trial all, checks that make no sense for the recording (still-noise on a recording that is moving, magnetometer
-heading on a recording that is not a turn on the spot) are N/A or WARN. With one trial named, the same situation is a
-FAIL or WARN, because the trial was supposed to produce that kind of recording.
+With --trial all, a check that cannot apply to this kind of recording is N/A: still-noise on a recording that is
+moving, magnetometer heading on a recording with no turn on the spot, stomp sync and the run flow (T1, T5) on a
+recording with no stomp transient, roll-drill metrics (T3) on a recording with no roll excursions, phone checks (T4)
+when the export has no phone-motion.csv at all. With one trial named, the same situation is a FAIL or WARN, because
+that trial should have produced the matching recording. (T0 and T6 apply to every recording.)
 """
 import argparse
+import contextlib
+import csv
 import glob
+import io
 import json
 import math
 import os
 import re
 import sys
+import tempfile
+import zipfile
 
 import numpy as np
 
@@ -33,13 +42,15 @@ import export_io  # noqa: E402
 import mag_heading_check  # noqa: E402
 import still_noise_report  # noqa: E402
 
+NAN = float("nan")
 # ---------------------------------------------------------------- starting values (docs/garden-trial-protocol.md)
 FLASH_RATE_HZ, LIVE_RATE_HZ, RATE_TOL_HZ = 104.0, 52.0, 1.0   # T0: "within about 1 Hz of 104 (flash) and 52 (live)"
 GAP_LONG_MS = 100.0           # T0 "no gaps": longest interval above this fails (the app's own gaps_over_100ms)
 CLOCK_SLOPE_PPM = 100.0       # T0: boot-versus-phone slope under about 100 ppm
 STILL_GYRO_RMS_DPS = 2.0      # a recording whose gyro RMS (mean removed) is below this counts as still for the noise figures
+STOMP_ACCEL_DEV_G = 0.5       # a sample whose accelerometer magnitude is this far from 1 g counts as a stomp-like transient
 STOMP_PING_MS = 15.0          # T1: stomp offset and ping offset agree within about 15 ms
-MAG_SPREAD_OK_PCT = mag_heading_check.SPREAD_OK_PCT         # T2: first sanity line, 10 to 15 percent
+MAG_SPREAD_OK_PCT = mag_heading_check.SPREAD_OK_PCT         # T2: first sanity line, 10 to 15 percent (corrected figure)
 MAG_SPREAD_WARN_PCT = mag_heading_check.SPREAD_WARN_PCT
 MAG_HEADING_OK_DEG = mag_heading_check.HEADING_RMS_OK_DEG   # T2: magnetometer heading follows gyro yaw (starting RMS lines)
 MAG_HEADING_WARN_DEG = mag_heading_check.HEADING_RMS_FLAG_DEG
@@ -51,9 +62,40 @@ PHONE_GAP_WARN_MS, PHONE_GAP_FAIL_MS = 100.0, 500.0    # T4: largest gap between
 EXPECTED_SIDES = ("L", "R")
 
 ORDER = ["T0", "T1", "T2", "T3", "T4", "T5", "T6"]
-TITLES = {"T0": "bench soak", "T1": "stomp sync", "T2": "turn on the spot", "T3": "roll drills",
-          "T4": "phone reference", "T5": "run flow", "T6": "mount slip"}
 PASS, FAIL, WARN, NA, INFO = "PASS", "FAIL", "WARN", "N/A", "INFO"
+
+
+class ExportError(Exception):
+    """The export (or one file in it) cannot be read."""
+
+
+def jnum(d, k):
+    """A number read from exported JSON: None, a missing key, a string or a bool all become NaN."""
+    v = d.get(k) if isinstance(d, dict) else None
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return NAN
+    return float(v)
+
+
+def fin(x):
+    return x is not None and isinstance(x, (int, float)) and math.isfinite(x)
+
+
+def fm(x, nd=1, unit=""):
+    return "n/a" if not fin(x) else f"{x:.{nd}f}{unit}"
+
+
+def sanitize(o):
+    """JSON-safe copy: non-finite floats become None, numpy scalars become Python numbers."""
+    if isinstance(o, dict):
+        return {str(k): sanitize(v) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        return [sanitize(v) for v in o]
+    if isinstance(o, (np.floating, np.integer)):
+        o = o.item()
+    if isinstance(o, float) and not math.isfinite(o):
+        return None
+    return o
 
 
 class Row:
@@ -64,7 +106,12 @@ class Row:
         d = {"trial": self.trial, "check": self.check, "value": self.value, "pass_line": self.line, "status": self.status, "reason": self.why}
         if self.num is not None:
             d["number"] = self.num
-        return d
+        return sanitize(d)
+
+
+def miss(explicit):
+    """Status for data the trial should have produced but the export lacks: FAIL when the trial is named, N/A under 'all'."""
+    return FAIL if explicit else NA
 
 
 class Export:
@@ -74,9 +121,27 @@ class Export:
         self.path = path
         self._c = {}
 
+    def validate(self):
+        if not os.path.exists(self.path):
+            raise ExportError(f"{self.path}: no such file or directory")
+        if os.path.isdir(self.path):
+            return
+        if not zipfile.is_zipfile(self.path):
+            raise ExportError(f"{self.path}: not a ZIP file")
+        try:
+            with zipfile.ZipFile(self.path) as z:
+                bad = z.testzip()
+        except (zipfile.BadZipFile, OSError) as e:
+            raise ExportError(f"{self.path}: corrupt ZIP ({e})")
+        if bad:
+            raise ExportError(f"{self.path}: corrupt ZIP (bad checksum in {bad})")
+
     def text(self, name):
         if name not in self._c:
-            self._c[name] = export_io.read_text(self.path, name)
+            try:
+                self._c[name] = export_io.read_text(self.path, name)
+            except (zipfile.BadZipFile, OSError, UnicodeDecodeError, KeyError) as e:
+                raise ExportError(f"{name} cannot be read from {self.path}: {e}")
         return self._c[name]
 
     def json(self, name):
@@ -85,12 +150,17 @@ class Export:
             return None
         try:
             return json.loads(t)
-        except ValueError:
-            return None
+        except ValueError as e:
+            raise ExportError(f"{name} is not valid JSON ({e})")
 
     def csv(self, name):
         t = self.text(name)
-        return export_io.parse_csv(t) if t else {}
+        if not t:
+            return {}
+        try:
+            return export_io.parse_csv(t)
+        except Exception as e:
+            raise ExportError(f"{name} is not a readable CSV ({e})")
 
     def samples(self):
         if "samples" not in self._c:
@@ -98,12 +168,19 @@ class Export:
         return self._c["samples"]
 
 
-def f(x, nd=1, unit=""):
-    return "n/a" if x is None else f"{x:.{nd}f}{unit}"
+# ---------------------------------------------------------------- recording kind (decides N/A under 'all')
+def has_stomp(ex):
+    """True when some boot has a stomp-like accelerometer transient (|a| further than STOMP_ACCEL_DEV_G from 1 g)."""
+    s = ex.samples()
+    if not s or "ax_mps2" not in s:
+        return False
+    a = np.linalg.norm(np.stack([s["ax_mps2"], s["ay_mps2"], s["az_mps2"]], 1), axis=1) / 9.80665
+    a = a[np.isfinite(a)]
+    return bool(len(a) and np.max(np.abs(a - 1.0)) > STOMP_ACCEL_DEV_G)
 
 
-def where(side, source=None):
-    return f"{side}" if source is None else f"{side} {source}"
+def candidate_total(tm):
+    return int(sum(v for v in (jnum(b, "candidates") for b in (tm or {}).get("per_boot", {}).values()) if fin(v)))
 
 
 # ---------------------------------------------------------------- T0
@@ -116,7 +193,7 @@ def health_streams(ex):
     return h, out
 
 
-def is_still(ex, side):
+def gyro_rms_dps(ex, side):
     """RMS of the gyro (mean removed) over the longest source of this boot, in deg/s; None when there are no samples."""
     s = ex.samples()
     if not s or "side" not in s:
@@ -128,13 +205,15 @@ def is_still(ex, side):
     use = max(srcs, key=srcs.get)
     m &= s["source"] == use
     g = np.stack([s["gx_radps"][m], s["gy_radps"][m], s["gz_radps"][m]], 1) * 180.0 / math.pi
-    return float(np.sqrt(np.mean(np.sum((g - g.mean(0)) ** 2, 1))))
+    return float(np.sqrt(np.nanmean(np.sum((g - np.nanmean(g, 0)) ** 2, 1))))
 
 
 def t0(ex, explicit):
     rows = []
     T = "T0"
     h, boots = health_streams(ex)
+    fit = ex.json("clock-sync-fit.json") or {}
+    sess = ex.json("session.json")
     if h is None:
         rows.append(Row(T, "health verdict", "n/a", "usable", NA, "session-health.json is not in the export"))
     for side in EXPECTED_SIDES:
@@ -143,10 +222,10 @@ def t0(ex, explicit):
             if h is not None:
                 rows.append(Row(T, f"health verdict {side}", "no data", "usable", FAIL, f"boot {side} has no streams in session-health.json"))
             continue
-        v = b["verdict"]
+        v = b.get("verdict")
         st = PASS if v == "usable" else (WARN if v == "marginal" else FAIL)
-        rows.append(Row(T, f"health verdict {side}", v, "usable", st, "; ".join(b.get("reasons", [])) if st != PASS else ""))
-        streams = {s["source"]: s for s in b["streams"]}
+        rows.append(Row(T, f"health verdict {side}", str(v), "usable", st, "; ".join(b.get("reasons", [])) if st != PASS else ""))
+        streams = {s["source"]: s for s in b.get("streams", [])}
         for src, nominal in (("flash", FLASH_RATE_HZ), ("live", LIVE_RATE_HZ)):
             s = streams.get(src)
             chk = f"{src} rate {side}"
@@ -154,41 +233,51 @@ def t0(ex, explicit):
             if s is None:
                 rows.append(Row(T, chk, "no stream", line, FAIL, f"no {src} samples for boot {side}"))
                 continue
-            d = s["rate_hz"] - nominal
-            rows.append(Row(T, chk, f"{s['rate_hz']:.2f} Hz ({d:+.2f})", line, PASS if abs(d) <= RATE_TOL_HZ else FAIL, num=s["rate_hz"]))
-        longest = {src: s["longest_gap_ms"] for src, s in streams.items()}
+            rate = jnum(s, "rate_hz")
+            if not fin(rate):
+                rows.append(Row(T, chk, "n/a", line, NA, "rate_hz is null in session-health.json (too few samples to measure)"))
+                continue
+            d = rate - nominal
+            rows.append(Row(T, chk, f"{rate:.2f} Hz ({d:+.2f})", line, PASS if abs(d) <= RATE_TOL_HZ else FAIL, num=rate))
+        longest = {src: jnum(s, "longest_gap_ms") for src, s in streams.items()}
+        longest = {src: ms for src, ms in longest.items() if fin(ms)}
         if longest:
             bad = {src: ms for src, ms in longest.items() if ms > GAP_LONG_MS}
             val = ", ".join(f"{src} {ms:.0f} ms" for src, ms in sorted(longest.items())) + " longest"
             why = ""
             if bad:
                 why = "gap over the line in " + ", ".join(sorted(bad)) + "; "
-            cap = ex.json("session.json")
-            drops = [c["dropped_samples"] for c in (cap or {}).get("captures", []) if c.get("side") == side]
-            if drops and drops[0]:
-                why += f"firmware reported {drops[0]} dropped flash samples; "
-            pct = ", ".join(f"{src} {s['gap_percent']:.2f} %" for src, s in sorted(streams.items()))
-            rows.append(Row(T, f"gaps {side}", val, f"longest <= {GAP_LONG_MS:.0f} ms", FAIL if bad else PASS,
-                            (why + f"gap share {pct}").strip("; ") if bad else ""))
-        # clock slope
-        slopes = [s["clock_slope_ppm"] for s in streams.values() if s.get("clock_slope_ppm") is not None]
-        fit = ex.json("clock-sync-fit.json") or {}
-        fd = None
-        if fit.get(side, {}).get("epochs"):
-            fd = fit[side]["epochs"][-1].get("drift_ppm")
-        slope, src = (slopes[0], "health live stream") if slopes else (fd, "clock-sync fit")
-        if slope is None:
-            rows.append(Row(T, f"clock slope {side}", "n/a", f"|slope| < {CLOCK_SLOPE_PPM:.0f} ppm", NA, "neither the health report nor the clock-sync fit has a slope"))
+                drops = [c.get("dropped_samples") for c in (sess or {}).get("captures", []) if c.get("side") == side]
+                if drops and fin(drops[0]) and drops[0]:
+                    why += f"firmware reported {int(drops[0])} dropped flash samples; "
+                pct = ", ".join(f"{src} {fm(jnum(s, 'gap_percent'), 2)} %" for src, s in sorted(streams.items()))
+                why += f"gap share {pct}"
+            rows.append(Row(T, f"gaps {side}", val, f"longest <= {GAP_LONG_MS:.0f} ms", FAIL if bad else PASS, why.strip("; ")))
         else:
-            rows.append(Row(T, f"clock slope {side}", f"{slope:+.1f} ppm ({src})", f"|slope| < {CLOCK_SLOPE_PPM:.0f} ppm",
-                            PASS if abs(slope) < CLOCK_SLOPE_PPM else FAIL, num=slope))
+            rows.append(Row(T, f"gaps {side}", "n/a", f"longest <= {GAP_LONG_MS:.0f} ms", NA, "no stream with a measured longest gap"))
+        # clock slope: the health slope, else a FITTED drift (an unfitted placeholder is not a measurement)
+        slopes = [x for x in (jnum(s, "clock_slope_ppm") for s in streams.values()) if fin(x)]
+        ep = (fit.get(side) or {}).get("epochs") or []
+        slope, src, why = None, "", ""
+        if slopes:
+            slope, src = slopes[0], "health live stream"
+        elif ep and ep[-1].get("drift_fitted") is True and fin(jnum(ep[-1], "drift_ppm")):
+            slope, src = jnum(ep[-1], "drift_ppm"), "clock-sync fit"
+        else:
+            why = "no health slope and no fitted clock-sync drift (drift_fitted is not true or there is no fit): a placeholder is not a measurement"
+        sline = f"|slope| < {CLOCK_SLOPE_PPM:.0f} ppm"
+        if slope is None:
+            rows.append(Row(T, f"clock slope {side}", "n/a", sline, NA, why))
+        else:
+            rows.append(Row(T, f"clock slope {side}", f"{slope:+.1f} ppm ({src})", sline, PASS if abs(slope) < CLOCK_SLOPE_PPM else FAIL, num=slope))
         # one clock epoch
-        ep = fit.get(side, {}).get("epochs")
-        if ep is not None:
-            unc = fit[side].get("clock_uncertain_stretches", [])
-            rows.append(Row(T, f"single clock epoch {side}", f"{len(ep)} epoch(s), {len(unc)} uncertain stretch(es)", "1 epoch",
-                            PASS if len(ep) == 1 else FAIL,
-                            "" if len(ep) == 1 else "the boot's clock restarted or jumped during the session; offsets are only valid per epoch"))
+        if side in fit:
+            if not ep:
+                rows.append(Row(T, f"single clock epoch {side}", "no fit", "1 epoch", NA, str(fit[side].get("reason") or "clock-sync-fit.json has no epoch for this boot (no accepted ping pairs)")))
+            else:
+                unc = fit[side].get("clock_uncertain_stretches") or []
+                rows.append(Row(T, f"single clock epoch {side}", f"{len(ep)} epoch(s), {len(unc)} uncertain stretch(es)", "1 epoch", PASS if len(ep) == 1 else FAIL,
+                                "" if len(ep) == 1 else "the boot's clock restarted or jumped during the session; offsets are only valid per epoch"))
     # ping round trips
     cs = ex.csv("clock-sync.csv")
     for side in EXPECTED_SIDES:
@@ -198,15 +287,15 @@ def t0(ex, explicit):
             allm = int(np.sum(cs["side"] == side))
             if n:
                 rtt = cs["rtt_ns"][m] * 1e-6
-                rows.append(Row(T, f"ping round trips {side}", f"{n} accepted of {allm}, median {np.median(rtt):.1f} ms, best {rtt.min():.1f} ms", ">= 1 accepted pair", PASS, num=float(np.median(rtt))))
+                rows.append(Row(T, f"ping round trips {side}", f"{n} accepted of {allm}, median {np.nanmedian(rtt):.1f} ms, best {np.nanmin(rtt):.1f} ms", ">= 1 accepted pair", PASS, num=float(np.nanmedian(rtt))))
                 continue
         rows.append(Row(T, f"ping round trips {side}", "none", ">= 1 accepted pair", FAIL, f"no accepted ping pair for boot {side} in clock-sync.csv"))
     # still-noise, only for a still recording
     for side in EXPECTED_SIDES:
-        rms = is_still(ex, side)
+        rms = gyro_rms_dps(ex, side)
         chk = f"gyro bias drift and noise {side}"
         if rms is None:
-            rows.append(Row(T, chk, "no samples", "report only", FAIL if explicit else NA, f"boot {side} has no samples in samples.csv"))
+            rows.append(Row(T, chk, "no samples", "report only", miss(explicit), f"boot {side} has no samples in samples.csv"))
             continue
         if rms > STILL_GYRO_RMS_DPS:
             rows.append(Row(T, chk, f"gyro RMS {rms:.1f} dps", f"still: RMS < {STILL_GYRO_RMS_DPS:.0f} dps", WARN if explicit else NA,
@@ -237,64 +326,77 @@ def t0(ex, explicit):
 # ---------------------------------------------------------------- T1
 def t1(ex, explicit):
     T = "T1"
+    if not explicit and not has_stomp(ex):
+        return [Row(T, "gesture sync status", "n/a", "measured", NA, f"no stomp-like transient (accelerometer more than {STOMP_ACCEL_DEV_G} g from 1 g) in the recording: not a T1 recording")]
     g = ex.json("gesture-sync.json")
     if g is None:
-        return [Row(T, "gesture sync status", "n/a", "measured", NA, "gesture-sync.json is not in the export")]
+        return [Row(T, "gesture sync status", "n/a", "measured", miss(explicit), "gesture-sync.json is not in the export")]
     rows = []
     status = g.get("status")
     why = g.get("reason") or ""
     if g.get("reject"):
         why += f" (reject: {g['reject']})"
-    rows.append(Row(T, "gesture sync status", status, "measured", PASS if status == "measured" else FAIL, "" if status == "measured" else why.strip()))
-    ping = g.get("ping") or {}
+    rows.append(Row(T, "gesture sync status", str(status), "measured", PASS if status == "measured" else FAIL, "" if status == "measured" else why.strip()))
+    ping = g.get("ping") if isinstance(g.get("ping"), dict) else {}
     if status == "measured":
         s, e = g.get("start") or {}, g.get("end") or {}
-        rows.append(Row(T, "stomp offset (right minus left)", f"{g['offset_s'] * 1e3:.2f} ms (start {f(s.get('offset_s', float('nan')) * 1e3, 2)}, end {f(e.get('offset_s', float('nan')) * 1e3, 2)}), drift {g.get('drift_ppm', float('nan')):+.1f} ppm",
-                        "report only", INFO, f"start correlation {s.get('correlation', float('nan')):.3f}, end {e.get('correlation', float('nan')):.3f}"))
-    d = g.get("stomp_minus_ping_ms")
+        rows.append(Row(T, "stomp offset (right minus left)",
+                        f"{fm(jnum(g, 'offset_s') * 1e3, 2)} ms (start {fm(jnum(s, 'offset_s') * 1e3, 2)}, end {fm(jnum(e, 'offset_s') * 1e3, 2)}), drift {fm(jnum(g, 'drift_ppm'), 1)} ppm",
+                        "report only", INFO, f"start correlation {fm(jnum(s, 'correlation'), 3)}, end {fm(jnum(e, 'correlation'), 3)}"))
+    d = jnum(g, "stomp_minus_ping_ms")
     line = f"|stomp - ping| <= {STOMP_PING_MS:.0f} ms"
     if status != "measured":
         rows.append(Row(T, "stomp minus ping", "n/a", line, NA, f"no stomp offset to compare (status {status})"))
-    elif d is None:
+    elif not fin(d):
         rows.append(Row(T, "stomp minus ping", "n/a", line, NA, "no ping offset to compare with (" + str(ping.get("reason") or "no ping pairs in the export") + "); the stomp offset itself is measured"))
     else:
         inside = abs(d) <= STOMP_PING_MS
         why = (f"inside the line by {STOMP_PING_MS - abs(d):.1f} ms" if inside else
                f"over the line by {abs(d) - STOMP_PING_MS:.1f} ms: a steady disagreement of this kind is the half-connection-interval ping bias; record it with the connection interval")
-        rows.append(Row(T, "stomp minus ping", f"{d:+.2f} ms (ping uncertainty {f(ping.get('uncertainty_s', float('nan')) * 1e3, 1)} ms)", line, PASS if inside else FAIL, why, num=d))
+        rows.append(Row(T, "stomp minus ping", f"{d:+.2f} ms (ping uncertainty {fm(jnum(ping, 'uncertainty_s') * 1e3, 1)} ms)", line, PASS if inside else FAIL, why, num=d))
     return rows
 
 
 # ---------------------------------------------------------------- T2
 def t2(ex, explicit):
     T = "T2"
-    miss_st = FAIL if explicit else NA
+    sline = f"corrected <= {MAG_SPREAD_OK_PCT:.0f} % (sanity {MAG_SPREAD_WARN_PCT:.0f} %)"
+    hline = f"RMS <= {MAG_HEADING_OK_DEG:.0f} deg (flag {MAG_HEADING_WARN_DEG:.0f})"
     try:
         r = mag_heading_check.analyse(ex.path)
     except SystemExit as e:
-        return [Row(T, "magnetometer field magnitude spread", "n/a", f"<= {MAG_SPREAD_OK_PCT:.0f} % (sanity {MAG_SPREAD_WARN_PCT:.0f} %)", miss_st,
-                    "no usable magnetometer data: " + str(e)),
-                Row(T, "magnetometer heading vs gyro yaw", "n/a", f"RMS <= {MAG_HEADING_OK_DEG:.0f} deg", miss_st, "no usable magnetometer data")]
-    turns = r["gyro_rotation_turns"]["total_absolute"]
-    on_spot = turns >= mag_heading_check.MIN_ROTATION_TURNS
+        return [Row(T, "magnetometer field magnitude spread", "n/a", sline, miss(explicit), "no usable magnetometer data: " + str(e)),
+                Row(T, "magnetometer heading vs gyro yaw", "n/a", hline, miss(explicit), "no usable magnetometer data")]
+    gyro = r.get("gyro_rotation_turns")
+    magt = r.get("mag_rotation_turns") or {}
+    gyro_total = jnum(gyro, "total_absolute") if gyro else NAN
+    turns = gyro_total if fin(gyro_total) else jnum(magt, "total_absolute")
+    src = "gyro yaw" if fin(gyro_total) else "magnetometer heading (no gyro rows overlap the magnetometer samples)"
+    on_spot = fin(turns) and turns >= mag_heading_check.MIN_ROTATION_TURNS
     rows = []
-    sp = r["magnitude_raw_gauss"]["spread_percent_of_mean"]
-    line = f"<= {MAG_SPREAD_OK_PCT:.0f} % (sanity {MAG_SPREAD_WARN_PCT:.0f} %)"
-    val = f"{sp:.1f} % of mean {r['magnitude_raw_gauss']['mean']:.3f} G (corrected in-plane {r['magnitude_corrected']['spread_percent_of_mean']:.1f} %)"
+    pc = jnum(r.get("magnitude_corrected"), "spread_percent_of_mean")
+    pr = jnum(r.get("magnitude_raw_gauss"), "spread_percent_of_mean")
+    quantity = (r.get("magnitude_corrected") or {}).get("quantity", "")
+    val = f"{fm(pc)} % corrected (raw {fm(pr)} % of mean {fm(jnum(r.get('magnitude_raw_gauss'), 'mean'), 3)} G)"
     if not on_spot and not explicit:
-        rows.append(Row(T, "magnetometer field magnitude spread", val, line, NA, f"only {turns:.2f} turns of gyro yaw: not a level turn on the spot, so the spread says nothing about the field"))
+        rows.append(Row(T, "magnetometer field magnitude spread", val, sline, NA, f"only {fm(turns, 2)} turns of {src}: not a level turn on the spot, so the spread says nothing about the field"))
+    elif not fin(pc):
+        rows.append(Row(T, "magnetometer field magnitude spread", val, sline, NA, "corrected spread not available"))
     else:
-        st = PASS if sp <= MAG_SPREAD_OK_PCT else (WARN if sp <= MAG_SPREAD_WARN_PCT else FAIL)
-        rows.append(Row(T, "magnetometer field magnitude spread", val, line, st, "" if on_spot else f"only {turns:.2f} turns of gyro yaw: not a turn on the spot", num=sp))
-    hl = f"RMS <= {MAG_HEADING_OK_DEG:.0f} deg (flag {MAG_HEADING_WARN_DEG:.0f})"
-    if not on_spot:
-        rows.append(Row(T, "magnetometer heading vs gyro yaw", f"gyro yaw total {turns:.2f} turns", hl, FAIL if explicit else NA,
+        st = PASS if pc <= MAG_SPREAD_OK_PCT else (WARN if pc <= MAG_SPREAD_WARN_PCT else FAIL)
+        why = quantity + ("" if on_spot else f"; only {fm(turns, 2)} turns of {src}: not a turn on the spot")
+        rows.append(Row(T, "magnetometer field magnitude spread", val, sline, st, why.strip("; "), num=pc))
+    yd = r.get("yaw_difference_deg")
+    if not gyro or not yd:
+        rows.append(Row(T, "magnetometer heading vs gyro yaw", "n/a", hline, NA, "no gyro samples overlap the magnetometer samples in time, so there is no gyro yaw to compare with"))
+    elif not on_spot:
+        rows.append(Row(T, "magnetometer heading vs gyro yaw", f"gyro yaw total {fm(turns, 2)} turns", hline, miss(explicit),
                         "the recording has no turn on the spot (needs at least " + f"{mag_heading_check.MIN_ROTATION_TURNS:.1f} turns), so heading cannot be compared"))
     else:
-        rms = r["yaw_difference_deg"]["rms_offset_and_linear_trend_removed"]
+        rms = jnum(yd, "rms_offset_and_linear_trend_removed")
         st = PASS if rms <= MAG_HEADING_OK_DEG else (WARN if rms <= MAG_HEADING_WARN_DEG else FAIL)
-        rows.append(Row(T, "magnetometer heading vs gyro yaw", f"RMS {rms:.1f} deg after offset and trend; mag {r['mag_rotation_turns']['net_ccw_positive']:+.2f} turns vs gyro {r['gyro_rotation_turns']['net_ccw_positive']:+.2f}", hl, st,
-                        "; ".join(r["flags"]), num=rms))
+        rows.append(Row(T, "magnetometer heading vs gyro yaw", f"RMS {fm(rms)} deg after offset and trend; mag {fm(jnum(magt, 'net_ccw_positive'), 2)} turns vs gyro {fm(jnum(gyro, 'net_ccw_positive'), 2)}", hline, st,
+                        "; ".join(r.get("flags", [])), num=rms))
     return rows
 
 
@@ -306,13 +408,14 @@ def tm_summary(ex):
 
 def usable_share(tm):
     pb = tm.get("per_boot", {})
-    c = sum(b.get("candidates", 0) for b in pb.values())
-    u = sum(b.get("usable", 0) for b in pb.values())
-    return (u / c if c else None), c
+    c = sum(v for v in (jnum(b, "candidates") for b in pb.values()) if fin(v))
+    u = sum(v for v in (jnum(b, "usable") for b in pb.values()) if fin(v))
+    return (u / c if c else None), int(c)
 
 
 def mean_roughness(tm):
-    v = [b["roughness"]["mean"] for b in tm.get("per_boot", {}).values() if b.get("roughness")]
+    v = [jnum(b.get("roughness"), "mean") for b in tm.get("per_boot", {}).values() if b.get("roughness")]
+    v = [x for x in v if fin(x)]
     return float(np.mean(v)) if v else None
 
 
@@ -320,33 +423,39 @@ def t3(ex, explicit, compare=None):
     T = "T3"
     tm = tm_summary(ex)
     rows = []
-    if tm is None:
-        rows.append(Row(T, "turn candidates", "n/a", "", NA, "analysis-summary.json has no turn_metrics block"))
+    if tm is None or (not explicit and candidate_total(tm) == 0):
+        rows.append(Row(T, "turn candidates", "n/a", f">= {MIN_CANDIDATES_OK} per boot", miss(explicit),
+                        "analysis-summary.json has no turn_metrics block" if tm is None else "no roll excursions in the recording: not a roll-drill recording"))
     else:
         pb = tm.get("per_boot", {})
         for side in EXPECTED_SIDES:
-            b = pb.get(side)
-            n = (b or {}).get("candidates", 0)
+            b = pb.get(side) or {}
+            n = jnum(b, "candidates")
+            n = int(n) if fin(n) else 0
+            u = jnum(b, "usable")
             line = f">= {MIN_CANDIDATES_OK} candidates"
             st = PASS if n >= MIN_CANDIDATES_OK else (WARN if n > 0 else FAIL)
-            rows.append(Row(T, f"candidates {side}", f"{n} candidates, {(b or {}).get('usable', 0)} usable", line, st,
+            rows.append(Row(T, f"candidates {side}", f"{n} candidates, {int(u) if fin(u) else 0} usable", line, st,
                             "" if n else f"boot {side} produced no turn candidates (missing boot or no roll excursions)", num=n))
         sh, c = usable_share(tm)
         rows.append(Row(T, "usable share", "n/a" if sh is None else f"{sh * 100:.0f} % of {c}", "direction only (rough lower than smooth)", INFO if sh is not None else NA,
                         "" if sh is not None else "no candidates"))
         for side in EXPECTED_SIDES:
             b = pb.get(side)
-            if not b or not b.get("candidates"):
+            if not b or not fin(jnum(b, "candidates")) or not b.get("candidates"):
                 continue
             parts = []
             for k in ("roughness", "peak_deg", "duration_ms", "early_roll_rate_dps", "edge_hold", "build_ms", "peak_phase"):
                 d = b.get(k)
-                if d and d.get("mean") is not None:
-                    parts.append(f"{k} {d['mean']:.3g} (sd {d['sd']:.3g})" if d.get("sd") is not None else f"{k} {d['mean']:.3g}")
+                mean = jnum(d, "mean")
+                if fin(mean):
+                    sd = jnum(d, "sd")
+                    parts.append(f"{k} {mean:.3g} (sd {sd:.3g})" if fin(sd) else f"{k} {mean:.3g}")
             rows.append(Row(T, f"per-boot spread {side}", "; ".join(parts), "record before choosing any threshold", INFO))
         ba = tm.get("boot_agreement") or {}
-        if ba.get("pairs_with_data"):
-            rows.append(Row(T, "left-right agreement", f"{ba['pairs_with_data']} pairs, derivative similarity {ba['mean_derivative_similarity']:.3f}, roll correlation {ba['mean_roll_correlation']:.3f}, wedge fraction {ba['mean_wedge_fraction']:.3f}",
+        pairs = jnum(ba, "pairs_with_data")
+        if fin(pairs) and pairs:
+            rows.append(Row(T, "left-right agreement", f"{int(pairs)} pairs, derivative similarity {fm(jnum(ba, 'mean_derivative_similarity'), 3)}, roll correlation {fm(jnum(ba, 'mean_roll_correlation'), 3)}, wedge fraction {fm(jnum(ba, 'mean_wedge_fraction'), 3)}",
                             "direction only", INFO))
         else:
             rows.append(Row(T, "left-right agreement", "no pairs", "direction only", NA, "needs candidates from both boots with no gaps over 100 ms"))
@@ -358,40 +467,76 @@ def t3(ex, explicit, compare=None):
     return rows
 
 
-def t3_compare(smooth_path, rough_path):
+def direction(smooth, rough, expected):
+    """+1 when rough moved the expected way ('lower' or 'higher') against smooth, -1 the wrong way, 0 equal, None unknown."""
+    if not fin(smooth) or not fin(rough):
+        return None
+    if math.isclose(smooth, rough, rel_tol=1e-6, abs_tol=1e-12):
+        return 0
+    return 1 if (rough < smooth) == (expected == "lower") else -1
+
+
+def combine(dirs):
+    """The explicit rule for 'lower usable share or higher roughness': each metric is compared separately.
+    PASS only when at least one moves the expected way and none the wrong way; WARN when they contradict, when none
+    moves, or when one is wrong and the other equal; FAIL when both go the wrong way."""
+    ds = [d for d in dirs if d is not None]
+    if not ds:
+        return NA
+    good, bad = ds.count(1), ds.count(-1)
+    if good and not bad:
+        return PASS
+    if bad == len(ds) and bad >= 2:
+        return FAIL
+    return WARN
+
+
+def compare_summaries(sm, ro, tag=""):
     T = "T3"
-    sm, ro = tm_summary(Export(smooth_path)), tm_summary(Export(rough_path))
-    tag = f"(smooth {os.path.basename(smooth_path)}, rough {os.path.basename(rough_path)})"
-    if sm is None or ro is None:
-        return [Row(T, "smooth vs rough direction", "n/a", "", NA, "one of the sessions has no turn_metrics block " + tag)]
     rows = []
     ss, _ = usable_share(sm)
     rs, _ = usable_share(ro)
     rgs, rgr = mean_roughness(sm), mean_roughness(ro)
-    line = "rough: lower usable share or higher roughness"
-    if ss is None or rs is None or rgs is None or rgr is None:
-        rows.append(Row(T, "rough vs smooth: usable share or roughness", "n/a", line, NA, "no candidates in one session " + tag))
-    else:
-        better = rs < ss or rgr > rgs
-        worse = rs > ss and rgr < rgs
-        st = PASS if better else (FAIL if worse else WARN)
-        rows.append(Row(T, "rough vs smooth: usable share or roughness", f"usable {ss * 100:.0f} % -> {rs * 100:.0f} %, roughness {rgs:.3f} -> {rgr:.3f}", line, st,
-                        "" if better else "no difference in either" if st == WARN else "rough looks smoother than smooth", num=rgr - rgs))
+    ds = direction(ss if ss is not None else NAN, rs if rs is not None else NAN, "lower")
+    dr = direction(rgs if rgs is not None else NAN, rgr if rgr is not None else NAN, "higher")
+    word = {1: "expected way", -1: "WRONG way", 0: "equal", None: "unknown"}
+    rows.append(Row(T, "rough vs smooth: usable share", "n/a" if ss is None or rs is None else f"{ss * 100:.0f} % -> {rs * 100:.0f} %", "rough lower", INFO if ds is not None else NA, word[ds] + " " + tag))
+    rows.append(Row(T, "rough vs smooth: roughness", "n/a" if rgs is None or rgr is None else f"{rgs:.3f} -> {rgr:.3f}", "rough higher", INFO if dr is not None else NA, word[dr] + " " + tag))
+    st = combine([ds, dr])
+    why = {PASS: "", NA: "no candidates in one session " + tag,
+           WARN: "contradictory, equal or only partly wrong: usable share " + word[ds] + ", roughness " + word[dr],
+           FAIL: "both usable share and roughness moved the wrong way: rough looks smoother than smooth"}[st]
+    rows.append(Row(T, "rough vs smooth: usable share or roughness", f"usable share {word[ds]}, roughness {word[dr]}",
+                    "at least one expected way and none the wrong way", st, why))
     sa, ra = sm.get("boot_agreement") or {}, ro.get("boot_agreement") or {}
-    a, b = sa.get("mean_derivative_similarity"), ra.get("mean_derivative_similarity")
+    a, b = jnum(sa, "mean_derivative_similarity"), jnum(ra, "mean_derivative_similarity")
     line = "rough: lower left-right derivative similarity"
-    if a is None or b is None:
+    if not (fin(a) and fin(b)):
         rows.append(Row(T, "rough vs smooth: derivative similarity", "n/a", line, NA, "one session has no left-right pairs " + tag))
     else:
-        rows.append(Row(T, "rough vs smooth: derivative similarity", f"{a:.3f} -> {b:.3f}", line, PASS if b < a else (WARN if b == a else FAIL), num=b - a))
-    a, b = sa.get("mean_wedge_fraction"), ra.get("mean_wedge_fraction")
+        d = direction(a, b, "lower")
+        rows.append(Row(T, "rough vs smooth: derivative similarity", f"{a:.3f} -> {b:.3f}", line, PASS if d == 1 else (WARN if d == 0 else FAIL), num=b - a))
+    a, b = jnum(sa, "mean_wedge_fraction"), jnum(ra, "mean_wedge_fraction")
     line = "rough: larger wedge fraction"
-    if a is None or b is None:
+    if not (fin(a) and fin(b)):
         rows.append(Row(T, "rough vs smooth: wedge fraction", "n/a", line, NA, "one session has no left-right pairs " + tag))
     else:
-        rows.append(Row(T, "rough vs smooth: wedge fraction", f"{a:.3f} -> {b:.3f}", line, PASS if b > a else (WARN if b == a else FAIL),
-                        "no difference: the wedge fraction does not separate these two sessions" if b == a else "", num=b - a))
+        d = direction(a, b, "higher")
+        rows.append(Row(T, "rough vs smooth: wedge fraction", f"{a:.3f} -> {b:.3f}", line, PASS if d == 1 else (WARN if d == 0 else FAIL),
+                        "no difference: the wedge fraction does not separate these two sessions" if d == 0 else "", num=b - a))
     return rows
+
+
+def t3_compare(smooth_path, rough_path):
+    T = "T3"
+    if os.path.abspath(smooth_path) == os.path.abspath(rough_path) or (os.path.exists(smooth_path) and os.path.exists(rough_path) and os.path.samefile(smooth_path, rough_path)):
+        return [Row(T, "smooth vs rough direction", "same file", "two different sessions", FAIL, f"--compare was given the same file twice ({smooth_path}); a session cannot be compared with itself")]
+    se, re_ = Export(smooth_path), Export(rough_path)
+    sm, ro = tm_summary(se), tm_summary(re_)
+    tag = f"(smooth {os.path.basename(smooth_path)}, rough {os.path.basename(rough_path)})"
+    if sm is None or ro is None:
+        return [Row(T, "smooth vs rough direction", "n/a", "", NA, "one of the sessions has no turn_metrics block " + tag)]
+    return compare_summaries(sm, ro, tag)
 
 
 # ---------------------------------------------------------------- T4
@@ -399,36 +544,41 @@ def t4(ex, explicit):
     T = "T4"
     txt = ex.text("phone-motion.csv")
     ph = ex.csv("phone-motion.csv")
-    n = len(ph.get("session_elapsed_ms", [])) if ph else 0
     line_rows = f"{PHONE_ROWS_PER_S[0]:.0f} to {PHONE_ROWS_PER_S[1]:.0f} rows/s"
+    line_off = f"|offset| <= {PHONE_OFFSET_OK_MS:.0f} ms"
     rows = []
-    off = None
-    if txt:
+    if txt is None:
+        st = miss(explicit)
+        why = "phone-motion.csv is not in the export" + ("" if explicit else ": not a recording with phone motion")
+        rows.append(Row(T, "phone clock offset", "n/a", line_off, st, why))
+        rows.append(Row(T, "phone rows per second", "n/a", line_rows, st, why))
+        rows.append(Row(T, "phone largest gap", "n/a", f"< {PHONE_GAP_WARN_MS:.0f} ms", st, why))
+    else:
+        off = None
         m = re.search(r"offset_ms=(-?\d+(?:\.\d+)?)", txt)
         if m:
             off = float(m.group(1))
-    line_off = f"|offset| <= {PHONE_OFFSET_OK_MS:.0f} ms"
-    if off is None:
-        rows.append(Row(T, "phone clock offset", "not recorded", line_off, FAIL if txt is not None else NA,
-                        "phone-motion.csv carries no phone_clock_check offset, so the sensor clock base is unknown" if txt is not None else "phone-motion.csv is not in the export"))
-    else:
-        st = PASS if abs(off) <= PHONE_OFFSET_OK_MS else (WARN if abs(off) <= PHONE_OFFSET_WARN_MS else FAIL)
-        rows.append(Row(T, "phone clock offset", f"{off:+.3f} ms", line_off, st, num=off))
-    if n < 2:
-        rows.append(Row(T, "phone rows per second", "0 rows" if txt is not None else "n/a", line_rows, FAIL if txt is not None else NA,
-                        "no phone motion rows in the export" if txt is not None else "phone-motion.csv is not in the export"))
-        rows.append(Row(T, "phone largest gap", "n/a", f"< {PHONE_GAP_WARN_MS:.0f} ms", NA, "no phone rows"))
-    else:
-        t = ph["session_elapsed_ms"]
-        span = (t.max() - t.min()) / 1e3
-        rate = (n - 1) / span if span > 0 else float("nan")
-        lo, hi = PHONE_ROWS_PER_S
-        wl, wh = PHONE_WARN_ROWS_PER_S
-        st = PASS if lo <= rate <= hi else (WARN if wl <= rate <= wh else FAIL)
-        rows.append(Row(T, "phone rows per second", f"{rate:.1f} rows/s ({n} rows over {span:.1f} s)", line_rows, st, num=rate))
-        gap = float(np.max(np.diff(np.sort(t))))
-        st = PASS if gap < PHONE_GAP_WARN_MS else (WARN if gap < PHONE_GAP_FAIL_MS else FAIL)
-        rows.append(Row(T, "phone largest gap", f"{gap:.0f} ms", f"< {PHONE_GAP_WARN_MS:.0f} ms (fail at {PHONE_GAP_FAIL_MS:.0f})", st, num=gap))
+        if off is None:
+            rows.append(Row(T, "phone clock offset", "not recorded", line_off, FAIL, "phone-motion.csv carries no phone_clock_check offset, so the sensor clock base is unknown"))
+        else:
+            st = PASS if abs(off) <= PHONE_OFFSET_OK_MS else (WARN if abs(off) <= PHONE_OFFSET_WARN_MS else FAIL)
+            rows.append(Row(T, "phone clock offset", f"{off:+.3f} ms", line_off, st, num=off))
+        t = ph.get("phone_ns") if ph else None
+        t = np.sort(t[np.isfinite(t)]) * 1e-6 if t is not None and len(t) else np.array([])    # phone_ns -> ms; always present, unlike session_elapsed_ms
+        n = len(t)
+        if n < 2:
+            rows.append(Row(T, "phone rows per second", "0 rows", line_rows, FAIL, "no phone motion rows in the export"))
+            rows.append(Row(T, "phone largest gap", "n/a", f"< {PHONE_GAP_WARN_MS:.0f} ms", NA, "no phone rows"))
+        else:
+            span = (t[-1] - t[0]) / 1e3
+            rate = (n - 1) / span if span > 0 else NAN
+            lo, hi = PHONE_ROWS_PER_S
+            wl, wh = PHONE_WARN_ROWS_PER_S
+            st = PASS if lo <= rate <= hi else (WARN if wl <= rate <= wh else FAIL)
+            rows.append(Row(T, "phone rows per second", f"{fm(rate)} rows/s ({n} rows over {span:.1f} s, from phone_ns)", line_rows, st, num=rate))
+            gap = float(np.max(np.diff(t)))
+            st = PASS if gap < PHONE_GAP_WARN_MS else (WARN if gap < PHONE_GAP_FAIL_MS else FAIL)
+            rows.append(Row(T, "phone largest gap", f"{gap:.0f} ms", f"< {PHONE_GAP_WARN_MS:.0f} ms (fail at {PHONE_GAP_FAIL_MS:.0f})", st, num=gap))
     rows.append(Row(T, "phone storage error", "n/a", "none", NA, "a storage error is not recorded in the export: check by hand"))
     rows.append(Row(T, "phone battery drain over 30 min", "n/a", "note only", NA, "needs the phone battery readings, not in the export: note by hand"))
     rows.append(Row(T, "phone gyro vs boot roll rate", "n/a", "observation only", NA, "observation only: no torso metric is built, so the tool computes nothing here"))
@@ -438,6 +588,8 @@ def t4(ex, explicit):
 # ---------------------------------------------------------------- T5
 def t5(ex, explicit):
     T = "T5"
+    if not explicit and not has_stomp(ex):
+        return [Row(T, "run flow", "n/a", "see T5", NA, f"no stomp-like transient in the recording: not a run-flow recording")]
     s = ex.samples()
     sess = ex.json("session.json") or {}
     caps = {c.get("side"): c for c in sess.get("captures", [])}
@@ -450,24 +602,25 @@ def t5(ex, explicit):
         c = caps.get(side)
         if n == 0:
             rows.append(Row(T, f"flash download {side}", "no flash samples", "flash present and validated", FAIL,
-                            f"boot {side} has no flash rows in samples.csv" + (f" (capture state {c['state']})" if c else "")))
+                            f"boot {side} has no flash rows in samples.csv" + (f" (capture state {c.get('state')})" if c else "")))
         else:
             ok = c is not None and c.get("state") in ("erased", "verified")
-            why = "" if ok else ("no capture record in session.json" if c is None else f"capture state {c['state']}, {c.get('error') or 'no error text'}")
-            exp = c.get("expected_samples") if c else None
-            rows.append(Row(T, f"flash download {side}", f"{n} flash samples" + (f" of {exp} expected" if exp is not None else "") + (f", state {c['state']}" if c else ""),
+            why = "" if ok else ("no capture record in session.json" if c is None else f"capture state {c.get('state')}, {c.get('error') or 'no error text'}")
+            exp = jnum(c, "expected_samples") if c else NAN
+            rows.append(Row(T, f"flash download {side}", f"{n} flash samples" + (f" of {int(exp)} expected" if fin(exp) else "") + (f", state {c.get('state')}" if c else ""),
                             "flash present, state erased or verified", PASS if ok else FAIL, why))
         fl = {x["source"]: x for x in boots.get(side, {}).get("streams", [])}.get("flash")
         if fl is None:
             rows.append(Row(T, f"flash source health {side}", "no flash stream", "usable", FAIL if n == 0 else NA, "no flash stream in session-health.json"))
         else:
-            rows.append(Row(T, f"flash source health {side}", fl["verdict"], "usable", PASS if fl["verdict"] == "usable" else (WARN if fl["verdict"] == "marginal" else FAIL),
+            v = fl.get("verdict")
+            rows.append(Row(T, f"flash source health {side}", str(v), "usable", PASS if v == "usable" else (WARN if v == "marginal" else FAIL),
                             "; ".join(fl.get("reasons", []))))
     g = ex.json("gesture-sync.json")
     if g is None:
-        rows.append(Row(T, "stomp sync measured", "n/a", "measured", NA, "gesture-sync.json is not in the export"))
+        rows.append(Row(T, "stomp sync measured", "n/a", "measured", miss(explicit), "gesture-sync.json is not in the export"))
     else:
-        rows.append(Row(T, "stomp sync measured", g.get("status"), "measured", PASS if g.get("status") == "measured" else FAIL, g.get("reason") or ""))
+        rows.append(Row(T, "stomp sync measured", str(g.get("status")), "measured", PASS if g.get("status") == "measured" else FAIL, g.get("reason") or ""))
         if g.get("status") == "measured":
             rows.append(Row(T, "end stomp found", "found in both boots", "found", PASS if g.get("end") else FAIL, "" if g.get("end") else "no end stomp window in gesture-sync.json"))
         else:
@@ -483,14 +636,17 @@ def t6(ex, explicit):
     a = ex.json("analysis-summary.json")
     rows = []
     for side in EXPECTED_SIDES:
-        ms = (a or {}).get(side, {}).get("mount_slip") if a else None
+        ms = ((a or {}).get(side) or {}).get("mount_slip") if isinstance(a, dict) else None
         if not ms:
             rows.append(Row(T, f"mount slip {side}", "n/a", "no slip flagged", NA, "analysis-summary.json has no mount_slip block for this boot"))
         elif not ms.get("available"):
             rows.append(Row(T, f"mount slip {side}", "unavailable", "no slip flagged", NA, ms.get("reason") or "mount-slip check not available"))
         else:
-            fl = ms.get("flagged_windows", 0)
-            rows.append(Row(T, f"mount slip {side}", f"{fl} of {ms.get('windows_checked')} windows flagged, max axis deviation {ms.get('max_axis_deviation_deg', float('nan')):.2f} deg, max force shift {ms.get('max_force_shift_g', float('nan')):.3f} g",
+            fl = jnum(ms, "flagged_windows")
+            if not fin(fl):
+                rows.append(Row(T, f"mount slip {side}", "n/a", "no slip flagged", NA, "flagged_windows is null in the mount_slip block"))
+                continue
+            rows.append(Row(T, f"mount slip {side}", f"{int(fl)} of {fm(jnum(ms, 'windows_checked'), 0)} windows flagged, max axis deviation {fm(jnum(ms, 'max_axis_deviation_deg'), 2)} deg, max force shift {fm(jnum(ms, 'max_force_shift_g'), 3)} g",
                             "no slip flagged", PASS if fl == 0 else FAIL,
                             "" if fl == 0 else "slip flagged: retighten and repeat the roll drill", num=fl))
     return rows
@@ -500,7 +656,9 @@ FUNCS = {"T0": t0, "T1": t1, "T2": t2, "T4": t4, "T5": t5, "T6": t6}
 
 
 def run_checks(path, trials, compare=None):
+    """Raises ExportError when the export cannot be read at all; a failure while judging one trial is a FAIL row."""
     ex = Export(path)
+    ex.validate()
     explicit = len(trials) == 1
     rows = []
     for t in trials:
@@ -509,13 +667,15 @@ def run_checks(path, trials, compare=None):
                 rows += t3(ex, explicit, compare)
             else:
                 rows += FUNCS[t](ex, explicit)
-        except Exception as e:   # a malformed export must not hide the other trials
-            rows.append(Row(t, "tool error", type(e).__name__, "", WARN, f"{e} (check the export by hand)"))
+        except SystemExit as e:
+            rows.append(Row(t, "tool error", "SystemExit", "", FAIL, f"a called analysis tool exited ({e}); this trial could not be judged: treated as a FAIL"))
+        except Exception as e:   # never let one malformed file hide the verdict of the others, and never pass it silently
+            rows.append(Row(t, "tool error", type(e).__name__, "", FAIL, f"{e}; this trial could not be judged: treated as a FAIL, check the export by hand"))
     return rows
 
 
 # ---------------------------------------------------------------- output
-def table(rows, width=44):
+def table(rows):
     hdr = ("Trial", "Check", "Measured", "Starting pass line", "Verdict", "Reason")
     data = [hdr] + [(r.trial, r.check, r.value, r.line, r.status, r.why) for r in rows]
     cw = [max(len(str(d[i])) for d in data) for i in range(5)]
@@ -537,11 +697,7 @@ def table(rows, width=44):
 
 def full_detail(rows):
     """Untruncated value and line text for rows whose table cells were cut."""
-    out = []
-    for r in rows:
-        if len(r.value) > 70 or len(r.line) > 48 or len(r.check) > 38:
-            out.append(f"  {r.trial} {r.check}: {r.value} [{r.line}]")
-    return out
+    return [f"  {r.trial} {r.check}: {r.value} [{r.line}]" for r in rows if len(r.value) > 70 or len(r.line) > 48 or len(r.check) > 38]
 
 
 def counts(rows):
@@ -551,9 +707,18 @@ def counts(rows):
     return c
 
 
+def write_json(path, payload):
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump(sanitize(payload), fh, indent=1, allow_nan=False)
+
+
 def cmd_report(a):
     trials = ORDER if a.trial == "all" else [a.trial]
-    rows = run_checks(a.export, trials, a.compare)
+    try:
+        rows = run_checks(a.export, trials, a.compare)
+    except ExportError as e:
+        print(f"ERROR: cannot read the export: {e}. No trial could be judged.", file=sys.stderr)
+        return 2
     print(f"Trial report: {a.export}   (starting values; experimental; trials: {', '.join(trials)})\n")
     print(table(rows))
     det = full_detail(rows)
@@ -563,16 +728,226 @@ def cmd_report(a):
     c = counts(rows)
     print("\n" + "  ".join(f"{k} {v}" for k, v in c.items()))
     if a.json:
-        with open(a.json, "w") as fh:
-            json.dump({"input": a.export, "trials": trials, "counts": c, "rows": [r.as_dict() for r in rows]}, fh, indent=1)
+        write_json(a.json, {"input": a.export, "trials": trials, "counts": c, "rows": [r.as_dict() for r in rows]})
     return 1 if c[FAIL] else 0
+
+
+# ---------------------------------------------------------------- mutated exports (selftest and regress)
+def mutate(src, dst, edits):
+    """Copy a ZIP, applying edits {member: None (delete) | bytes | callable(bytes)->bytes}."""
+    with zipfile.ZipFile(src) as zi, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zo:
+        for info in zi.infolist():
+            data = zi.read(info.filename)
+            if info.filename in edits:
+                e = edits[info.filename]
+                if e is None:
+                    continue
+                data = e(data) if callable(e) else e
+            zo.writestr(info.filename, data)
+
+
+def edit_json(fn):
+    def go(data):
+        o = json.loads(data.decode("utf-8"))
+        fn(o)
+        return json.dumps(o).encode("utf-8")
+    return go
+
+
+def edit_csv(fn):
+    """fn(header, rows) -> rows; '#' comment lines are kept in front."""
+    def go(data):
+        lines = data.decode("utf-8").splitlines()
+        comments = [l for l in lines if l.startswith("#")]
+        body = list(csv.reader([l for l in lines if not l.startswith("#")]))
+        out = io.StringIO()
+        w = csv.writer(out, lineterminator="\n")
+        for l in comments:
+            out.write(l + "\n")
+        w.writerow(body[0])
+        w.writerows(fn(body[0], body[1:]))
+        return out.getvalue().encode("utf-8")
+    return go
+
+
+def run_cli(argv):
+    out, err = io.StringIO(), io.StringIO()
+    code = 0
+    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+        try:
+            main(argv)
+        except SystemExit as e:
+            code = e.code if isinstance(e.code, int) else (0 if e.code is None else 1)
+    return code, out.getvalue(), err.getvalue()
+
+
+def get(rows, trial, prefix):
+    return [r for r in rows if r.trial == trial and r.check.startswith(prefix)]
+
+
+def selftest(d):
+    clean = os.path.join(d, "clean.zip")
+    if not os.path.exists(clean):
+        print(f"selftest needs clean.zip in {d} (see docs/garden-trial-protocol.md, Dress rehearsal)")
+        return 2
+    results = []
+
+    def check(name, cond, detail=""):
+        results.append((name, bool(cond), detail))
+
+    tmp = tempfile.mkdtemp(prefix="trial_report_selftest_")
+    P = lambda n: os.path.join(tmp, n)   # noqa: E731
+
+    # 1. unreadable exports and tool errors are failures, never a quiet exit 0
+    code, _, err = run_cli([P("does-not-exist.zip")])
+    check("1 missing path exits non-zero and says so", code != 0 and "cannot read" in err, f"exit {code}")
+    with open(P("garbage.zip"), "wb") as fh:
+        fh.write(b"not a zip at all")
+    code, _, err = run_cli([P("garbage.zip")])
+    check("1 corrupt ZIP exits non-zero", code != 0 and "cannot read" in err, f"exit {code}")
+    mutate(clean, P("badjson.zip"), {"gesture-sync.json": b"{not json"})
+    code, out, _ = run_cli([P("badjson.zip"), "--trial", "T1"])
+    check("1 corrupt member is a FAIL row (exit 1), not a WARN", code == 1 and "tool error" in out and "not valid JSON" in out, f"exit {code}")
+
+    # 2. magnetometer samples that overlap no gyro rows
+    def shift_mag(h, rows):
+        i = h.index("sensor_ms")
+        for r in rows:
+            r[i] = str(int(float(r[i])) + 100000000)
+        return rows
+    mutate(clean, P("mag-no-overlap.zip"), {"magnetometer.csv": edit_csv(shift_mag)})
+    rows = run_checks(P("mag-no-overlap.zip"), ["T2"])
+    sp, hd = get(rows, "T2", "magnetometer field magnitude spread"), get(rows, "T2", "magnetometer heading")
+    check("2 no gyro overlap: no tool error, spread verdict kept, heading N/A with the reason",
+          not get(rows, "T2", "tool error") and sp and sp[0].status in (PASS, WARN, FAIL) and hd and hd[0].status == NA and "overlap" in hd[0].why,
+          "; ".join(f"{r.check}={r.status}" for r in rows))
+
+    # 3. null fields in exported JSON (key present, value null)
+    def nullify(o):
+        for side in "LR":
+            o.get(side, {}).get("mount_slip", {}).update(max_axis_deviation_deg=None, max_force_shift_g=None)
+        ba = o["turn_metrics"]["boot_agreement"]
+        ba.update(mean_roll_correlation=None, mean_wedge_fraction=None)
+        o["turn_metrics"]["per_boot"]["L"]["duration_ms"]["mean"] = None
+    def null_gesture(o):
+        o["ping"]["uncertainty_s"] = None
+    def null_health(o):
+        for s in o["boots"][0]["streams"]:
+            s["rate_hz"] = None
+            s["longest_gap_ms"] = None
+    mutate(clean, P("nulls.zip"), {"analysis-summary.json": edit_json(nullify), "gesture-sync.json": edit_json(null_gesture), "session-health.json": edit_json(null_health)})
+    rows = run_checks(P("nulls.zip"), ORDER)
+    check("3 null fields: no tool error anywhere", not [r for r in rows if r.check == "tool error"], "; ".join(f"{r.trial} {r.why}" for r in rows if r.check == "tool error"))
+    check("3 null health rate is N/A with a reason", all(r.status == NA and "null" in r.why for r in get(rows, "T0", "flash rate L") + get(rows, "T0", "live rate L")) and get(rows, "T0", "flash rate L"))
+    check("3 null mount-slip numbers still give a verdict", get(rows, "T6", "mount slip L") and get(rows, "T6", "mount slip L")[0].status == PASS)
+    check("3 null ping uncertainty prints n/a", "n/a ms" in get(rows, "T1", "stomp minus ping")[0].value)
+
+    # 4. unfitted drift is not a measurement; an empty epoch list is not a clock restart
+    def unfit(o):
+        o["L"]["epochs"][-1].update(drift_fitted=False, drift_ppm=0.0)
+        o["R"]["epochs"] = []
+    def nohealthslope(o):
+        for s in o["boots"][0]["streams"]:
+            s["clock_slope_ppm"] = None
+    mutate(clean, P("unfitted.zip"), {"clock-sync-fit.json": edit_json(unfit), "session-health.json": edit_json(nohealthslope)})
+    rows = run_checks(P("unfitted.zip"), ["T0"])
+    cl, ce = get(rows, "T0", "clock slope L"), get(rows, "T0", "single clock epoch R")
+    check("4 unfitted drift placeholder is N/A, not PASS", cl and cl[0].status == NA, cl[0].status if cl else "no row")
+    check("4 empty epochs: N/A with a no-fit reason, not 'clock restarted'", ce and ce[0].status == NA and "restarted" not in ce[0].why, ce[0].why if ce else "no row")
+
+    # 5. phone rows with a blank session_elapsed_ms (the exporter leaves it blank without a clock check)
+    def blank_elapsed(h, rows):
+        i = h.index("session_elapsed_ms")
+        for r in rows:
+            r[i] = ""
+        return rows
+    mutate(clean, P("phone-blank.zip"), {"phone-motion.csv": edit_csv(blank_elapsed)})
+    rows = run_checks(P("phone-blank.zip"), ["T4"])
+    pr = get(rows, "T4", "phone rows per second")
+    check("5 blank session_elapsed_ms: rate and gap come from phone_ns", pr and pr[0].status == PASS and fin(pr[0].num) and get(rows, "T4", "phone largest gap")[0].status == PASS, pr[0].value if pr else "no row")
+
+    # 6. T2 judges the corrected spread, the same figure mag_heading_check judges
+    rows = run_checks(clean, ["T2"])
+    r = mag_heading_check.analyse(clean)
+    sp = get(rows, "T2", "magnetometer field magnitude spread")
+    check("6 T2 spread row is the corrected figure, raw shown beside it",
+          sp and abs(sp[0].num - r["magnitude_corrected"]["spread_percent_of_mean"]) < 1e-9 and "raw" in sp[0].value and "corrected" in sp[0].value, sp[0].value if sp else "no row")
+
+    # 7. T3 direction rule
+    def tm(share, rough):
+        n = 20
+        b = {"candidates": n, "usable": round(share * n), "roughness": {"mean": rough, "sd": 1.0}}
+        return {"per_boot": {"L": b, "R": dict(b)}, "boot_agreement": {"mean_derivative_similarity": 0.9, "mean_wedge_fraction": 0.1}}
+    cases = [("equal share, rougher rough", (1.0, 5.0), (1.0, 6.0), PASS), ("lower share, lower roughness (contradict)", (1.0, 5.0), (0.8, 4.0), WARN),
+             ("higher share, lower roughness (both wrong)", (0.8, 5.0), (1.0, 4.0), FAIL), ("equal, equal", (1.0, 5.0), (1.0, 5.0), WARN),
+             ("lower share, rougher", (1.0, 5.0), (0.8, 6.0), PASS), ("equal share, smoother rough", (1.0, 5.0), (1.0, 4.0), WARN)]
+    for name, s, rr, want in cases:
+        got = get(compare_summaries(tm(*s), tm(*rr)), "T3", "rough vs smooth: usable share or roughness")[0].status
+        check(f"7 T3 rule: {name} -> {want}", got == want, f"got {got}")
+    code, _, err = run_cli([clean, "--trial", "T0", "--compare", clean, clean])
+    check("7 --compare with a trial other than T3/all is an argument error", code == 2, f"exit {code}")
+    code, out, _ = run_cli([clean, "--trial", "T3", "--compare", clean, clean])
+    check("7 --compare with the same file twice FAILs with a clear message", code == 1 and "same file twice" in out, f"exit {code}")
+
+    # 8. 'all' on recordings that are not the trial's recording: N/A, not FAIL
+    rng = np.random.default_rng(1)
+    def still(h, rows):
+        ix = {k: h.index(k) for k in ("ax_mps2", "ay_mps2", "az_mps2", "gx_radps", "gy_radps", "gz_radps")}
+        for r in rows:
+            r[ix["ax_mps2"]], r[ix["ay_mps2"]], r[ix["az_mps2"]] = (f"{v:.4f}" for v in (0.02 * rng.standard_normal(), 0.02 * rng.standard_normal(), 9.80665 + 0.02 * rng.standard_normal()))
+            for k in ("gx_radps", "gy_radps", "gz_radps"):
+                r[ix[k]] = f"{0.002 * rng.standard_normal():.5f}"
+        return rows
+    def no_stomp_json(o):
+        o.clear()
+        o.update({"status": "refused", "reason": "no clear stomp at one end in one of the boots", "format_version": 1})
+    def no_candidates(o):
+        for b in o["turn_metrics"]["per_boot"].values():
+            b["candidates"], b["usable"] = 0, 0
+    mutate(clean, P("soak.zip"), {"samples.csv": edit_csv(still), "gesture-sync.json": edit_json(no_stomp_json),
+                                  "analysis-summary.json": edit_json(no_candidates), "phone-motion.csv": None})
+    rows = run_checks(P("soak.zip"), ORDER)
+    other = [r for r in rows if r.trial in ("T1", "T2", "T3", "T4", "T5") and r.status == FAIL]
+    check("8 a still soak (no stomp, no rolls, no phone file) under 'all': nothing FAILs in T1 to T5", not other, "; ".join(f"{r.trial} {r.check}" for r in other))
+    check("8 the same soak: T1, T3, T4, T5 are N/A", all(get(rows, t, "")[0].status == NA for t in ("T1", "T3", "T4", "T5")))
+    check("8 the same soak: the still-noise figures are really computed (INFO row)", get(rows, "T0", "gyro bias and drift L") and get(rows, "T0", "gyro bias and drift L")[0].status == INFO)
+    rows = run_checks(P("soak.zip"), ["T1"])
+    check("8 naming T1 on that soak does FAIL", get(rows, "T1", "gesture sync status")[0].status == FAIL, "")
+    mutate(clean, P("nophone.zip"), {"phone-motion.csv": None})
+    rows = run_checks(P("nophone.zip"), ORDER)
+    check("8 a missing phone-motion.csv under 'all' is N/A, named T4 FAILs",
+          all(r.status == NA for r in get(rows, "T4", "phone clock offset") + get(rows, "T4", "phone rows")) and run_checks(P("nophone.zip"), ["T4"])[0].status == FAIL)
+
+    # 9. --json is strict JSON, utf-8, no bare NaN
+    check("9 sanitize maps non-finite floats to None", sanitize({"a": NAN, "b": [float("inf"), 1.5], "c": np.float64("nan")}) == {"a": None, "b": [None, 1.5], "c": None})
+    for src in (clean, P("nulls.zip")):
+        outp = P("out.json")
+        code, _, _ = run_cli([src, "--json", outp])
+        def refuse(c):
+            raise ValueError("non-finite constant " + c)
+        try:
+            with open(outp, "r", encoding="utf-8") as fh:
+                doc = json.loads(fh.read(), parse_constant=refuse)
+            ok = bool(doc.get("rows"))
+        except (ValueError, OSError):
+            ok = False
+        check(f"9 --json parses with a strict loader ({os.path.basename(src)})", ok)
+    nan_row = Row("T9", "x", "n/a", "", INFO, num=NAN).as_dict()
+    check("9 a NaN number in a row is written as null", nan_row["number"] is None)
+
+    w = max(len(n) for n, _, _ in results)
+    for n, ok, dtl in results:
+        print(f"{n.ljust(w)} | {'ok' if ok else 'FAILED'}" + ("" if ok or not dtl else f" | {dtl}"))
+    bad = [n for n, ok, _ in results if not ok]
+    print(f"\nSELFTEST {'PASSED' if not bad else 'FAILED'}: {len(results) - len(bad)} of {len(results)} checks")
+    return 1 if bad else 0
 
 
 # ---------------------------------------------------------------- regression over the dress-rehearsal ZIPs
 class Expect:
-    def __init__(self, zipname, trial, prefix, allowed, why, reason_has=None, check=None, explicit=None):
+    def __init__(self, zipname, trial, prefix, allowed, why, reason_has=None, explicit=None):
         self.zipname, self.trial, self.prefix, self.allowed, self.why = zipname, trial, prefix, set(allowed), why
-        self.reason_has, self.check, self.explicit = reason_has, check, explicit   # explicit: run only this trial (one-trial rules)
+        self.reason_has, self.explicit = reason_has, explicit   # explicit: run only this trial (one-trial rules)
 
 
 def build_expectations():
@@ -586,12 +961,12 @@ def build_expectations():
         for t in ("T0", "T1", "T3", "T4", "T5", "T6"):
             nofail(z, t, "a clean session has no FAIL in " + t)
     E.append(Expect("clean.zip", "T1", "stomp minus ping", (PASS,), "clean stomp and ping agree"))
-    E.append(Expect("clean.zip", "T2", "magnetometer heading", (NA,), "the garden session has no turn on the spot: N/A, not a verdict", explicit=False))
+    E.append(Expect("clean.zip", "T2", "magnetometer heading", (NA,), "the garden session has no turn on the spot: N/A, not a verdict"))
     E.append(Expect("clean.zip", "T0", "gyro bias drift and noise", (NA,), "moving recording: still-noise is N/A under 'all'"))
     E.append(Expect("clean.zip", "T0", "gyro bias drift and noise", (WARN,), "moving recording: still-noise is WARN when T0 is named", explicit=True))
     E.append(Expect("clean.zip", "T3", "rough vs smooth: derivative similarity", (PASS,), "the late right boot lowers left-right similarity (compared with clean-no-lag.zip)"))
-    E.append(Expect("clean.zip", "T3", "rough vs smooth: usable share or roughness", ok, "compared with clean-no-lag.zip: not a FAIL"))
-    E.append(Expect("clean.zip", "T3", "rough vs smooth: wedge fraction", (WARN, PASS), "synthetic wedge fraction is 0 in both: WARN (cannot separate), never FAIL"))
+    E.append(Expect("clean.zip", "T3", "rough vs smooth: usable share or roughness", (PASS,), "compared with clean-no-lag.zip: equal usable share, slightly rougher right boot"))
+    E.append(Expect("clean.zip", "T3", "rough vs smooth: wedge fraction", (WARN,), "synthetic wedge fraction is 0 in both: WARN (cannot separate), never FAIL"))
     E.append(Expect("fault-no-end-stomp.zip", "T1", "gesture sync status", (FAIL,), "no end stomp refuses the sync", reason_has="no clear stomp"))
     E.append(Expect("fault-no-end-stomp.zip", "T1", "stomp minus ping", (NA,), "nothing to compare when the sync is refused"))
     E.append(Expect("fault-no-end-stomp.zip", "T5", "stomp sync measured", (FAIL,), "the run flow needs the stomp"))
@@ -630,7 +1005,6 @@ def build_expectations():
 
 def cmd_regress(d):
     zips = {os.path.basename(p): p for p in glob.glob(os.path.join(d, "*.zip"))}
-    expected_files = {"clean.zip", "clean-no-lag.zip"}
     cache = {}
 
     def rows_for(name, explicit_trial=None):
@@ -641,12 +1015,12 @@ def cmd_regress(d):
                 cache[key] = run_checks(p, [explicit_trial])
             else:
                 cmp_ = (zips["clean-no-lag.zip"], p) if name == "clean.zip" and "clean-no-lag.zip" in zips else None
-                rows = run_checks(p, ORDER, cmp_)
-                cache[key] = rows
+                cache[key] = run_checks(p, ORDER, cmp_)
         return cache[key]
 
     res = []
-    for e in build_expectations():
+    exps = build_expectations()
+    for e in exps:
         label = f"{e.zipname} {e.trial} {e.prefix or '(all rows)'}" + (" [T-only run]" if e.explicit else "")
         if e.zipname not in zips:
             res.append((label, "MISSING", "zip not found in " + d, False))
@@ -666,6 +1040,12 @@ def cmd_regress(d):
             res.append((label, "WRONG", f"{bad[0].check} is {bad[0].status} ({bad[0].value}; {bad[0].why}); expected {'/'.join(sorted(e.allowed))}", False))
         else:
             res.append((label, "ok", "/".join(sorted({r.status for r in sel})) + ": " + e.why, True))
+    # 'all' on a ZIP that lacks a source must not FAIL the unrelated trials
+    for name, unrelated in (("fault-no-magnetometer.zip", ("T1", "T3", "T4", "T5", "T6")), ("fault-live-only.zip", ("T2", "T3", "T4", "T6"))):
+        if name in zips:
+            bad = [r for r in rows_for(name) if r.trial in unrelated and r.status == FAIL]
+            res.append((f"{name} 'all': no FAIL in unrelated trials {','.join(unrelated)}", "ok" if not bad else "WRONG",
+                        "; ".join(f"{r.trial} {r.check}" for r in bad) or "unrelated trials unaffected", not bad))
     # numeric: the biased ping must disagree more than the clean one
     try:
         cl = [r for r in rows_for("clean.zip") if r.check == "stomp minus ping"][0]
@@ -675,13 +1055,12 @@ def cmd_regress(d):
                     f"{bi.num:+.2f} ms vs {cl.num:+.2f} ms; line {STOMP_PING_MS:.0f} ms ({bi.status})", good))
     except (KeyError, IndexError, TypeError):
         res.append(("fault-asymmetric-ping-bias.zip vs clean.zip |stomp - ping|", "MISSING", "needs both zips", False))
-    # print
     w = max(len(r[0]) for r in res)
     print(f"Regression over {len(zips)} ZIP(s) in {d}")
     print("T3 direction checks use clean-no-lag.zip as the smooth session and clean.zip as the rough one (right boot 60 ms late).\n")
     for lab, st, msg, good in res:
         print(f"{lab.ljust(w)} | {st.ljust(7)} | {msg}")
-    extra = sorted(set(zips) - {e.zipname for e in build_expectations()})
+    extra = sorted(set(zips) - {e.zipname for e in exps})
     if extra:
         print("\nZIPs with no expectation (just reported): " + ", ".join(extra))
     print("\nPer-ZIP verdict counts (trial all):")
@@ -690,21 +1069,29 @@ def cmd_regress(d):
         print(f"  {name.ljust(36)} " + "  ".join(f"{k} {v}" for k, v in c.items()))
     nbad = sum(1 for r in res if not r[3])
     print(f"\n{len(res) - nbad} of {len(res)} expectations met" + ("" if not nbad else f"; {nbad} NOT met"))
-    return 1 if nbad else 0
+    print("\nMutated-export selftest (findings the 15 ZIPs cannot show):")
+    st = selftest(d)
+    return 1 if (nbad or st) else 0
 
 
-def main():
+def main(argv=None):
     ap = argparse.ArgumentParser(description="Judge a garden trial from a session export.")
     ap.add_argument("export", nargs="?")
     ap.add_argument("--trial", default="all", choices=ORDER + ["all"])
     ap.add_argument("--compare", nargs=2, metavar=("SMOOTH.zip", "ROUGH.zip"), help="T3 direction checks between a smooth and a rough session")
     ap.add_argument("--json")
     ap.add_argument("--regress", metavar="DIR", help="run over the dress-rehearsal ZIPs in DIR and assert the expected verdicts")
-    a = ap.parse_args()
+    ap.add_argument("--selftest", nargs="?", const="", metavar="DIR", help="hand-made and mutated exports; needs clean.zip from DIR (default: $OPENSKI_DRESS_REHEARSAL_DIR or android/app/build/dress-rehearsal)")
+    a = ap.parse_args(argv)
+    if a.selftest is not None:
+        d = a.selftest or os.environ.get("OPENSKI_DRESS_REHEARSAL_DIR") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "android", "app", "build", "dress-rehearsal")
+        sys.exit(selftest(d))
     if a.regress:
         sys.exit(cmd_regress(a.regress))
     if not a.export:
         ap.error("export path required (or --regress DIR)")
+    if a.compare and a.trial not in ("T3", "all"):
+        ap.error(f"--compare only applies to --trial T3 (or all), not {a.trial}")
     sys.exit(cmd_report(a))
 
 
