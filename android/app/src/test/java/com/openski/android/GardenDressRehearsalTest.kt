@@ -41,7 +41,7 @@ class GardenDressRehearsalTest {
 
     private val expectedEntries = listOf("session.json", "samples.csv", "events.csv", "boot-roll.csv", "labels.csv", "sensor-health.csv",
         "clock-sync.csv", "clock-sync-fit.json", "gesture-sync.json", "magnetometer.csv", "phone-motion.csv", "detected-movements.csv",
-        "heading-turns.csv", "turn-metrics.csv", "analysis-summary.json", "session-health.json")
+        "heading-turns.csv", "turn-metrics.csv", "torso-metrics.csv", "analysis-summary.json", "session-health.json")
 
     private val outputDir: File? = (System.getProperty("OPENSKI_DRESS_REHEARSAL_DIR") ?: System.getenv("OPENSKI_DRESS_REHEARSAL_DIR"))
         ?.takeIf { it.isNotBlank() }?.let { File(it).also { dir -> dir.mkdirs() } }
@@ -426,6 +426,84 @@ class GardenDressRehearsalTest {
         assertTrue("gyro noise scale", gyro.map { abs(it) }.max() < 0.1)
         val q = csv.rows.indices.map { i -> sqrt(listOf("quat_w", "quat_x", "quat_y", "quat_z").sumOf { csv.doubles(it)[i].let { v -> v * v } }) }
         assertEquals(1.0, q.average(), 1e-3)
+    }
+
+    private fun torso(e: Export) = e.json("analysis-summary.json").getJSONObject("torso_metrics")
+
+    @Test fun cleanTorsoMetricsAreComputedWithPingTimingAndNoInventedYaw() {
+        val e = clean
+        val tm = torso(e)
+        assertEquals(tm.getString("reason"), "computed", tm.getString("status"))
+        assertTrue(tm.getBoolean("experimental"))
+        assertTrue(tm.getString("placement_note").contains("unverified"))
+        val csv = e.csv("torso-metrics.csv")
+        assertEquals(TorsoMetricsExport.HEADER, csv.header)
+        assertEquals("one row per boot candidate", 40, csv.rows.size)
+        assertTrue(csv.doubles("phone_coverage_fraction").all { it > 0.95 })
+        // Each boot's live timeline sits about 18 to 20 ms after the true sample time (the generator's minimum transport
+        // delay); the pings measure that bias, so it is removed and the uncertainty is the ping uncertainty.
+        for (side in listOf("L", "R")) {
+            val t = tm.getJSONObject("timing").getJSONObject(side)
+            assertEquals("ping", t.getString("source"))
+            assertEquals("$side bias", 19.0, t.getDouble("bias_removed_ms"), 6.0)
+            assertTrue(t.toString(), t.getDouble("max_uncertainty_ms") < 25.0)
+        }
+        assertTrue(csv.strings("timing_source").all { it == "ping" })
+        // The default phone track only sways about the vertical against a boot that does not turn: yaw figures stay null.
+        val yaw = tm.getJSONObject("per_boot").getJSONObject("L").getJSONObject("yaw")
+        assertEquals(0, yaw.getInt("turns"))
+        assertTrue(yaw.isNull("sign_agreement_fraction"))
+        assertTrue(csv.strings("torso_to_boot_heading_ratio").all { it.isEmpty() })
+        assertTrue(tm.getJSONObject("quietness").getDouble("run_gyro_rms_dps") < 3.0)
+    }
+
+    @Test fun torsoMetricsMatchTheTorsoTruth() {
+        val m = GardenTorso()
+        val e = run("torso", GardenParams(torso = m, bootHeadingPerTurnDeg = 40.0))
+        val tm = torso(e)
+        assertEquals(tm.getString("reason"), "computed", tm.getString("status"))
+        val csv = e.csv("torso-metrics.csv")
+        assertEquals(40, csv.rows.size)
+        assertEquals(40, tm.getInt("rows_with_metrics"))
+        for (side in listOf("L", "R")) {
+            val b = tm.getJSONObject("per_boot").getJSONObject(side)
+            val lean = b.getJSONObject("lean_vs_roll")
+            // The torso leans 0.4 of the left boot's roll; the right boot repeats it 60 ms later, so it sees the same ratio.
+            assertEquals("$side lean ratio", m.leanGain, lean.getJSONObject("lean_to_roll_ratio").getDouble("mean"), 0.06)
+            assertTrue("$side lean correlation ${lean.getDouble("correlation_across_turns")}", lean.getDouble("correlation_across_turns") > 0.9)
+            val yaw = b.getJSONObject("yaw")
+            assertEquals(20, yaw.getInt("turns"))
+            assertEquals("$side heading ratio", m.yawGain, yaw.getJSONObject("torso_to_boot_heading_ratio").getDouble("mean"), 0.1)
+            assertEquals(1.0, yaw.getDouble("sign_agreement_fraction"), 0.0)
+            assertTrue(yaw.getJSONObject("yaw_rate_correlation").getDouble("mean") > 0.8)
+            assertTrue(yaw.getDouble("heading_change_correlation_across_turns") > 0.8)
+        }
+        val rows = csv.where("side", "L")
+        rows.doubles("torso_lean_peak_deg").zip(rows.doubles("boot_roll_peak_deg")).forEachIndexed { i, (lean, roll) ->
+            assertEquals("turn $i lean", m.leanGain * roll, lean, 0.15 * m.leanGain * roll + 1.0)
+        }
+        // Signed heading: the torso turns the same way as the boot, by about half.
+        rows.doubles("torso_heading_change_deg").zip(rows.doubles("boot_heading_change_deg")).forEach { (torso, boot) ->
+            assertTrue("same sign: torso $torso, boot $boot", torso * boot > 0)
+        }
+        assertTrue("timing-limited rows ${tm.getInt("rows_timing_limited")}", tm.getInt("rows_timing_limited") <= 4)
+        // Raw phone rows are exported as stored.
+        assertEquals(e.truth.phoneRows, e.csv("phone-motion.csv").rows.size)
+    }
+
+    @Test fun noPhoneOrNoClockCheckRefusesTheTorsoMetricsWithAReason() {
+        val e = run("fault-no-phone", GardenParams(includePhone = false))
+        val tm = torso(e)
+        assertEquals("refused", tm.getString("status"))
+        assertTrue(tm.getString("reason"), tm.getString("reason").contains("no phone motion rows"))
+        assertEquals(0, e.csv("torso-metrics.csv").rows.size)
+        assertEquals(TorsoMetricsExport.HEADER, e.csv("torso-metrics.csv").header)
+        val unchecked = run("fault-phone-clock-unchecked", GardenParams(phoneClockCheck = false))
+        val u = torso(unchecked)
+        assertEquals("refused", u.getString("status"))
+        assertTrue(u.getString("reason"), u.getString("reason").contains("phone_clock_check"))
+        assertEquals(0, unchecked.csv("torso-metrics.csv").rows.size)
+        assertTrue(unchecked.csv("phone-motion.csv").rows.isNotEmpty())
     }
 
     @Test fun magnetometerRowsHaveTheRightCountAndScale() {
