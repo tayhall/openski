@@ -85,13 +85,32 @@ object TurnMetricsExtractor {
      * Shape metrics use the raw samples from the roll's own return to near zero before the peak to the one after it.
      */
     internal fun shapeWindow(ordered: List<BootRoll>, m: DryMovement): List<BootRoll> {
-        val inside = ordered.indices.filter { ordered[it].timeMs in m.startMs..m.endMs }
-        val peak = inside.maxByOrNull { abs(ordered[it].degrees) } ?: return emptyList()
+        val first = firstIndexAtOrAfter(ordered, m.startMs)
+        val last = firstIndexAfter(ordered, m.endMs) - 1
+        if (first > last) return emptyList()
+        var peak = first
+        for (k in first..last) if (abs(ordered[k].degrees) > abs(ordered[peak].degrees)) peak = k
         var lo = peak
         while (lo > 0 && abs(ordered[lo].degrees) > NEUTRAL_DEGREES && ordered[lo].timeMs - ordered[lo - 1].timeMs <= MAX_GAP_MS) lo--
         var hi = peak
         while (hi < ordered.size - 1 && abs(ordered[hi].degrees) > NEUTRAL_DEGREES && ordered[hi + 1].timeMs - ordered[hi].timeMs <= MAX_GAP_MS) hi++
         return ordered.subList(lo, hi + 1)
+    }
+
+    /** First index whose time is >= [t] in a time-ordered list. */
+    internal fun firstIndexAtOrAfter(ordered: List<BootRoll>, t: Double): Int {
+        var lo = 0
+        var hi = ordered.size
+        while (lo < hi) { val mid = (lo + hi) ushr 1; if (ordered[mid].timeMs < t) lo = mid + 1 else hi = mid }
+        return lo
+    }
+
+    /** First index whose time is > [t] in a time-ordered list. */
+    internal fun firstIndexAfter(ordered: List<BootRoll>, t: Double): Int {
+        var lo = 0
+        var hi = ordered.size
+        while (lo < hi) { val mid = (lo + hi) ushr 1; if (ordered[mid].timeMs <= t) lo = mid + 1 else hi = mid }
+        return lo
     }
 
     private fun build(window: List<BootRoll>, abs: List<Double>, peakIndex: Int, peak: Double): Double? {

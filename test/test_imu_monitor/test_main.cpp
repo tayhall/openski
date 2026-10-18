@@ -24,6 +24,38 @@ class FakeImu : public ImuSensor {
 };
 }  // namespace
 
+void test_stalled_sensor_is_marked_not_ready_and_reinitialised() {
+  FakeImu imu;
+  ImuMonitor monitor(&imu);
+  TEST_ASSERT_TRUE(monitor.begin());
+  monitor.poll();                                   // one sample, then the chip goes quiet
+  TEST_ASSERT_FALSE(monitor.checkStall(10000, 1000));  // first sight of this sample count starts the clock
+  imu.nextResult = ReadResult::kNoData;
+  for (int i = 0; i < 50; ++i) monitor.poll();
+  TEST_ASSERT_FALSE(monitor.checkStall(10900, 1000));
+  TEST_ASSERT_TRUE(monitor.stats().ready);
+  TEST_ASSERT_TRUE(monitor.checkStall(11001, 1000));
+  TEST_ASSERT_FALSE(monitor.stats().ready);
+  TEST_ASSERT_EQUAL_UINT32(1, monitor.stats().stalls);
+  imu.nextResult = ReadResult::kSample;
+  TEST_ASSERT_TRUE(monitor.retryBegin(11002, 2000));  // the existing retry path brings it back
+  TEST_ASSERT_TRUE(monitor.stats().ready);
+}
+
+void test_checkstall_ignores_a_sensor_that_keeps_delivering() {
+  FakeImu imu;
+  ImuMonitor monitor(&imu);
+  TEST_ASSERT_TRUE(monitor.begin());
+  uint32_t now = 5000;
+  for (int i = 0; i < 500; ++i, now += 10) {
+    imu.nextSample.timestampUs = now * 1000U;
+    monitor.poll();
+    TEST_ASSERT_FALSE(monitor.checkStall(now, 1000));
+  }
+  TEST_ASSERT_EQUAL_UINT32(0, monitor.stats().stalls);
+  TEST_ASSERT_TRUE(monitor.stats().ready);
+}
+
 void setUp() {}
 void tearDown() {}
 
@@ -199,6 +231,8 @@ int main() {
   RUN_TEST(test_no_data_is_neither_sample_nor_failure);
   RUN_TEST(test_read_error_is_counted_and_keeps_previous_sample);
   RUN_TEST(test_sensor_name_is_exposed);
+  RUN_TEST(test_stalled_sensor_is_marked_not_ready_and_reinitialised);
+  RUN_TEST(test_checkstall_ignores_a_sensor_that_keeps_delivering);
   RUN_TEST(test_retry_recovers_a_sensor_that_was_missed_at_boot);
   RUN_TEST(test_retry_keeps_trying_at_the_interval_while_the_sensor_stays_missing);
   return UNITY_END();

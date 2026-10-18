@@ -14,6 +14,24 @@ bool ImuMonitor::retryBegin(uint32_t nowMs, uint32_t intervalMs) {
   return begin();
 }
 
+bool ImuMonitor::checkStall(uint32_t nowMs, uint32_t stallMs) {
+  if (!stats_.ready) {
+    progressInit_ = false;
+    return false;
+  }
+  if (!progressInit_ || stats_.samples != progressSamples_) {
+    progressInit_ = true;
+    progressSamples_ = stats_.samples;
+    progressMs_ = nowMs;
+    return false;
+  }
+  if (nowMs - progressMs_ < stallMs) return false;  // unsigned: safe across a millis() wrap
+  stats_.ready = false;
+  ++stats_.stalls;
+  progressInit_ = false;
+  return true;
+}
+
 void ImuMonitor::poll() {
   if (!stats_.ready) return;
   Sample sample{};
