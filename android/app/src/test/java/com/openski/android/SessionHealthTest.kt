@@ -81,6 +81,32 @@ class SessionHealthTest {
         assertTrue(lossy.verdict != HealthVerdict.USABLE)
         assertTrue(lossy.gapTotalMs < 250 * 9.7)  // each gap counts one lost interval of about 9.6 ms, not 10 ms
     }
+    @Test fun aLongGapIsFlaggedEvenWhenItIsATinyShareOfTheStream() {
+        // 100 s of flash with a 1.4 s hole: 1.4 % of the time, under the 2 % line, but whole turns are lost in it.
+        val c = capture()
+        val s = stream(SessionHealth.build(data(flash = flash(c, count = 10_000, skip = (4000..4139).toSet()), captures = listOf(c))), "L", "flash")
+        assertTrue("gap ${s.gapPercent} %", s.gapPercent < SessionHealth.GAP_PERCENT_MARGINAL)
+        assertTrue(s.longestGapMs > SessionHealth.LONGEST_GAP_MS_MARGINAL)
+        assertEquals(HealthVerdict.MARGINAL, s.verdict)
+        assertTrue(s.reasons.any { it.startsWith("longest gap") })
+    }
+    @Test fun aBootClockThatRestartsIsFlaggedButARolloverIsNot() {
+        val before = (0 until 300).map { StoredLive("L", 1_000_000L + it * 20L, sample(50_000L + it * 20L)) }
+        val after = (300 until 600).map { StoredLive("L", 1_000_000L + it * 20L, sample(1_000L + (it - 300) * 20L)) }   // back near zero: a reset
+        val reset = stream(SessionHealth.build(data(before + after)), "L", "live")
+        assertTrue(reset.reasons.any { it.contains("restarted") })
+        assertTrue(reset.verdict != HealthVerdict.USABLE)
+        val pre = (0 until 100).map { StoredLive("L", 1_000_000L + it * 19L, sample(4_293_000L + it * 19L)) }
+        val post = (100 until 200).map { StoredLive("L", 1_000_000L + it * 19L, sample(10L + (it - 100) * 19L)) }          // the 32-bit wrap
+        val wrap = stream(SessionHealth.build(data(pre + post)), "L", "live")
+        assertTrue(wrap.reasons.none { it.contains("restarted") })
+    }
+    @Test fun aSecondRecordingSegmentForTheSameBootIsFlagged() {
+        val c1 = capture()
+        val c2 = SensorCapture("c2", "s", "L", "a", 0, "done", 0, 0, "")
+        val s = stream(SessionHealth.build(data(flash = flash(c1, count = 3000) + flash(c2, count = 3000), captures = listOf(c1, c2))), "L", "flash")
+        assertTrue(s.reasons.any { it.contains("restarted") })
+    }
     @Test fun flashTimestampWrapIsNotAGap() {
         val c = capture()
         val base = 0x1_0000_0000L - 5 * 10_000L
