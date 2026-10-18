@@ -89,6 +89,16 @@ Observed on the Pixel 9a emulator (13 October 2026): the Ready screen's GPS row 
 5. Turn location services off, start a run: it starts and the Done card says so; no crash.
 6. Walk a known 200 m route: distance within about 10 %; vertical drop reads "not available" or a small number.
 
+## Stomp sync checks (two boots and a phone needed)
+
+- [ ] Prompt text: the run Ready, Running and Done screens and the Geek mode Record screen tell the skier to stomp both boots together at the start and again at the end.
+- [ ] Surface: stomp on a hard floor or packed snow, both boots landing at the same instant, about a second apart from any other bump. Try a soft surface (deep snow, carpet) and note whether the aligner still accepts it.
+- [ ] Record about a minute with a stomp in the first 20 s and in the last 20 s. The Details tab line under Recording health shows the stomp offset, the ping offset and their difference; `gesture-sync.json` in the export agrees, and `second_boot_windows_from_pings` is true when the connect bursts were stored.
+- [ ] Record the same with the boots stomped one after the other instead of together: the result should not be trusted (the offset should show the delay); note what it reports.
+- [ ] Refusals read sensibly and are not guesses: no end stomp (no clear stomp), a double stomp in one window (more than one comparable stomp), a stomp on one boot only, a recording under 45 s (too short), one boot missing.
+- [ ] Compare stomp and ping offsets over several sessions and note the typical difference and its sign; this measures the ping bias described in `docs/clock-sync-design.md` ('Known bias').
+- [ ] A session with only live samples (flash not recovered) is accepted but rougher (20 ms samples); note the difference from a recovered session.
+
 ## Owed on hardware (research round)
 
 Nothing below has been run on a real boot. The JVM and host tests cover the parsing, the detector parity fixture and the exports. The storage-migration instrumentation check for database version 9 has been compiled but not run (no emulator was attached); run it on an emulator as in the run flow checks above. These items need powered boots.

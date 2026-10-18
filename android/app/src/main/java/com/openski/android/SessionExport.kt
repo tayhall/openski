@@ -86,6 +86,7 @@ object SessionExport {
             val clockSyncs=ClockSyncExport.replay(data)
             entry("clock-sync.csv") { w -> w.write(ClockSyncExport.clockCsv(data,clockSyncs)) }
             entry("clock-sync-fit.json") { it.write(ClockSyncExport.fitJson(data,clockSyncs).toString(2)) }
+            entry("gesture-sync.json") { it.write(GestureSync.toJson(GestureSync.analyse(data,clockSyncs)).toString(2)) }
             entry("magnetometer.csv") { w -> w.write(ClockSyncExport.magnetometerCsv(data)) }
             val rollBySide=orientation.groupBy { it.side }
             val detections=listOf("L","R").associateWith { side -> DrySkiAnalysis.detectTrials(rollBySide[side].orEmpty(),data.markers) }
