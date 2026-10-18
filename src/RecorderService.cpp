@@ -1,5 +1,6 @@
 #include "RecorderService.h"
 
+#include "AppConfig.h"
 #include "RecordFlags.h"
 
 #include <Arduino.h>
@@ -173,9 +174,10 @@ void begin() {
     return;
   }
 
-  Serial.printf("Recorder ready: %lu sample slots (~%lu seconds at 100 Hz)%s\n",
+  Serial.printf("Recorder ready: %lu sample slots (~%lu seconds at %u Hz)%s\n",
                 static_cast<unsigned long>(maxSampleCount),
-                static_cast<unsigned long>(maxSampleCount / 100),
+                static_cast<unsigned long>(maxSampleCount / config::kImuNominalRateHz),
+                config::kImuNominalRateHz,
                 sessionExists ? ", previous session awaits sync or erase" : "");
 }
 
