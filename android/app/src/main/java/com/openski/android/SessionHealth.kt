@@ -55,7 +55,8 @@ object SessionHealth {
     // ---- Starting values. Not validated on snow; tune against real recordings. ----
     const val LIVE_NOMINAL_INTERVAL_MS = 20.0   // live notifications are throttled to 50 Hz
     const val FLASH_NOMINAL_INTERVAL_MS = 10.0  // flash recorder stores the full 100 Hz stream
-    const val GAP_FACTOR = 1.5                   // interval over this x nominal is a gap
+    const val NOMINAL_SNAP = 0.10                // typical interval within 10% of the default becomes the nominal
+    const val GAP_FACTOR = 1.5                  // interval over this x nominal is a gap
     const val MIN_SAMPLES = 100                  // fewer than this: poor (nothing to judge)
     const val RATE_SHORTFALL_MARGINAL = 0.05     // effective rate this fraction below nominal
     const val RATE_SHORTFALL_POOR = 0.20
@@ -156,22 +157,27 @@ object SessionHealth {
         return if (total > 0) weighted / total to total else null
     }
 
-    private fun stream(side: String, source: String, nominal: Double, quality: List<Int>, times: List<Double>,
+    private fun stream(side: String, source: String, defaultNominal: Double, quality: List<Int>, times: List<Double>,
         segment: IntArray, slope: Pair<Double, Double>?): StreamHealth {
-        val gapThreshold = nominal * GAP_FACTOR
-        val steady = ArrayList<Double>()
         val all = ArrayList<Double>()
-        var gaps = 0; var gapTotal = 0.0; var longest = 0.0; var span = 0.0
         for (i in 1 until times.size) {
             if (segment[i] != segment[i - 1]) continue
             val dt = times[i] - times[i - 1]
-            if (dt <= 0) continue
-            all.add(dt); span += dt
+            if (dt > 0) all.add(dt)
+        }
+        val sorted = all.sorted()
+        val median = if (sorted.isEmpty()) null else (sorted[(sorted.size - 1) / 2] + sorted[sorted.size / 2]) / 2
+        // The boots may sample at 100 Hz (MPU-6050) or 104 Hz (LSM6DSOX). Take the typical interval as the
+        // nominal when it is within NOMINAL_SNAP of the default; dropped samples still show as a rate shortfall.
+        val nominal = if (median != null && abs(median - defaultNominal) / defaultNominal < NOMINAL_SNAP) median else defaultNominal
+        val gapThreshold = nominal * GAP_FACTOR
+        val steady = ArrayList<Double>()
+        var gaps = 0; var gapTotal = 0.0; var longest = 0.0; var span = 0.0
+        for (dt in all) {
+            span += dt
             if (dt > gapThreshold) { gaps++; gapTotal += dt - nominal; longest = max(longest, dt) } else steady.add(dt)
         }
         val n = quality.size
-        val sorted = all.sorted()
-        val median = if (sorted.isEmpty()) null else (sorted[(sorted.size - 1) / 2] + sorted[sorted.size / 2]) / 2
         val rate = if (span > 0) all.size * 1000.0 / span else null
         val sd = if (steady.size >= 2) { val m = steady.average(); sqrt(steady.sumOf { (it - m) * (it - m) } / steady.size) } else null
         val dropped = quality.count { it and SensorSample.QUALITY_DROPPED_BEFORE != 0 }

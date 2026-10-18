@@ -37,6 +37,12 @@ class Lsm6dsoxSensor final : public ImuSensor {
   static constexpr uint8_t kCtrl4Value = 0x02;  // LPF1_SEL_G
   static constexpr uint8_t kCtrl6Value = 0x03;  // FTYPE = 011
   static constexpr uint8_t kCtrl8Value = 0x00;  // HPCF_XL = ODR/4, slope/HP path off
+  // The first outputs after the ODR is enabled include the digital filters settling; they are read (which
+  // clears data-ready) and discarded. About 100 ms at 104 Hz, a conservative starting value to tune.
+  static constexpr uint8_t kSettleSamples = 10;
+  // The live frame and flash record store gyro as int16 of rad/s x 1000, which saturates at 32.767 rad/s
+  // (about 1877 dps), below the chip's +-2000 dps range. Flag from this limit, not only from the raw rail.
+  static constexpr float kGyroEncodableRadps = 32.7f;
   static constexpr uint8_t kStatusAccelReady = 0x01;
   static constexpr uint8_t kStatusGyroReady = 0x02;
 
@@ -45,6 +51,7 @@ class Lsm6dsoxSensor final : public ImuSensor {
   NowUsFn nowUs_;
   DelayMsFn delayMs_;
   bool initialized_ = false;
+  uint8_t settleRemaining_ = 0;
 };
 
 }  // namespace openski::imu

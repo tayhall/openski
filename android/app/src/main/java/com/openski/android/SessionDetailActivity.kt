@@ -19,6 +19,7 @@ class SessionDetailActivity : Activity() {
     private var data: SessionData? = null
     private var analysis: AnalysisResult? = null
     private var mountSlip: Map<String, MountSlipResult> = emptyMap()
+    private var healthLines: List<String> = emptyList()  // built on the io thread with the rest of the load
     private var video: VideoView? = null
     private var chart: MotionChart? = null
     private var seek: SeekBar? = null
@@ -53,7 +54,8 @@ class SessionDetailActivity : Activity() {
                 val corrected=result?.timeline?.corrected(corrector::correctionForSide)
                 val bootRoll=if(corrected==null) emptyList() else calibrations.flatMap { BootOrientation.estimate(corrected,it) }
                 val slip=if(corrected==null) emptyMap() else MountSlipMonitor.checkSides(corrected,calibrations)
-                runOnUiThread { mountSlip=slip; if (!isDestroyed && !isFinishing) {
+                val health=loaded?.let { SessionHealth.summaryLines(SessionHealth.build(it)) }.orEmpty()
+                runOnUiThread { mountSlip=slip; healthLines=health; if (!isDestroyed && !isFinishing) {
                     if (loaded == null) { finish(); return@runOnUiThread }
                     data = loaded; analysis = result; render(loaded, result!!,calibrations,bootRoll)
                 } }
@@ -373,7 +375,7 @@ class SessionDetailActivity : Activity() {
         page.addView(candidatesLabel); candidates()
         page=card(detailsPage)
         page.addView(text("Recording health",18f))
-        SessionHealth.summaryLines(SessionHealth.build(loaded)).forEach { page.addView(text(it,12f)) }
+        healthLines.forEach { page.addView(text(it,12f)) }
         page.addView(note("About","Screening aid with starting thresholds, not a validated quality limit. Full figures are in session-health.json in the export."))
         page=card(detailsPage)
         page.addView(text("Session files",18f))

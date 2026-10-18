@@ -40,6 +40,28 @@ class TurnMetricsExportTest {
         assertEquals("experimental_turn_metrics", cells.last())
     }
 
+    /** [boot] with a yaw trace that turns during the lean, so the yaw descriptors have something to measure. */
+    private fun withYaw(rolls: List<BootRoll>): List<BootRoll> {
+        var yaw = 0.0
+        return rolls.mapIndexed { i, r ->
+            val u = r.timeMs - 300.0
+            val rate = if (u in 0.0..leanMs) 0.8 * sin(PI * u / leanMs) else 0.0
+            if (i > 0) yaw += Math.toDegrees(rate) * (r.timeMs - rolls[i - 1].timeMs) / 1000.0
+            r.copy(yawDegrees = yaw, yawRateRadps = rate, headingRateRadps = rate)
+        }
+    }
+
+    @Test fun yawDescriptorsAreBlankWhenTheRowIsNotUsable() {
+        val usable = TurnMetricsExport.rows("L", withYaw(boot("L")), listOf(move), emptyList(), true)[0]
+        assertTrue(usable.usable)
+        assertNotNull(usable.yawTurnShape)
+        val gap = TurnMetricsExport.rows("R", withYaw(boot("R", gapFrom = 700.0, gapTo = 900.0)), listOf(move), emptyList(), true)[0]
+        assertFalse(gap.usable)
+        assertNull(gap.yawTurnShape)
+        assertNull(gap.yawTurnClosureDegrees)
+        assertNull(gap.yawLeadMs)
+    }
+
     @Test fun csvStartsWithExperimentalCommentsThenHeader() {
         val lines = TurnMetricsExport.csv(emptyList()).lines()
         assertTrue(lines[0].startsWith("# EXPERIMENTAL"))

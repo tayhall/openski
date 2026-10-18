@@ -10,7 +10,7 @@ inline constexpr unsigned kSampleRateHz = 104;
 inline constexpr unsigned kAccelRangeG = 16;
 inline constexpr unsigned kGyroRangeDps = 2000;
 // Accelerometer LPF2 on, HPCF_XL = 000 -> ODR/4 = 26 Hz. Gyro LPF1 on, FTYPE = 011. The gyro
-// bandwidth in Hz for that FTYPE at 104 Hz is not verified against the datasheet table; the value
-// is a placeholder near the MPU-6050 research profile (20 Hz) and must be measured on the bench.
-inline constexpr unsigned kNominalGyroBandwidthHz = 26;
+// bandwidth in Hz for that FTYPE at 104 Hz is not verified against the datasheet table, so it is 0
+// (unknown; the acquisition JSON reports null) until it is read from the datasheet or measured.
+inline constexpr unsigned kNominalGyroBandwidthHz = 0;
 }  // namespace openski::imu::lsmProfile
