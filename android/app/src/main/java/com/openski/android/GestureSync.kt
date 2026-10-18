@@ -122,8 +122,27 @@ object GestureSync {
             if (spans.none { t >= it.first - 0.005 && t <= it.second + 0.005 }) add(t, l.sample)
         }
         if (times.isEmpty()) return null
+        // Live stamps are the 32-bit clock unwrapped from the first sample, so a boot that had been up longer than
+        // 71.6 minutes sits whole wraps below its 64-bit ping clock. Put the series in the ping (absolute) frame so
+        // stomp and ping offsets are comparable and the ping-mapped windows land on the right samples.
+        val frame = absoluteWrapShift(times.minOrNull()!!, times.maxOrNull()!!, data, side)
         val order = times.indices.sortedBy { times[it] }
-        return ClockAlign.Series(DoubleArray(order.size) { times[order[it]] }, DoubleArray(order.size) { values[order[it]] })
+        return ClockAlign.Series(DoubleArray(order.size) { times[order[it]] + frame }, DoubleArray(order.size) { values[order[it]] })
+    }
+
+    /**
+     * Whole 32-bit wraps (in seconds) that put a span [fromSec, toSec] of a boot's clock nearest that boot's 64-bit ping
+     * sensor times; 0 when the boot has no ping pairs. Uses the latest epoch's pairs, as the ping timelines do.
+     */
+    fun absoluteWrapShift(fromSec: Double, toSec: Double, data: SessionData, side: String): Double {
+        val pairs = data.clockPairs.filter { it.side == side }.sortedBy { it.sendNs }.map { it.sensorUs / 1e6 }
+        if (pairs.isEmpty()) return 0.0
+        val mid = (fromSec + toSec) / 2
+        // The latest epoch: the pairs after the last backwards step of the boot's clock.
+        var start = 0
+        for (i in 1 until pairs.size) if (pairs[i] < pairs[i - 1] - 1.0) start = i
+        val pingMid = pairs.subList(start, pairs.size).let { (it.min() + it.max()) / 2 }
+        return Math.round((pingMid - mid) / BootClockWrap.WRAP_SEC) * BootClockWrap.WRAP_SEC
     }
 
     /**

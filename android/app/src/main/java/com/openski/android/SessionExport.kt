@@ -162,18 +162,20 @@ object SessionExport {
                 detections.getValue("L"),alignedRightDetection,positiveLeft("L"),positiveLeft("R"))
             val unaligned=if(!alignment.applied) comparison else BootComparison.analyse(rollBySide["L"].orEmpty(),rollBySide["R"].orEmpty(),
                 detections.getValue("L"),detections.getValue("R"),positiveLeft("L"),positiveLeft("R"))
-            val onsetLimited=alignment.uncertaintyMs?.let { u -> comparison.medianOnsetLagMs?.let { kotlin.math.abs(it)<=u } }
+            val onsetLimited=alignment.uncertaintyMs?.takeIf { it.isFinite() }?.let { u -> comparison.medianOnsetLagMs?.takeIf { it.isFinite() }?.let { kotlin.math.abs(it)<=u } }
+            // Every number goes through num(): a NaN or infinity becomes JSON null, never "NaN" in the file.
+            fun num(v: Double?): Any = if (v == null || !v.isFinite()) JSONObject.NULL else v
             summary.put("boot_comparison",JSONObject().put("angle_pairs",comparison.anglePairs)
-                .put("mean_roll_difference_deg",comparison.meanRollDifferenceDeg ?: JSONObject.NULL)
-                .put("correlation",comparison.correlation ?: JSONObject.NULL).put("movement_pairs",comparison.movementPairs)
-                .put("median_right_minus_left_onset_ms",comparison.medianOnsetLagMs ?: JSONObject.NULL)
-                .put("median_right_minus_left_return_ms",comparison.medianReturnLagMs ?: JSONObject.NULL)
-                .put("unaligned_median_right_minus_left_onset_ms",unaligned.medianOnsetLagMs ?: JSONObject.NULL)
-                .put("timing_uncertainty_ms",alignment.uncertaintyMs ?: JSONObject.NULL)
+                .put("mean_roll_difference_deg",num(comparison.meanRollDifferenceDeg))
+                .put("correlation",num(comparison.correlation)).put("movement_pairs",comparison.movementPairs)
+                .put("median_right_minus_left_onset_ms",num(comparison.medianOnsetLagMs))
+                .put("median_right_minus_left_return_ms",num(comparison.medianReturnLagMs))
+                .put("unaligned_median_right_minus_left_onset_ms",num(unaligned.medianOnsetLagMs))
+                .put("timing_uncertainty_ms",num(alignment.uncertaintyMs))
                 .put("onset_lag_timing_limited",onsetLimited ?: JSONObject.NULL)
                 .put("timing_note","onset_lag_timing_limited is true when the median onset lag is not larger than the alignment " +
                     "uncertainty, so its size and sign are not resolved; null when the uncertainty is unknown (alignment source none).")
-                .put("alignment",TurnMetricsExport.toJson(alignment.toMap())))
+                .put("clock_alignment",TurnMetricsExport.toJson(alignment.toMap())))
             summary.put("quality",JSONArray().apply { analysis.quality.forEach { q -> put(JSONObject().put("side",q.side)
                 .put("rail_samples",q.railSamples).put("rail_percent",q.railPercent)
                 .put("rail_note",RAIL_NOTE)

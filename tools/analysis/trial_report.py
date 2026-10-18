@@ -448,9 +448,9 @@ def alignment_row(ex, ba, have_pairs):
     INFO when stomp or pings were applied without disagreement; WARN when nothing was applied (live-clock timeline,
     unmeasured bias of tens of ms) or stomp and ping disagree; N/A for an older export or when there are no pairs."""
     T, line = "T3", "aligned by stomp or ping, no disagreement"
-    al = ba.get("alignment") if isinstance(ba.get("alignment"), dict) else None
+    al = ba.get("clock_alignment") if isinstance(ba.get("clock_alignment"), dict) else None
     if al is None:
-        return Row(T, "left-right alignment", "n/a", line, NA, "analysis-summary.json has no alignment block (export made before the aligned agreement)")
+        return Row(T, "left-right alignment", "n/a", line, NA, "analysis-summary.json has no clock_alignment block (export made before the aligned agreement)")
     if not have_pairs:
         return Row(T, "left-right alignment", str(al.get("source")), line, NA, "no left-right pairs to align: " + str(al.get("reason") or ""))
     src, applied, dis = al.get("source"), al.get("applied") is True, al.get("disagreement") is True
@@ -498,7 +498,7 @@ def t3(ex, explicit, compare=None):
             rows.append(Row(T, f"per-boot spread {side}", "; ".join(parts), "record before choosing any threshold", INFO))
         ba = tm.get("boot_agreement") or {}
         pairs = jnum(ba, "pairs_with_data")
-        al = ba.get("alignment") if isinstance(ba.get("alignment"), dict) else None
+        al = ba.get("clock_alignment") if isinstance(ba.get("clock_alignment"), dict) else None
         lim = jnum(ba, "pairs_timing_limited")
         timing = "" if al is None else (f"; aligned by {al.get('source')} (uncertainty {fm(jnum(al, 'uncertainty_ms'), 1)} ms), "
                                          f"{int(lim) if fin(lim) else 'n/a'} pairs timing-limited")
@@ -923,11 +923,11 @@ def _selftest(d, tmp):
 
     # 3b. alignment block: null numbers print n/a, a pre-alignment export is N/A (never a tool error or FAIL)
     def null_alignment(o):
-        o["turn_metrics"]["boot_agreement"]["alignment"].update(shift_ms=None, uncertainty_ms=None, stomp_minus_ping_ms=None)
+        o["turn_metrics"]["boot_agreement"]["clock_alignment"].update(shift_ms=None, uncertainty_ms=None, stomp_minus_ping_ms=None)
         o["turn_metrics"]["boot_agreement"]["pairs_timing_limited"] = None
     def no_alignment(o):
-        o["turn_metrics"]["boot_agreement"].pop("alignment", None)
-        o["boot_comparison"].pop("alignment", None)
+        o["turn_metrics"]["boot_agreement"].pop("clock_alignment", None)
+        o["boot_comparison"].pop("clock_alignment", None)
     mutate(clean, P("align-null.zip"), {"analysis-summary.json": edit_json(null_alignment)})
     rows = run_checks(P("align-null.zip"), ["T3"])
     al = get(rows, "T3", "left-right alignment")
@@ -935,7 +935,7 @@ def _selftest(d, tmp):
           al[0].value if al else "no row")
     mutate(clean, P("align-missing.zip"), {"analysis-summary.json": edit_json(no_alignment)})
     al = get(run_checks(P("align-missing.zip"), ["T3"]), "T3", "left-right alignment")
-    check("3b export without an alignment block is N/A", al and al[0].status == NA and "no alignment block" in al[0].why, al[0].why if al else "no row")
+    check("3b export without an alignment block is N/A", al and al[0].status == NA and "no clock_alignment block" in al[0].why, al[0].why if al else "no row")
 
     # 4. unfitted drift is not a measurement; an empty epoch list is not a clock restart
     def unfit(o):
@@ -1197,7 +1197,11 @@ def build_expectations():
     E.append(Expect("fault-no-end-stomp.zip", "T3", "left-right alignment", (INFO,), "no end stomp: the pings are used", reason_has="pings only"))
     E.append(Expect("fault-no-pings.zip", "T3", "left-right alignment", (INFO,), "no pings: the stomp alone is used", reason_has="no ping pairs"))
     E.append(Expect("fault-clock-reset.zip", "T3", "left-right alignment", (WARN,), "a clock reset leaves the agreement unaligned", reason_has="not aligned"))
-    E.append(Expect("fault-asymmetric-ping-bias.zip", "T3", "left-right alignment", (INFO, WARN), "ping bias: stomp kept within tolerance, or the disagreement is flagged"))
+    # the generator's ping bias is at most half the interval difference (15 ms), below the left ping uncertainty alone (half a 45 ms return leg)
+    E.append(Expect("fault-asymmetric-ping-bias.zip", "T3", "left-right alignment", (INFO,), "ping bias inside the ping uncertainty: the stomp is kept", reason_has="agrees with the pings"))
+    E.append(Expect("fault-long-uptime.zip", "T1", "stomp minus ping", (PASS,), "boots up for hours (3 and 5 clock wraps): stomp and ping in one frame agree"))
+    E.append(Expect("fault-long-uptime.zip", "T3", "left-right alignment", (INFO,), "boots up for hours: the stomp is applied", reason_has="agrees with the pings"))
+    E.append(Expect("fault-long-uptime.zip", "T1", "", ok, "boots up for hours: no FAIL in T1"))
     return E
 
 

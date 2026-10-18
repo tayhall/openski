@@ -77,7 +77,8 @@ class ClockAlignmentTest {
         val a = ClockAlignment.estimate(timeline(), report(null, ping = offsetSec + 0.005, pingUnc = 0.012))
         assertEquals(ClockAlignment.Source.PING, a.source)
         assertEquals(trueShift - 5.0, a.shiftMs!!, 1e-6)
-        assertEquals(12.0, a.uncertaintyMs!!, 1e-6)
+        // 12 ms ping bound plus the drift error beyond the references: sqrt(12^2 + 12^2) / 85 s times the 10 s past the end.
+        assertEquals(12.0 + Math.sqrt(288.0) / 85_000.0 * 10_000.0, a.uncertaintyMs!!, 0.05)
         assertTrue(a.reason, a.reason.contains("pings only") && a.reason.contains("no clear stomp"))
         assertEquals("refused", a.stompStatus)
     }
@@ -180,6 +181,42 @@ class ClockAlignmentTest {
         // Both boots' sensors were read at the same phone time, so the ping offset is the clock difference.
         assertEquals(trueShift, a.shiftMs!!, 1.0)
         assertTrue(a.reason.contains("shorter than 45 s"))
+    }
+
+    @Test fun aStompWithANonFiniteSigmaIsNotUsedAndNothingNonFiniteIsReported() {
+        val nanSigma = ClockAlign.Result(true, null, ClockAlign.EndFit(1005.0, offsetSec, 0.95, Double.NaN),
+            ClockAlign.EndFit(1090.0, offsetSec, 0.95, Double.NaN), offsetSec, 1005.0, 0.0, Double.NaN, Double.NaN)
+        val withPings = ClockAlignment.estimate(timeline(), report(nanSigma, ping = offsetSec + 0.002))
+        assertEquals(ClockAlignment.Source.PING, withPings.source)
+        assertTrue(withPings.reason, withPings.reason.contains("non-finite"))
+        assertNull(withPings.toleranceMs)
+        val alone = ClockAlignment.estimate(timeline(), report(nanSigma))
+        assertEquals(ClockAlignment.Source.NONE, alone.source)
+        for (a in listOf(withPings, alone)) {
+            val json = TurnMetricsExport.toJson(a.toMap()).toString()
+            assertFalse(json, json.contains("NaN") || json.contains("Infinity"))
+        }
+    }
+
+    @Test fun aPingFallbackOnABootUpForHoursMapsInThePingFrame() {
+        // Both boots have been up for hours: their live clocks sit 3 and 5 wraps below the 64-bit ping clocks.
+        val syncs = listOf(Triple("L", leftClock0, 3L), Triple("R", rightClock0, 5L)).associate { (side, clock0, k) ->
+            side to ClockSync(side).also { s ->
+                for (i in 0 until 8) {
+                    val tSend = 7_200_000_000_000L + i * 100_000_000L
+                    val sensorUs = ((clock0 + k * ClockAlignment.WRAP_MS) * 1000.0).toLong() + i * 100_000L + 5_000L
+                    s.add(PingPair(side, i, tSend, tSend + 10_000_000L, sensorUs))
+                }
+            }
+        }
+        val tooShort = GestureSync.Report(GestureSync.Status.TOO_SHORT, null, null, "the recording is shorter than 45 s",
+            null, null, null, null, null, null, false)
+        val a = ClockAlignment.estimate(timeline(), tooShort, syncs)
+        assertEquals(a.reason, ClockAlignment.Source.PING, a.source)
+        assertEquals(trueShift, a.shiftMs!!, 1.0)
+        // Without the frame change the left lookup would be 3 wraps (3.6 hours) from every left ping and miss badly.
+        assertTrue("uncertainty ${a.uncertaintyMs}", a.uncertaintyMs!! < 30.0)
+        assertEquals(1000.0 + 3 * ClockAlignment.WRAP_MS / 1000.0, ClockAlignment.toPingFrame(1000.0, syncs["L"]), 1e-6)
     }
 
     // --- agreement pairs flag timing finer than the alignment uncertainty -------------------------------------------

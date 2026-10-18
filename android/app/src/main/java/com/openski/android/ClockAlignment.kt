@@ -3,6 +3,7 @@ package com.openski.android
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.roundToLong
+import kotlin.math.sqrt
 
 /**
  * Chooses the best available boot-to-boot clock alignment for the agreement stage of the analysis (left versus right
@@ -45,7 +46,9 @@ object ClockAlignment {
         "The ping uncertainty includes half the best round trip, which bounds that bias for each boot."
     const val NOTE = "Experimental. The right boot's roll is shifted onto the left boot's timeline for the boot-to-boot " +
         "agreement figures only; samples.csv, boot-roll.csv's existing columns and the per-boot metrics are unchanged. " +
-        "The shift replaces the per-boot user offsets for this stage. shift_ms is added to right-boot timeline times at " +
+        "The right boot's user offset cancels out (it is in both the right timeline and the measured shift); the left " +
+        "boot's user offset stays in the shared left timeline, so the relative agreement figures do not depend on either. " +
+        "shift_ms is added to right-boot timeline times at " +
         "ref_time_ms (positive: the right boot's timeline ran early); drift_ppm stretches it over the session."
 
     enum class Source { STOMP, PING, NONE }
@@ -153,21 +156,37 @@ object ClockAlignment {
         var pingEndRefSec = report?.pingEndRefSec
         if ((pingStartSec == null || pingRefSec == null) && leftTl != null && rightTl != null) {
             val span = l.lastMs - l.firstMs
-            val t0 = (l.firstMs + 0.25 * span - l.anchorMs) / 1000.0
-            val t1 = (l.firstMs + 0.75 * span - l.anchorMs) / 1000.0
+            // Left sensor seconds from the timeline are in the 32-bit live frame; move them to the 64-bit ping frame.
+            val t0 = toPingFrame((l.firstMs + 0.25 * span - l.anchorMs) / 1000.0, syncs?.get("L"))
+            val t1 = toPingFrame((l.firstMs + 0.75 * span - l.anchorMs) / 1000.0, syncs?.get("L"))
             val (o0, u0) = pingAt(leftTl, rightTl, t0)
             val (o1, u1) = pingAt(leftTl, rightTl, t1)
             pingStartSec = o0; pingRefSec = t0; pingEndSec = o1; pingEndRefSec = t1; pingUncSec = max(u0, u1)
         }
         val pingEndUncSec = if (leftTl != null && rightTl != null && pingEndRefSec != null) pingAt(leftTl, rightTl, pingEndRefSec).second else pingUncSec
-        val ping = if (pingStartSec != null && pingRefSec != null && pingUncSec != null) {
-            val drift = if (pingEndSec != null && pingEndRefSec != null && abs(pingEndRefSec - pingRefSec) > 1.0)
-                (pingEndSec - pingStartSec) / (pingEndRefSec - pingRefSec) * 1e6 else 0.0
-            Candidate(pingStartSec, pingRefSec, drift, max(pingUncSec, pingEndUncSec ?: 0.0) * 1000.0 + anchorSlackMs)
+        val ping = if (pingStartSec != null && pingRefSec != null && pingUncSec != null &&
+            pingStartSec.isFinite() && pingRefSec.isFinite() && pingUncSec.isFinite()) {
+            val u0 = pingUncSec * 1000.0
+            val u1 = (pingEndUncSec?.takeIf { it.isFinite() } ?: pingUncSec) * 1000.0
+            val endOff = pingEndSec?.takeIf { it.isFinite() }
+            val endRef = pingEndRefSec?.takeIf { it.isFinite() && abs(it - pingRefSec) > 1.0 }
+            val drift = if (endOff != null && endRef != null) (endOff - pingStartSec) / (endRef - pingRefSec) * 1e6 else 0.0
+            // The drift comes from two offsets good to u0 and u1, so its error is about sqrt(u0^2 + u1^2) / dt. Between the
+            // two references the line stays within max(u0, u1); beyond them that drift error grows with the distance.
+            val driftTerm = if (endOff == null || endRef == null) 0.0 else {
+                val dtMs = abs(endRef - pingRefSec) * 1000.0
+                val lo = fold(minOf(pingRefSec, endRef) * 1000.0 + l.anchorMs, (l.firstMs + l.lastMs) / 2)
+                val outside = max(max(0.0, lo - l.firstMs), max(0.0, l.lastMs - (lo + dtMs)))
+                sqrt(u0 * u0 + u1 * u1) / dtMs * outside
+            }
+            Candidate(pingStartSec, pingRefSec, drift, max(u0, u1) + driftTerm + anchorSlackMs)
         } else null
 
         val res = report?.result?.takeIf { report.ok && it.ok }
-        val stomp = res?.let {
+        // A stomp result with a non-finite number cannot be used (and must never reach the JSON).
+        val stompUnusable = res != null && listOf(res.offsetSec, res.refTimeSec, res.driftPpm, res.offsetSigmaSec).any { !it.isFinite() }
+        val stompRes = if (stompUnusable) null else res
+        val stomp = stompRes?.let {
             val refTl = fold(it.refTimeSec * 1000.0 + l.anchorMs, (l.firstMs + l.lastMs) / 2)
             val farMs = max(abs(l.firstMs - refTl), abs(l.lastMs - refTl))
             val driftTerm = if (it.driftSigmaPpm.isFinite()) it.driftSigmaPpm * 1e-6 * farMs else 0.0
@@ -177,10 +196,14 @@ object ClockAlignment {
         var dis: Double? = null
         var disEnd: Double? = null
         var tol: Double? = null
-        if (res != null && ping != null) {
-            dis = (res.offsetAt(ping.refSec) - ping.offsetSec) * 1000.0
-            if (pingEndSec != null && pingEndRefSec != null) disEnd = (res.offsetAt(pingEndRefSec) - pingEndSec) * 1000.0
-            tol = max(pingUncSec ?: 0.0, pingEndUncSec ?: 0.0) * 1000.0 + STOMP_SIGMAS * res.offsetSigmaSec * 1000.0 + DISAGREEMENT_MARGIN_MS
+        if (stompRes != null && ping != null) {
+            // Both are in the ping frame (GestureSync.series moves the stomp series there); folding whole wraps away is a
+            // safety net for a report built before that.
+            dis = fold((stompRes.offsetAt(ping.refSec) - ping.offsetSec) * 1000.0, 0.0)
+            if (pingEndSec != null && pingEndRefSec != null && pingEndSec.isFinite() && pingEndRefSec.isFinite())
+                disEnd = fold((stompRes.offsetAt(pingEndRefSec) - pingEndSec) * 1000.0, 0.0)
+            tol = max(pingUncSec ?: 0.0, pingEndUncSec?.takeIf { it.isFinite() } ?: 0.0) * 1000.0 +
+                STOMP_SIGMAS * stompRes.offsetSigmaSec * 1000.0 + DISAGREEMENT_MARGIN_MS
         }
         val worst = listOfNotNull(dis, disEnd).maxByOrNull { abs(it) }
         fun f1(v: Double) = "%.1f".format(java.util.Locale.ROOT, v)
@@ -197,6 +220,7 @@ object ClockAlignment {
                     "is widened to the disagreement. Check the stomps and the connection intervals.", true)
             ping != null -> Choice(Source.PING, ping, "pings only: stomp sync " + when {
                 report == null -> "was not run"
+                stompUnusable -> "was not usable (a non-finite offset, drift or sigma)"
                 report.ok -> "was not usable"
                 else -> "not measured (${report.reason ?: report.status.name.lowercase()})"
             }, false)
@@ -206,11 +230,21 @@ object ClockAlignment {
 
         val refTl = fold(chosen.refSec * 1000.0 + l.anchorMs, (l.firstMs + l.lastMs) / 2)
         val c = fold(l.anchorMs - r.anchorMs - chosen.offsetSec * 1000.0, 0.0)
+        if (!c.isFinite() || !refTl.isFinite() || !chosen.driftPpm.isFinite() || !chosen.uncertaintyMs.isFinite())
+            return none("not aligned: the ${source.name.lowercase()} alignment has a non-finite shift, drift or uncertainty", report, dis, disEnd, tol)
         if (abs(c) > MAX_PLAUSIBLE_SHIFT_MS)
             return none("not aligned: the ${source.name.lowercase()} offset implies a ${f1(c)} ms shift of the right boot's timeline, " +
                 "more than ${MAX_PLAUSIBLE_SHIFT_MS.toInt()} ms, so the sync and the timeline do not describe the same clocks", report, dis, disEnd, tol)
         return Result(source, c, refTl, chosen.driftPpm, chosen.uncertaintyMs, reason, dis, disEnd, tol, disagreement,
             report?.status?.name?.lowercase())
+    }
+
+    /** [tSec] (a boot's 32-bit live clock, unwrapped from its first sample) moved by whole wraps nearest the boot's ping times. */
+    internal fun toPingFrame(tSec: Double, sync: ClockSync?): Double {
+        val pairs = sync?.pairs?.filter { it.accepted && it.epoch == sync.epochCount - 1 }?.map { it.pair.sensorUs / 1e6 }
+        if (pairs.isNullOrEmpty()) return tSec
+        val mid = (pairs.min() + pairs.max()) / 2
+        return tSec + Math.round((mid - tSec) / BootClockWrap.WRAP_SEC) * BootClockWrap.WRAP_SEC
     }
 
     private data class Choice(val source: Source, val candidate: Candidate, val reason: String, val disagreement: Boolean)

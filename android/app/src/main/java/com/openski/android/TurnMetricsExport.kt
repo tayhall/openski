@@ -140,7 +140,7 @@ object TurnMetricsExport {
                 "Both boots are put on one sign convention (positive roll = LEFT) first. Null when either boot has gaps over 100 ms or too few samples. " +
                 "Spread is mean and sample SD (needs two candidates).")
         if (alignment != null) {
-            agreement["alignment"] = alignment.toMap()
+            agreement["clock_alignment"] = alignment.toMap()
             agreement["timing_uncertainty_ms"] = alignment.uncertaintyMs
             agreement["pairs_timing_limited"] = if (alignment.uncertaintyMs == null) null else pairs.count { it.timingLimited == true }
             agreement["timing_note"] = "timing_sensitivity is the largest change of derivative similarity, roll correlation or wedge " +
