@@ -170,6 +170,47 @@ class StorageInstrumentation : Instrumentation() {
                     check(store.readableDatabase.rawQuery("SELECT COUNT(*) FROM run_track WHERE session_id=?",arrayOf(id)).use { it.moveToFirst() && it.getInt(0)==0 }) { "track not deleted with the session" }
                 }
             } finally { context.deleteDatabase(gpsMigration) }
+            // Version 10 -> 11: clock sync and magnetometer tables. A genuine upgrade: drop the three new tables, set 10, reopen.
+            val clockMigration="openski-migration-10-${UUID.randomUUID()}.db"
+            try {
+                LocalSessionStore(context,clockMigration).use { it.writableDatabase.version }
+                SQLiteDatabase.openDatabase(context.getDatabasePath(clockMigration).path,null,SQLiteDatabase.OPEN_READWRITE).use { db ->
+                    listOf("clock_sync","mag_samples","phone_samples").forEach { db.execSQL("DROP TABLE $it") }
+                    db.version=10
+                }
+                LocalSessionStore(context,clockMigration).use { store ->
+                    check(store.readableDatabase.version==11) { "Not upgraded to 11" }
+                    listOf("clock_sync","mag_samples","phone_samples").forEach { table ->
+                        check(store.readableDatabase.rawQuery("SELECT COUNT(*) FROM $table",null).use { it.moveToFirst() && it.getInt(0)==0 }) { "$table missing or not empty" }
+                    }
+                    val id=UUID.randomUUID().toString()
+                    store.createSession(id,1_000_000L)
+                    store.event(id,"clock_ref wall_ms=1000000 elapsed_ns=5000000000000")
+                    store.addClockPairs(id,(0 until 8).map { StoredClockPair("L",it,5_000_000_000_000L+it*100_000_000L,5_000_000_000_000L+it*100_000_000L+30_000_000L,
+                        (4_900_000_000_000L+it*100_000_000L+15_000_000L)/1000,30_000_000L,true) } +
+                        StoredClockPair("R",99,5_000_000_000_000L,5_000_000_000_000L-1L,5L,-1L,false))
+                    store.addMagSamples(id,listOf(StoredMag("L",500,1_000_250L,6842,-3421,32767,3)))
+                    check(store.clockPairs(id).size==9 && store.clockPairs(id).count { !it.accepted }==1)
+                    check(store.magSamples(id).single().let { it.x==6842 && it.y==-3421 && it.z==32767 && it.flags==3 })
+                    store.finishSession(id,1_100_000L)
+                    val loaded=store.loadData(id)!!
+                    check(loaded.clockPairs.size==9 && loaded.mag.size==1) { "loadData omitted clock or magnetometer rows" }
+                    val zipped=ByteArrayOutputStream()
+                    SessionExport.write(loaded,zipped)
+                    val files=mutableMapOf<String,String>()
+                    ZipInputStream(zipped.toByteArray().inputStream()).use { zip ->
+                        while(true) { val entry=zip.nextEntry ?: break; files[entry.name]=zip.readBytes().toString(Charsets.UTF_8) }
+                    }
+                    check(files.getValue("clock-sync.csv").trim().lines().size==10) { "clock-sync.csv rows" }
+                    check(JSONObject(files.getValue("clock-sync-fit.json")).getJSONObject("L").getBoolean("available")) { "clock-sync-fit.json" }
+                    check(files.getValue("magnetometer.csv").trim().lines().let { it.size==2 && it[1].endsWith("uncalibrated") }) { "magnetometer.csv" }
+                    check(files.getValue("samples.csv").trim().lines().size==1) { "raw samples changed" }
+                    check(store.deleteSession(id)) { "clock session delete" }
+                    listOf("clock_sync","mag_samples").forEach { table ->
+                        check(store.readableDatabase.rawQuery("SELECT COUNT(*) FROM $table WHERE session_id=?",arrayOf(id)).use { it.moveToFirst() && it.getInt(0)==0 }) { "$table not deleted with the session" }
+                    }
+                }
+            } finally { context.deleteDatabase(clockMigration) }
             val path=context.getDatabasePath(name)
             path.parentFile!!.mkdirs()
             SQLiteDatabase.openOrCreateDatabase(path,null).use { db ->

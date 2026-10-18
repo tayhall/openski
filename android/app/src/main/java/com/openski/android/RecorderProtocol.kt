@@ -97,10 +97,41 @@ object RecorderCommand {
     const val CANCEL = 6
     const val ZERO = 7
     const val SET_MODE = 8
+    /** Time sync ping: `09 token_lo token_hi`. The answer is a [ClockPong]. */
+    const val TIME_SYNC = 9
+    fun timeSync(token: Int): ByteArray = byteArrayOf(TIME_SYNC.toByte(), token.toByte(), (token shr 8).toByte())
     /** For DOWNLOAD [offset] is the first record; for SET_MODE it is the mode (0 diagnostics, 1 production). */
     fun bytes(opcode: Int, offset: Int = 0): ByteArray = when (opcode) {
         DOWNLOAD -> ByteBuffer.allocate(5).order(ByteOrder.LITTLE_ENDIAN).put(opcode.toByte()).putInt(offset).array()
         SET_MODE -> byteArrayOf(opcode.toByte(), offset.toByte())
         else -> byteArrayOf(opcode.toByte())
+    }
+}
+
+/**
+ * Reply to a time-sync ping (opcode 09, 16 bytes on the control characteristic): version 3, opcode 09, result,
+ * flags, token echo (uint16 LE), sensor time in microseconds (uint64 LE, esp_timer since boot), two reserved bytes.
+ * Result 6 means the firmware does not support time sync. [sensorUs] is only meaningful when [result] is 0.
+ */
+data class ClockPong(val result: Int, val flags: Int, val token: Int, val sensorUs: Long) {
+    val ok get() = result == 0
+    val unsupported get() = result == RESULT_UNSUPPORTED
+    companion object {
+        const val RESULT_UNSUPPORTED = 6
+        /** Returns null for a frame that is not a version-3 opcode-09 reply, or (when [expectedToken] is given) has another token. */
+        fun decode(bytes: ByteArray, expectedToken: Int? = null): ClockPong? {
+            if (bytes.size != 16 || bytes[0].toInt() != 3 || bytes[1].toInt() != RecorderCommand.TIME_SYNC) return null
+            val b = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
+            b.position(2)
+            val result = b.get().toInt() and 255
+            val flags = b.get().toInt() and 255
+            val token = b.short.toInt() and 0xffff
+            val sensorUs = b.long
+            if (expectedToken != null && token != expectedToken) return null
+            if (result == 0 && sensorUs < 0) return null   // beyond 2^63 microseconds is not a clock
+            return ClockPong(result, flags, token, sensorUs)
+        }
+        /** True for any control reply that belongs to opcode 09, so it is not mistaken for a recorder status. */
+        fun isTimeSyncReply(bytes: ByteArray) = bytes.size >= 2 && bytes[1].toInt() == RecorderCommand.TIME_SYNC
     }
 }

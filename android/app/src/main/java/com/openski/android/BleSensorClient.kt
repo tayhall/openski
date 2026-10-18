@@ -4,6 +4,7 @@ import android.bluetooth.*
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import java.util.UUID
 
@@ -22,6 +23,9 @@ class BleSensorClient(
     private val onSkiEvent: (SkiEvent) -> Unit = {},
     private val onSkiState: (SkiState) -> Unit = {},
     private val onHeadingTurn: (HeadingTurnFrame) -> Unit = {},
+    private val onMagnetometer: (MagnetometerFrame) -> Unit = {},
+    /** A time-sync reply with the phone's elapsedRealtimeNanos taken in the GATT callback, before any handler hop. */
+    private val onPong: (ClockPong, Long) -> Unit = { _, _ -> },
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private var gatt: BluetoothGatt? = null
@@ -103,6 +107,35 @@ class BleSensorClient(
         return true
     }
 
+    /**
+     * Sends a time-sync ping (opcode 09). [onSend] receives elapsedRealtimeNanos taken just before the write is
+     * issued (the queued operation starts when earlier GATT operations have finished). A failed ping never drops the link.
+     */
+    fun ping(token: Int, onSend: (Long) -> Unit): Boolean {
+        val characteristic = control ?: return false
+        if (!ready) return false
+        val bytes = RecorderCommand.timeSync(token)
+        enqueue(Operation({ connection ->
+            try {
+                @Suppress("DEPRECATION")
+                characteristic.value = bytes
+                characteristic.writeType = BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                onSend(SystemClock.elapsedRealtimeNanos())
+                @Suppress("DEPRECATION")
+                connection.writeCharacteristic(characteristic)
+            } catch (_: SecurityException) { false }
+        }, optional = true, description = "Time sync ping"))
+        return true
+    }
+
+    /** Asks for a shorter connection interval (high) while a ping burst runs, then back to the default (balanced). */
+    fun setHighPriority(high: Boolean) {
+        val connection = gatt ?: return
+        try {
+            connection.requestConnectionPriority(if (high) BluetoothGatt.CONNECTION_PRIORITY_HIGH else BluetoothGatt.CONNECTION_PRIORITY_BALANCED)
+        } catch (_: SecurityException) { /* Permission can be revoked during a connection. */ }
+    }
+
     fun pollRssi() {
         if(!ready || current!=null || queue.isNotEmpty()) return
         enqueue(Operation({ try { it.readRemoteRssi() } catch(_: SecurityException) { false } },optional=true,rssi=true))
@@ -126,16 +159,19 @@ class BleSensorClient(
         }, optional = optional, done = done, description="Subscribe ${characteristic.uuid}"))
     }
 
-    private fun receive(characteristic: BluetoothGattCharacteristic, bytes: ByteArray) {
+    private fun receive(characteristic: BluetoothGattCharacteristic, bytes: ByteArray, receivedNs: Long = SystemClock.elapsedRealtimeNanos()) {
         when (characteristic.uuid) {
             LIVE_UUID -> SensorSample.decode(bytes)?.let(onSample)
-            CONTROL_UUID -> RecorderStatus.decode(bytes)?.let(onRecorder)
+            CONTROL_UUID ->
+                if (ClockPong.isTimeSyncReply(bytes)) ClockPong.decode(bytes)?.let { onPong(it, receivedNs) }
+                else RecorderStatus.decode(bytes)?.let(onRecorder)
             DATA_UUID -> onChunk(FlashChunk.decode(bytes))
             MOVEMENT_UUID -> when (val frame = MotionFrames.decode(bytes)) {
                 is MovementEvent -> onMovement(frame)
                 is SkiEvent -> onSkiEvent(frame)
                 is SkiState -> onSkiState(frame)
                 is HeadingTurnFrame -> onHeadingTurn(frame)
+                is MagnetometerFrame -> onMagnetometer(frame)
                 null -> Unit
             }
             BATTERY_UUID -> onBattery(bytes.firstOrNull()?.toInt()?.and(255)?.takeIf { it <= 100 })
@@ -213,11 +249,13 @@ class BleSensorClient(
         override fun onCharacteristicChanged(g: BluetoothGatt, c: BluetoothGattCharacteristic) {
             @Suppress("DEPRECATION")
             val bytes = c.value?.copyOf() ?: return
-            dispatch(g) { receive(c, bytes) }
+            val receivedNs = SystemClock.elapsedRealtimeNanos()
+            dispatch(g) { receive(c, bytes, receivedNs) }
         }
         override fun onCharacteristicChanged(g: BluetoothGatt, c: BluetoothGattCharacteristic, value: ByteArray) {
             val bytes = value.copyOf()
-            dispatch(g) { receive(c, bytes) }
+            val receivedNs = SystemClock.elapsedRealtimeNanos()
+            dispatch(g) { receive(c, bytes, receivedNs) }
         }
     }
     companion object {

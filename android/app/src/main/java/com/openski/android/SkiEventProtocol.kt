@@ -9,13 +9,14 @@ sealed interface MotionFrame
 object MotionFrames {
     /**
      * Version 1 is the `tilt_v1` excursion, 2 a `ski_v0` half-turn, 3 the `ski_v0` state frame and
-     * 4 an experimental heading-turn candidate.
+     * 4 an experimental heading-turn candidate and 5 a raw magnetometer reading (left boot only).
      */
     fun decode(bytes: ByteArray): MotionFrame? = when (bytes.firstOrNull()?.toInt()) {
         1 -> MovementEvent.decode(bytes)
         2 -> SkiEvent.decode(bytes)
         3 -> SkiState.decode(bytes)
         4 -> HeadingTurnFrame.decode(bytes)
+        5 -> MagnetometerFrame.decode(bytes)
         else -> null
     }
 }
