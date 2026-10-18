@@ -372,6 +372,10 @@ class SessionDetailActivity : Activity() {
         page.addView(text("Gyro candidates",18f))
         page.addView(candidatesLabel); candidates()
         page=card(detailsPage)
+        page.addView(text("Recording health",18f))
+        SessionHealth.summaryLines(SessionHealth.build(loaded)).forEach { page.addView(text(it,12f)) }
+        page.addView(note("About","Screening aid with starting thresholds, not a validated quality limit. Full figures are in session-health.json in the export."))
+        page=card(detailsPage)
         page.addView(text("Session files",18f))
         page.addView(button("Export session (.zip with CSV and metadata)") { export(loaded) })
         page.addView(button("Delete session") {
