@@ -232,6 +232,7 @@ class MainActivity : Activity() {
         sessionCard.addView(label("Records both boots, including when the screen is off.", 12f, MUTED).apply {
             setPadding(0, dp(10), 0, 0)
         })
+        sessionCard.addView(label(GestureSyncPrompts.RECORD, 12f, MUTED).apply { setPadding(0, dp(6), 0, 0) })
         record.addView(sessionCard, bottomMargin(dp(20)))
         record.addView(SkiUi.button(this, "No sensors yet? Try a demo", SkiUi.ButtonStyle.QUIET) { selectTab(2) }, bottomMargin(dp(16)))
         record.addView(sectionHeading("YOUR BOOTS", "Connection and live motion"))

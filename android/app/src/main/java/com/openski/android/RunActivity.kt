@@ -211,6 +211,7 @@ class RunActivity : Activity() {
         column.add(SummitView(this), bottom = 8)
         column.add(t("Ready?", Snow.Type.HERO))
         column.add(t("Check your boots and earbuds, then start. Your phone goes in your pocket.", Snow.Type.BODY, Snow.INK_SOFT), top = 4, bottom = 16)
+        column.add(t(GestureSyncPrompts.READY, Snow.Type.STRONG), bottom = 12)
         val status = Snow.card(this, 18)
         RunController.SIDES.forEachIndexed { index, side ->
             val ok = s.connected[side] == true
@@ -291,6 +292,7 @@ class RunActivity : Activity() {
         turnsView = t("${s.turns.values.sum()} turns", Snow.Type.DISPLAY).also { column.add(it, top = 4) }
         verdictView = t(verdictLine(s), Snow.Type.BODY).also { column.add(it, top = 12, bottom = 16) }
         s.banner?.let { column.add(t(it, Snow.Type.STRONG), bottom = 16) }
+        column.add(t(GestureSyncPrompts.RUNNING, Snow.Type.STRONG), bottom = 12)
         column.add(Snow.button(this, "Stop run") { service?.stopRun() }.apply { minHeight = Snow.dp(this@RunActivity, 64) })
         column.add(t("You can lock the phone and put it in your pocket. The run ends by itself after a quiet spell.", Snow.Type.CAPTION, Snow.INK_SOFT), top = 16)
     }
@@ -329,6 +331,7 @@ class RunActivity : Activity() {
                 if (comparison != null && comparisonHolder.isAttachedToWindow) comparisonHolder.addView(RunComparisonCard.build(this, comparison))
             }
         }
+        column.add(t(GestureSyncPrompts.DONE, Snow.Type.CAPTION, Snow.INK_SOFT), bottom = 12)
         column.add(Snow.button(this, "Back to ready") { service?.resetRun() }, bottom = 10)
         column.add(Snow.button(this, "Open in logbook", Snow.ButtonKind.SECONDARY) {
             startActivity(Intent(this, MainActivity::class.java))

@@ -54,7 +54,10 @@ class SessionDetailActivity : Activity() {
                 val corrected=result?.timeline?.corrected(corrector::correctionForSide)
                 val bootRoll=if(corrected==null) emptyList() else calibrations.flatMap { BootOrientation.estimate(corrected,it) }
                 val slip=if(corrected==null) emptyMap() else MountSlipMonitor.checkSides(corrected,calibrations)
-                val health=loaded?.let { SessionHealth.summaryLines(SessionHealth.build(it)) }.orEmpty()
+                val health=loaded?.let { item ->
+                    val withPings=item.copy(clockPairs=LocalSessionStore(this).use { it.clockPairs(id) })
+                    SessionHealth.summaryLines(SessionHealth.build(item))+(runCatching { GestureSync.summaryLine(GestureSync.analyse(withPings)) }.getOrElse { "Boot clocks: stomp sync unavailable (${it.message ?: "error"})." })
+                }.orEmpty()
                 runOnUiThread { mountSlip=slip; healthLines=health; if (!isDestroyed && !isFinishing) {
                     if (loaded == null) { finish(); return@runOnUiThread }
                     data = loaded; analysis = result; render(loaded, result!!,calibrations,bootRoll)

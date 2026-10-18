@@ -89,6 +89,16 @@ Observed on the Pixel 9a emulator (13 October 2026): the Ready screen's GPS row 
 5. Turn location services off, start a run: it starts and the Done card says so; no crash.
 6. Walk a known 200 m route: distance within about 10 %; vertical drop reads "not available" or a small number.
 
+## Stomp sync checks (two boots and a phone needed)
+
+- [ ] Prompt text: the run Ready, Running and Done screens and the Geek mode Record screen tell the skier to stomp both boots together at the start and again at the end.
+- [ ] Surface: stomp on a hard floor or packed snow, both boots landing at the same instant, about a second apart from any other bump. Try a soft surface (deep snow, carpet) and note whether the aligner still accepts it.
+- [ ] Record about a minute with a stomp in the first 20 s and one as you stop (up to 45 s before the recording ends; for an auto-ended run that is about 20 s before the end). The Details tab line under Recording health shows the stomp offset, the ping offset and their difference; `gesture-sync.json` in the export agrees, and `second_boot_windows_from_pings` is true when the connect bursts were stored.
+- [ ] Record the same with the boots stomped one after the other instead of together: the result should not be trusted (the offset should show the delay); note what it reports.
+- [ ] Refusals read sensibly and are not guesses: no end stomp (no clear stomp), a double stomp in one window (more than one comparable stomp), a stomp on one boot only, a recording under 45 s (too short), one boot missing.
+- [ ] Compare stomp and ping offsets over several sessions and note the typical difference and its sign; this measures the ping bias described in `docs/clock-sync-design.md` ('Known bias').
+- [ ] A session with only live samples (flash not recovered) is accepted but rougher (20 ms samples); note the difference from a recovered session.
+
 ## Owed on hardware (research round)
 
 Nothing below has been run on a real boot. The JVM and host tests cover the parsing, the detector parity fixture and the exports. The storage-migration instrumentation check for database version 9 has been compiled but not run (no emulator was attached); run it on an emulator as in the run flow checks above. These items need powered boots.
@@ -101,3 +111,12 @@ Nothing below has been run on a real boot. The JVM and host tests cover the pars
 - [ ] Mount check: the Analysis tab line "Mount check" and `mount_slip` in `analysis-summary.json` stay unflagged for a session recorded with the strap untouched, and flag a session where the sensor is deliberately rotated about 15 degrees around the leg part-way through a repeated leaning set (the replay is simulation-validated only; tilt slips under 15 degrees are expected to be missed).
 - [ ] On the first snow day, a side-by-side of roll-lobe candidates against heading-rate candidates against video, following `docs/first-snow-protocol.md` in the research repo.
 - [ ] Re-measure the accelerometer and gyro calibration under the research acquisition profile (16 g, 20 Hz); until then `/api/v1/acquisition` reports `recogniser_calibration_matches_profile: false` on research builds.
+
+## Phone motion logging checks
+
+Phone motion recording (gyroscope, accelerometer, game rotation vector at about 100 Hz, `phone-motion.csv`) is covered on the JVM only for row assembly, batching and the CSV, and the database round trip is written into the instrumentation check but has not been run. Delivery with the screen off and the sensor clock base are checked only on a phone; none of the items below has been done.
+
+- [ ] Timestamp base on the target phone: record briefly and read the `phone_clock_check offset_ms=...` line in `events.csv` or the `phone-motion.csv` header. Near zero (a few ms) means sensor events share the `elapsedRealtimeNanos` base; a large value means they do not.
+- [ ] Delivery with the screen off: record 5 minutes with the phone locked in a pocket; `phone-motion.csv` should cover the whole session at about 100 rows per second with no multi-second holes. Repeat with battery saver on, since some phones throttle background sensors.
+- [ ] Battery drain over 30 minutes: compare a 30 minute recording with phone motion on against the same with `PhoneMotionSettings.enabled` off, and record the difference in `docs/bench-results.md`.
+- [ ] A phone without a game rotation vector (or an emulator) still records the boots and notes `phone_motion unavailable`.

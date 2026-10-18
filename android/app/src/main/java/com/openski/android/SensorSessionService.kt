@@ -49,6 +49,9 @@ class SensorSessionService : Service() {
     private val pendingSamples = mutableListOf<Pending>()
     private class PendingMag(val sessionId: String, val row: StoredMag)
     private val pendingMag = mutableListOf<PendingMag>()
+    private val phoneBuffer = PhoneMotionBuffer()
+    private var phoneRecorder: PhoneMotionRecorder? = null
+    private var phoneSessionId: String? = null
     /** Protocol clock sync: ping bursts, the per-boot fit and the drift monitor. Pairs are stored while recording. */
     private val clockSync by lazy { ClockSyncCoordinator(mainHandler, { clients[it] }, { recorderSupported[it] == true },
         onPair = { row -> activeSessionId?.let { id -> io.execute { try { store.addClockPairs(id, listOf(row)) }
@@ -245,6 +248,7 @@ class SensorSessionService : Service() {
         createNotificationChannel()
         activeSessionId = store.latestOpenSessionId()
         testRecording=activeSessionId?.let { store.getSession(it)?.testSession } ?: false
+        activeSessionId?.let { id -> if (!testRecording) { logEvent(id, "phone_motion resumed after service restart"); startPhoneMotion(id) } }
         activeSessionId?.let { id -> store.getSession(id)?.let { session -> store.calibrations(session).forEach { c ->
             orientationTrackers[c.side]=BootOrientation.Tracker(c)
             movementTrackers[c.side]=DrySkiAnalysis.Tracker()
@@ -919,7 +923,7 @@ class SensorSessionService : Service() {
         flush()
         io.execute {
             try {
-                val data=store.loadData(id) ?: error("Session unavailable")
+                val data=store.loadData(id, includeSync = false) ?: error("Session unavailable")
                 val timeline=SessionAnalysis.build(data).timeline.corrected(::correctionFor)
                 val end=timeline.filter { it.side==side }.maxOfOrNull { it.timeMs } ?: error("No samples for this boot")
                 if(System.currentTimeMillis()-end>2000) error("Boot stream is stale")
@@ -941,7 +945,7 @@ class SensorSessionService : Service() {
         flush()
         io.execute {
             try {
-                val data=store.loadData(id) ?: error("Session unavailable")
+                val data=store.loadData(id, includeSync = false) ?: error("Session unavailable")
                 val calibration=store.calibrations(data.session).firstOrNull { it.side==side } ?: error("Calibrate neutral first")
                 val timeline=SessionAnalysis.build(data).timeline.corrected(::correctionFor)
                 val end=timeline.filter { it.side==side }.maxOfOrNull { it.timeMs } ?: error("No boot samples")
@@ -985,6 +989,7 @@ class SensorSessionService : Service() {
             activeSessionId = id
             acquireWakeLock()
             startClockSync(id)
+            if (!testSession) startPhoneMotion(id)  // drills and test recordings do not need the phone source
             listener?.onRecordingChanged(id, if(testSession) "Test recording · hold neutral for two seconds, then calibrate" else "Recording · continues with screen off")
             clients.keys.toList().forEach { side -> if (recorderSupported[side] == true) requestInfo(side) }
         } catch (error: Exception) { storageError(error) }
@@ -999,10 +1004,41 @@ class SensorSessionService : Service() {
         clockSync.burst(clients.keys.toList())
     }
 
+    /** Starts the phone's own motion sensors for this session when the switch is on; a failure only skips the phone source. */
+    private fun startPhoneMotion(id: String) {
+        phoneBuffer.drain() // rows left over from a session that ended in a storage error belong to no live session
+        phoneSessionId = null
+        if (!PhoneMotionSettings(this).enabled) return
+        try {
+            val recorder = PhoneMotionRecorder(this, phoneBuffer) { line ->
+                // Called on the sensor thread; the service may already be shutting its executor down.
+                try { logEvent(id, line) } catch (_: java.util.concurrent.RejectedExecutionException) {}
+            }
+            if (recorder.start()) { phoneRecorder = recorder; phoneSessionId = id } else logEvent(id, "phone_motion unavailable")
+        } catch (error: Exception) { logEvent(id, "phone_motion failed: ${error.message}") }
+    }
+
+    private fun stopPhoneMotion() {
+        phoneRecorder?.stop()
+        phoneRecorder = null
+    }
+
+    private fun flushPhone() {
+        val id = phoneSessionId ?: return
+        val batch = phoneBuffer.drain()
+        if (phoneRecorder == null) phoneSessionId = null
+        if (batch.isEmpty()) return
+        io.execute {
+            try { store.addPhoneSamples(id, batch) }
+            catch (error: Exception) { mainHandler.post { if (!destroyed) { phoneBuffer.restore(batch); storageError(error) } } }
+        }
+    }
+
     private fun stopRecording() {
         val id = activeSessionId ?: return
         activeSessionId = null
         guidedTrial=null
+        stopPhoneMotion()
         flush()
         io.execute {
             try {
@@ -1029,7 +1065,7 @@ class SensorSessionService : Service() {
     }
 
     private fun flush() {
-        if (!storageFailed) flushMag()
+        if (!storageFailed) { flushMag(); flushPhone() }
         if (pendingSamples.isEmpty() || storageFailed) return
         val batch = pendingSamples.toList()
         pendingSamples.clear()
@@ -1047,6 +1083,7 @@ class SensorSessionService : Service() {
         runLocation.stop()   // fixes could no longer be written, so do not keep the location indicator on
         val id = activeSessionId
         activeSessionId = null
+        stopPhoneMotion()
         // Stop accepting new samples, retain sensor backups and any pending RAM batch.
         transfers.keys.toList().forEach { side -> invalidate(side); clients.remove(side)?.disconnect() }
         listener?.onRecordingChanged(null, "Recording paused · sensor flash retained: ${error.message ?: "storage error"}")
@@ -1196,6 +1233,7 @@ class SensorSessionService : Service() {
 
     override fun onDestroy() {
         destroyed = true
+        stopPhoneMotion()
         mainHandler.removeCallbacks(runTick)
         clockSync.stop()
         stopCoaching()
