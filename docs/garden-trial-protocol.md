@@ -18,12 +18,14 @@ Each trial lists what to do, what to look at, and a starting pass line. Export t
 
 **T0. Bench soak (10 minutes, boots lying still, phone beside them).**
 Look at: the Details tab health card and `session-health.json`. Pass: both boots usable; sample rate within about 1 Hz of 104 (flash) and 52 (live); no gaps; `stalls` is 0 in `/api/v1/acquisition`; clock slope between each boot and the phone under about 100 ppm; ping round-trip times recorded in `clock-sync.csv`. Also note the gyro bias and its drift over the 10 minutes from the raw samples, the temperature range, and the battery reading against a multimeter (it should agree within about 50 mV; a larger error points at the high-impedance divider).
+Run `python tools/analysis/still_noise_report.py <export.zip>` for the rate, bias, drift and Allan noise figures (the export carries no temperature, so the temperature range has to come from elsewhere).
 
 **T1. Stomp sync (2 minutes, both boots worn).**
 Stand, wait 5 s, stomp both boots together once on a hard floor, stand 90 s, stomp again as you stop. Look at: `gesture-sync.json` and the Details line. Pass: status `measured`; the stomp offset and the ping offset agree to within about 15 ms. A larger, steady disagreement is the half-connection-interval ping bias described in [clock sync design](clock-sync-design.md), which is exactly what this trial exists to measure; record it with the connection interval if known. If the aligner refuses, record the reason and try a harder stomp or a firmer surface.
 
 **T2. Turn on the spot and magnetometer (5 minutes).**
 Turn through full circles on the spot, slowly, left then right, several times, with the left boot at the usual stance. Look at: `magnetometer.csv` (uncalibrated counts and gauss) and the heading-turn frames. Pass: the field magnitude stays roughly constant through a level turn (a spread under about 10 to 15 percent of the mean is a first sanity line), and the magnetometer heading follows the gyro yaw. Record the field magnitude with and without the boot on the foot to see what the buckles and battery do. This trial decides whether absolute heading is worth building.
+Run `python tools/analysis/mag_heading_check.py <export.zip>` for the magnitude spread, hard-iron and soft-iron fit, and the heading against gyro yaw.
 
 **T3. Roll drills on foot (about 20 minutes, both boots live).**
 Run two of the drills from the Today or Path tab, 20 repetitions each, once smooth and once deliberately rough (jerky, uneven, one boot late). Look at: `turn-metrics.csv` and the `turn_metrics` block. Pass lines are about direction, not numbers: rough repetitions should show lower `usable` share or higher `roughness`, a lower left-right derivative similarity, and a larger wedge fraction than smooth ones. Record the per-boot distributions before choosing any threshold.
