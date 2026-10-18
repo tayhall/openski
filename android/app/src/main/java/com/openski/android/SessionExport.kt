@@ -43,6 +43,12 @@ object SessionExport {
                 .put("dropped_before_samples", q.droppedBefore)) } })
         val correctedTimeline=analysis.timeline.corrected(correction)
         val orientation=calibrations.flatMap { BootOrientation.estimate(correctedTimeline,it) }
+        val clockSyncs=ClockSyncExport.replay(data)
+        val gesture=runCatching { GestureSync.analyse(data,clockSyncs) }
+        // Best available boot-to-boot alignment, applied only to the right boot inside the agreement stage below.
+        val alignment=runCatching { ClockAlignment.estimate(analysis.timeline,gesture.getOrNull(),clockSyncs) }.getOrElse { e ->
+            ClockAlignment.Result(ClockAlignment.Source.NONE,null,null,null,null,"not aligned: alignment failed (${e.message ?: "error"})",
+                null,null,null,false,gesture.getOrNull()?.status?.name?.lowercase()) }
         ZipOutputStream(output).use { zip ->
             fun entry(name: String, body: (java.io.Writer) -> Unit) {
                 zip.putNextEntry(ZipEntry(name))
@@ -70,9 +76,11 @@ object SessionExport {
                 data.events.forEach { (time, message) -> w.write("$time," + quote(message) + "\n") }
             }
             entry("boot-roll.csv") { w ->
-                w.write("side,aligned_time_ms,session_elapsed_ms,estimated_boot_roll_deg,seconds_since_rest_reference,estimated_pitch_deg,relative_yaw_deg,orientation_segment,roll_rate_radps,pitch_rate_radps,yaw_rate_radps\n")
+                w.write("side,aligned_time_ms,session_elapsed_ms,estimated_boot_roll_deg,seconds_since_rest_reference,estimated_pitch_deg,relative_yaw_deg,orientation_segment,roll_rate_radps,pitch_rate_radps,yaw_rate_radps,aligned_to_left_time_ms\n")
                 orientation.forEach { p ->
-                    w.write("${p.side},${p.timeMs},${p.timeMs-session.startedAtMs},${p.degrees},${p.driftSeconds},${p.pitchDegrees},${p.yawDegrees},${p.segment},${p.rollRateRadps},${p.pitchRateRadps},${p.yawRateRadps}\n")
+                    // Final column: the time on the left boot's timeline used by the boot-to-boot agreement (blank when not aligned).
+                    val toLeft=if(!alignment.applied) "" else if(p.side=="R") alignment.rightToLeft(p.timeMs).toString() else p.timeMs.toString()
+                    w.write("${p.side},${p.timeMs},${p.timeMs-session.startedAtMs},${p.degrees},${p.driftSeconds},${p.pitchDegrees},${p.yawDegrees},${p.segment},${p.rollRateRadps},${p.pitchRateRadps},${p.yawRateRadps},$toLeft\n")
                 }
             }
             entry("labels.csv") { w ->
@@ -83,10 +91,9 @@ object SessionExport {
                 w.write("side,time_ms,battery_percent,battery_observed_at_ms,rssi_dbm,rssi_observed_at_ms\n")
                 data.health.forEach { h -> w.write("${h.side},${h.timeMs},${h.battery ?: ""},${h.batteryAtMs ?: ""},${h.rssi ?: ""},${h.rssiAtMs ?: ""}\n") }
             }
-            val clockSyncs=ClockSyncExport.replay(data)
             entry("clock-sync.csv") { w -> w.write(ClockSyncExport.clockCsv(data,clockSyncs)) }
             entry("clock-sync-fit.json") { it.write(ClockSyncExport.fitJson(data,clockSyncs).toString(2)) }
-            entry("gesture-sync.json") { it.write(runCatching { GestureSync.toJson(GestureSync.analyse(data,clockSyncs)).toString(2) }.getOrElse { e -> JSONObject().put("format_version", 1).put("experimental", true).put("status", "error").put("reason", e.message ?: "analysis failed").toString(2) }) }
+            entry("gesture-sync.json") { it.write(runCatching { GestureSync.toJson(gesture.getOrThrow()).toString(2) }.getOrElse { e -> JSONObject().put("format_version", 1).put("experimental", true).put("status", "error").put("reason", e.message ?: "analysis failed").toString(2) }) }
             entry("magnetometer.csv") { w -> w.write(ClockSyncExport.magnetometerCsv(data)) }
             entry("phone-motion.csv") { w -> PhoneMotionExport.write(w, data.phone, data.events, ClockSyncExport.reference(data.events)?.elapsedNs) }
             val rollBySide=orientation.groupBy { it.side }
@@ -148,20 +155,33 @@ object SessionExport {
                 "Simulation only: flags yaw slip of 8 to 45 degrees reliably and tilt slip under 15 degrees unreliably. A flag means re-calibrate, not a measured slip angle.")
             summary.put("heading_detector","Experimental heading-rate turn candidates (rotation about the current vertical), not turn classification. " +
                 "The detector was benchmarked on calf-phone data at 10 Hz; transfer to boot-mounted sensors is unproven. Direction: positive heading rate (counter-clockwise from above) = LEFT, independent of per-boot roll settings.")
-            val comparison=BootComparison.analyse(rollBySide["L"].orEmpty(),rollBySide["R"].orEmpty(),
+            // Agreement stage only: the right boot's roll and movements on the left boot's timeline (identity when not aligned).
+            val alignedRight=ClockAlignment.alignRolls(rollBySide["R"].orEmpty(),alignment)
+            val alignedRightDetection=ClockAlignment.alignDetection(detections.getValue("R"),alignment)
+            val comparison=BootComparison.analyse(rollBySide["L"].orEmpty(),alignedRight,
+                detections.getValue("L"),alignedRightDetection,positiveLeft("L"),positiveLeft("R"))
+            val unaligned=if(!alignment.applied) comparison else BootComparison.analyse(rollBySide["L"].orEmpty(),rollBySide["R"].orEmpty(),
                 detections.getValue("L"),detections.getValue("R"),positiveLeft("L"),positiveLeft("R"))
+            val onsetLimited=alignment.uncertaintyMs?.let { u -> comparison.medianOnsetLagMs?.let { kotlin.math.abs(it)<=u } }
             summary.put("boot_comparison",JSONObject().put("angle_pairs",comparison.anglePairs)
                 .put("mean_roll_difference_deg",comparison.meanRollDifferenceDeg ?: JSONObject.NULL)
                 .put("correlation",comparison.correlation ?: JSONObject.NULL).put("movement_pairs",comparison.movementPairs)
                 .put("median_right_minus_left_onset_ms",comparison.medianOnsetLagMs ?: JSONObject.NULL)
-                .put("median_right_minus_left_return_ms",comparison.medianReturnLagMs ?: JSONObject.NULL))
+                .put("median_right_minus_left_return_ms",comparison.medianReturnLagMs ?: JSONObject.NULL)
+                .put("unaligned_median_right_minus_left_onset_ms",unaligned.medianOnsetLagMs ?: JSONObject.NULL)
+                .put("timing_uncertainty_ms",alignment.uncertaintyMs ?: JSONObject.NULL)
+                .put("onset_lag_timing_limited",onsetLimited ?: JSONObject.NULL)
+                .put("timing_note","onset_lag_timing_limited is true when the median onset lag is not larger than the alignment " +
+                    "uncertainty, so its size and sign are not resolved; null when the uncertainty is unknown (alignment source none).")
+                .put("alignment",TurnMetricsExport.toJson(alignment.toMap())))
             summary.put("quality",JSONArray().apply { analysis.quality.forEach { q -> put(JSONObject().put("side",q.side)
                 .put("rail_samples",q.railSamples).put("rail_percent",q.railPercent)
                 .put("rail_note",RAIL_NOTE)
                 .put("dropped_before_samples",q.droppedBefore)) } })
             summary.put("turn_metrics",TurnMetricsExport.toJson(TurnMetricsExport.block(turnMetricRows,
-                TurnMetricsExport.agreementPairs(rollBySide["L"].orEmpty(),rollBySide["R"].orEmpty(),
-                    detections.getValue("L").movements,detections.getValue("R").movements,positiveLeft("L"),positiveLeft("R")))))
+                TurnMetricsExport.agreementPairs(rollBySide["L"].orEmpty(),alignedRight,
+                    detections.getValue("L").movements,alignedRightDetection.movements,positiveLeft("L"),positiveLeft("R"),
+                    alignment.uncertaintyMs),alignment)))
             entry("analysis-summary.json") { it.write(summary.toString(2)) }
             entry("session-health.json") { it.write(SessionHealth.build(data).toJson()) }
         }

@@ -289,6 +289,83 @@ class GardenDressRehearsalTest {
             agreement.getDouble("mean_wedge_fraction") < 0.15)
     }
 
+    private fun alignment(e: Export, block: String = "boot_comparison"): JSONObject {
+        val s = e.json("analysis-summary.json")
+        val b = if (block == "boot_comparison") s.getJSONObject(block) else s.getJSONObject("turn_metrics").getJSONObject("boot_agreement")
+        return b.getJSONObject("alignment")
+    }
+
+    @Test fun alignmentRemovesAnInjectedRightTimelineBiasFromTheOnsetLag() {
+        // Every right live notification arrives 40 ms later: the right boot's timeline is 40 ms late, the clocks are not.
+        val e = run("fault-right-timeline-late", GardenParams(rightLiveExtraDelaySec = 0.040))
+        val t = e.truth
+        val cmp = e.json("analysis-summary.json").getJSONObject("boot_comparison")
+        val a = cmp.getJSONObject("alignment")
+        assertEquals(a.getString("reason"), "stomp", a.getString("source"))
+        assertTrue(a.getBoolean("applied"))
+        assertFalse(a.getBoolean("disagreement"))
+        assertEquals(-40.0, a.getDouble("shift_ms"), 6.0)
+        assertTrue(a.toString(), a.getDouble("uncertainty_ms") > 0 && a.getDouble("uncertainty_ms") < 20.0)
+        val trueLag = t.p.rightLagSec * 1000
+        val aligned = cmp.getDouble("median_right_minus_left_onset_ms")
+        val unaligned = cmp.getDouble("unaligned_median_right_minus_left_onset_ms")
+        assertEquals("unaligned carries the 40 ms bias", trueLag + 40.0, unaligned, 15.0)
+        assertTrue("aligned $aligned ms is closer to the true $trueLag ms lag than unaligned $unaligned ms",
+            abs(aligned - trueLag) < abs(unaligned - trueLag))
+        assertEquals(trueLag, aligned, 12.0)
+        // The same alignment object is in the turn-metric agreement block, with the per-pair timing flags.
+        val ba = e.json("analysis-summary.json").getJSONObject("turn_metrics").getJSONObject("boot_agreement")
+        assertEquals(a.getDouble("shift_ms"), ba.getJSONObject("alignment").getDouble("shift_ms"), 0.0)
+        assertEquals(a.getDouble("uncertainty_ms"), ba.getDouble("timing_uncertainty_ms"), 0.0)
+        assertFalse(ba.isNull("pairs_timing_limited"))
+        val pair = ba.getJSONArray("per_pair").getJSONObject(0)
+        assertTrue(pair.has("timing_limited") && pair.has("timing_sensitivity"))
+        // Aligned agreement matches the clean session's (no timeline bias) within a little.
+        val clean = clean.json("analysis-summary.json").getJSONObject("turn_metrics").getJSONObject("boot_agreement")
+        assertEquals(clean.getDouble("mean_derivative_similarity"), ba.getDouble("mean_derivative_similarity"), 0.02)
+        // Raw rows and the existing boot-roll columns are untouched; the new last column carries the left-timeline time.
+        val roll = e.csv("boot-roll.csv")
+        assertEquals("aligned_to_left_time_ms", roll.header.last())
+        val right = roll.where("side", "R")
+        val shift = right.doubles("aligned_to_left_time_ms").zip(right.doubles("aligned_time_ms")).map { (x, y) -> x - y }
+        assertEquals(-40.0, shift.average(), 6.0)
+        val left = roll.where("side", "L")
+        assertEquals(left.doubles("aligned_time_ms"), left.doubles("aligned_to_left_time_ms"))
+    }
+
+    @Test fun theAlignmentSourceFollowsWhatTheSessionCanSupport() {
+        val c = alignment(clean)
+        assertEquals(c.getString("reason"), "stomp", c.getString("source"))
+        assertTrue(c.getBoolean("applied"))
+        assertEquals(c.getDouble("shift_ms"), alignment(clean, "agreement").getDouble("shift_ms"), 0.0)
+        assertTrue(c.getString("ping_bias_note").contains("half a connection interval"))
+        // The clean session has no injected timeline bias, so the shift is small (anchor rounding and drift only).
+        assertEquals(0.0, c.getDouble("shift_ms"), 6.0)
+        val noEnd = alignment(run("fault-no-end-stomp", GardenParams(leftEndStomp = false, rightEndStomp = false)))
+        assertEquals(noEnd.getString("reason"), "ping", noEnd.getString("source"))
+        assertTrue(noEnd.getString("reason").contains("no clear stomp"))
+        assertTrue(noEnd.getDouble("uncertainty_ms") > 0)
+        val noPings = alignment(run("fault-no-pings", GardenParams(includePings = false)))
+        assertEquals("stomp", noPings.getString("source"))
+        assertTrue(noPings.isNull("stomp_minus_ping_ms"))
+        val reset = run("fault-clock-reset", GardenParams(leftClockResetAtSec = 100.0))
+        val r = alignment(reset)
+        assertEquals("none", r.getString("source"))
+        assertFalse(r.getBoolean("applied"))
+        assertTrue(r.isNull("shift_ms"))
+        assertTrue(reset.json("analysis-summary.json").getJSONObject("boot_comparison").isNull("onset_lag_timing_limited"))
+        assertTrue(reset.csv("boot-roll.csv").strings("aligned_to_left_time_ms").all { it.isEmpty() })
+        val noRight = alignment(run("fault-no-right-boot", GardenParams(includeRightBoot = false)))
+        assertEquals("none", noRight.getString("source"))
+        // A real ping bias: either the stomp still agrees within the ping uncertainty, or the disagreement is flagged.
+        val biased = alignment(run("fault-asymmetric-ping-bias", GardenParams(asymmetricPingBias = true, leftConnectionIntervalMs = 45.0)))
+        when (biased.getString("source")) {
+            "stomp" -> assertFalse(biased.getBoolean("disagreement"))
+            "ping" -> assertTrue(biased.getBoolean("disagreement"))
+            else -> fail(biased.getString("reason"))
+        }
+    }
+
     @Test fun phoneRowsHaveTheRightCountAndScale() {
         val e = clean
         val t = e.truth

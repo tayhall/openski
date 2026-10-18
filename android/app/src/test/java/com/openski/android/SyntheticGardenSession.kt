@@ -61,6 +61,12 @@ data class GardenParams(
     val asymmetricPingBias: Boolean = false,
     val leftConnectionIntervalMs: Double = 30.0,
     val rightConnectionIntervalMs: Double = 15.0,
+    /**
+     * Extra constant delay on every right-boot live notification (s). The analysis timeline anchors each boot on its smallest
+     * observed transport delay, so this moves the right boot's timeline later by the same amount while the boot clocks and
+     * the true left-right lag stay as they are: an unmeasured timeline bias that only clock alignment can remove.
+     */
+    val rightLiveExtraDelaySec: Double = 0.0,
     val includePhone: Boolean = true,
     val includeMagnetometer: Boolean = true,
     /** The left boot resets at this true time (its clock restarts), and the phone reconnects [reconnectAfterSec] later. */
@@ -294,7 +300,8 @@ object SyntheticGardenSession {
                             seenLive = true
                             val decoded = FlashRecord.decode(raw(storedUs, 0, ax, ay, az, gx, gy, gz), withFlags = false)!!.sample
                             // Notifications leave at the next connection event, then pass a callback with a little jitter.
-                            val arrivalMs = Math.ceil(((t + 0.018) * 1000.0 + phase) / ci) * ci - phase + expo(rng, 2.0)
+                            val arrivalMs = Math.ceil(((t + 0.018) * 1000.0 + phase) / ci) * ci - phase + expo(rng, 2.0) +
+                                (if (side == "R") p.rightLiveExtraDelaySec * 1000.0 else 0.0)
                             val received = maxOf(lastReceipt, p.wallStartMs + arrivalMs.roundToLong())
                             lastReceipt = received
                             live.add(StoredLive(side, received, decoded.copy(sequence = (j / 2) and 0xffff, quality = flags)))

@@ -2,6 +2,7 @@ package com.openski.android
 
 import org.json.JSONArray
 import org.json.JSONObject
+import kotlin.math.abs
 
 /** One roll-curve turn candidate with its experimental metrics, for one boot. */
 data class TurnMetricsRow(
@@ -15,7 +16,11 @@ data class TurnMetricsRow(
 /** Boot-to-boot agreement over one pair of overlapping left and right candidates (union window). */
 data class BootAgreementPair(
     val startMs: Double, val endMs: Double,
-    val derivativeSimilarity: Double?, val rollCorrelation: Double?, val wedgeFraction: Double?
+    val derivativeSimilarity: Double?, val rollCorrelation: Double?, val wedgeFraction: Double?,
+    /** Largest change of the three figures when the right boot is moved by plus or minus the alignment uncertainty. */
+    val timingSensitivity: Double? = null,
+    /** True when [timingSensitivity] exceeds [TurnMetricsExport.TIMING_SENSITIVITY_LIMIT]; null when the uncertainty is unknown. */
+    val timingLimited: Boolean? = null,
 )
 
 /**
@@ -72,23 +77,46 @@ object TurnMetricsExport {
     private fun leftPositive(rolls: List<BootRoll>, positiveLeft: Boolean): List<BootRoll> =
         if (positiveLeft) rolls else rolls.map { it.copy(degrees = -it.degrees, rollRateRadps = -it.rollRateRadps) }
 
-    /** Pairs each left candidate with the right candidate it overlaps most, and compares the boots over the union. */
+    /** A pair whose figures move by more than this within the alignment uncertainty is flagged timing_limited. */
+    const val TIMING_SENSITIVITY_LIMIT = 0.05
+
+    /**
+     * Pairs each left candidate with the right candidate it overlaps most, and compares the boots over the union.
+     * With [timingUncertaintyMs] each pair is recomputed with the right boot moved by plus and minus that amount, and
+     * flagged when its figures depend on timing finer than the alignment can resolve.
+     */
     fun agreementPairs(left: List<BootRoll>, right: List<BootRoll>, leftMoves: List<DryMovement>, rightMoves: List<DryMovement>,
-                       leftPositiveLeft: Boolean, rightPositiveLeft: Boolean): List<BootAgreementPair> {
+                       leftPositiveLeft: Boolean, rightPositiveLeft: Boolean, timingUncertaintyMs: Double? = null): List<BootAgreementPair> {
         val l = leftPositive(left, leftPositiveLeft)
         val r = leftPositive(right, rightPositiveLeft)
+        val u = timingUncertaintyMs?.takeIf { it.isFinite() && it >= 0 }
+        val early = u?.let { d -> r.map { it.copy(timeMs = it.timeMs - d) } }
+        val late = u?.let { d -> r.map { it.copy(timeMs = it.timeMs + d) } }
+        fun figures(rr: List<BootRoll>, start: Double, end: Double) = listOf(BootAgreement.derivativeSimilarity(l, rr, start, end),
+            TurnMetricsExtractor.agreement(l, rr, start, end), BootAgreement.wedgeFraction(l, rr, start, end))
         return leftMoves.mapNotNull { a ->
             val b = rightMoves.map { it to (minOf(it.endMs, a.endMs) - maxOf(it.startMs, a.startMs)) }
                 .filter { it.second > 0 }.maxByOrNull { it.second }?.first ?: return@mapNotNull null
             val start = minOf(a.startMs, b.startMs)
             val end = maxOf(a.endMs, b.endMs)
-            BootAgreementPair(start, end, BootAgreement.derivativeSimilarity(l, r, start, end),
-                TurnMetricsExtractor.agreement(l, r, start, end), BootAgreement.wedgeFraction(l, r, start, end))
+            val base = figures(r, start, end)
+            var sensitivity: Double? = null
+            if (early != null && late != null) {
+                val moved = listOf(figures(early, start, end), figures(late, start, end))
+                val changes = moved.flatMap { m -> m.indices.mapNotNull { i ->
+                    val x = base[i]; val y = m[i]
+                    if (x == null || y == null || !x.isFinite() || !y.isFinite()) null else abs(y - x)
+                } }
+                sensitivity = changes.maxOrNull()
+            }
+            BootAgreementPair(start, end, base[0], base[1], base[2], sensitivity,
+                if (u == null) null else sensitivity?.let { it > TIMING_SENSITIVITY_LIMIT })
         }
     }
 
     /** JSON-ready tree (nulls stay null; [toJson] maps them to JSON null). */
-    fun block(rowsBySide: Map<String, List<TurnMetricsRow>>, pairs: List<BootAgreementPair>): Map<String, Any?> {
+    fun block(rowsBySide: Map<String, List<TurnMetricsRow>>, pairs: List<BootAgreementPair>,
+              alignment: ClockAlignment.Result? = null): Map<String, Any?> {
         fun spread(s: MetricSpread?): Any? = s?.let { mapOf("mean" to it.mean, "sd" to it.sd) }
         fun mean(v: List<Double>): Double? = if (v.isEmpty()) null else v.average()
         val sides = rowsBySide.mapValues { (_, rows) ->
@@ -98,7 +126,7 @@ object TurnMetricsExport {
                 "early_roll_rate_dps" to spread(s.earlyRateDps), "peak_phase" to spread(s.peakPhase),
                 "roughness" to spread(s.roughness), "edge_hold" to spread(s.edgeHold))
         }
-        val agreement = mapOf(
+        val agreement: LinkedHashMap<String, Any?> = linkedMapOf(
             "pairs" to pairs.size,
             "pairs_with_data" to pairs.count { it.derivativeSimilarity != null || it.rollCorrelation != null || it.wedgeFraction != null },
             "mean_derivative_similarity" to mean(pairs.mapNotNull { it.derivativeSimilarity }),
@@ -106,10 +134,20 @@ object TurnMetricsExport {
             "mean_wedge_fraction" to mean(pairs.mapNotNull { it.wedgeFraction }),
             "per_pair" to pairs.map { mapOf("start_ms" to it.startMs, "end_ms" to it.endMs,
                 "derivative_similarity" to it.derivativeSimilarity, "roll_correlation" to it.rollCorrelation,
-                "wedge_fraction" to it.wedgeFraction) },
+                "wedge_fraction" to it.wedgeFraction, "timing_sensitivity" to it.timingSensitivity,
+                "timing_limited" to it.timingLimited) },
             "note" to "Each left candidate is paired with the right candidate it overlaps most and the boots are compared over the union window. " +
                 "Both boots are put on one sign convention (positive roll = LEFT) first. Null when either boot has gaps over 100 ms or too few samples. " +
                 "Spread is mean and sample SD (needs two candidates).")
+        if (alignment != null) {
+            agreement["alignment"] = alignment.toMap()
+            agreement["timing_uncertainty_ms"] = alignment.uncertaintyMs
+            agreement["pairs_timing_limited"] = if (alignment.uncertaintyMs == null) null else pairs.count { it.timingLimited == true }
+            agreement["timing_note"] = "timing_sensitivity is the largest change of derivative similarity, roll correlation or wedge " +
+                "fraction when the right boot is moved by plus or minus timing_uncertainty_ms; timing_limited is true above " +
+                "$TIMING_SENSITIVITY_LIMIT, meaning the figure depends on timing finer than the alignment resolves. Null when the " +
+                "alignment uncertainty is unknown (source none)."
+        }
         return mapOf("experimental" to true, "note" to NOTE, "detector" to DETECTOR, "per_boot" to sides, "boot_agreement" to agreement)
     }
 

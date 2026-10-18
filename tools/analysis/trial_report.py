@@ -443,6 +443,26 @@ def mean_roughness(tm):
     return num / den if den else None
 
 
+def alignment_row(ex, ba, have_pairs):
+    """T3: which clock alignment the left-right agreement used, and its uncertainty (report only, never FAIL).
+    INFO when stomp or pings were applied without disagreement; WARN when nothing was applied (live-clock timeline,
+    unmeasured bias of tens of ms) or stomp and ping disagree; N/A for an older export or when there are no pairs."""
+    T, line = "T3", "aligned by stomp or ping, no disagreement"
+    al = ba.get("alignment") if isinstance(ba.get("alignment"), dict) else None
+    if al is None:
+        return Row(T, "left-right alignment", "n/a", line, NA, "analysis-summary.json has no alignment block (export made before the aligned agreement)")
+    if not have_pairs:
+        return Row(T, "left-right alignment", str(al.get("source")), line, NA, "no left-right pairs to align: " + str(al.get("reason") or ""))
+    src, applied, dis = al.get("source"), al.get("applied") is True, al.get("disagreement") is True
+    comp = (ex.json("analysis-summary.json") or {}).get("boot_comparison") or {}
+    onset, unal = jnum(comp, "median_right_minus_left_onset_ms"), jnum(comp, "unaligned_median_right_minus_left_onset_ms")
+    value = (f"{src}, shift {fm(jnum(al, 'shift_ms'), 1)} ms +/- {fm(jnum(al, 'uncertainty_ms'), 1)} ms, stomp minus ping {fm(jnum(al, 'stomp_minus_ping_ms'), 1)} ms; "
+             f"median onset lag {fm(onset, 1)} ms (unaligned {fm(unal, 1)} ms)"
+             + (", within the uncertainty" if comp.get("onset_lag_timing_limited") is True else ""))
+    st = INFO if applied and not dis else WARN
+    return Row(T, "left-right alignment", value, line, st, str(al.get("reason") or ""), num=jnum(al, "uncertainty_ms"))
+
+
 def t3(ex, explicit, compare=None):
     T = "T3"
     tm = tm_summary(ex)
@@ -478,11 +498,16 @@ def t3(ex, explicit, compare=None):
             rows.append(Row(T, f"per-boot spread {side}", "; ".join(parts), "record before choosing any threshold", INFO))
         ba = tm.get("boot_agreement") or {}
         pairs = jnum(ba, "pairs_with_data")
+        al = ba.get("alignment") if isinstance(ba.get("alignment"), dict) else None
+        lim = jnum(ba, "pairs_timing_limited")
+        timing = "" if al is None else (f"; aligned by {al.get('source')} (uncertainty {fm(jnum(al, 'uncertainty_ms'), 1)} ms), "
+                                         f"{int(lim) if fin(lim) else 'n/a'} pairs timing-limited")
         if fin(pairs) and pairs:
-            rows.append(Row(T, "left-right agreement", f"{int(pairs)} pairs, derivative similarity {fm(jnum(ba, 'mean_derivative_similarity'), 3)}, roll correlation {fm(jnum(ba, 'mean_roll_correlation'), 3)}, wedge fraction {fm(jnum(ba, 'mean_wedge_fraction'), 3)}",
+            rows.append(Row(T, "left-right agreement", f"{int(pairs)} pairs, derivative similarity {fm(jnum(ba, 'mean_derivative_similarity'), 3)}, roll correlation {fm(jnum(ba, 'mean_roll_correlation'), 3)}, wedge fraction {fm(jnum(ba, 'mean_wedge_fraction'), 3)}{timing}",
                             "direction only", INFO))
         else:
             rows.append(Row(T, "left-right agreement", "no pairs", "direction only", NA, "needs candidates from both boots with no gaps over 100 ms"))
+        rows.append(alignment_row(ex, ba, fin(pairs) and bool(pairs)))
     if compare:
         rows += t3_compare(compare[0], compare[1])
     else:
@@ -896,6 +921,22 @@ def _selftest(d, tmp):
     check("3 null mount-slip numbers still give a verdict", get(rows, "T6", "mount slip L") and get(rows, "T6", "mount slip L")[0].status == PASS)
     check("3 null ping uncertainty prints n/a", "n/a ms" in get(rows, "T1", "stomp minus ping")[0].value)
 
+    # 3b. alignment block: null numbers print n/a, a pre-alignment export is N/A (never a tool error or FAIL)
+    def null_alignment(o):
+        o["turn_metrics"]["boot_agreement"]["alignment"].update(shift_ms=None, uncertainty_ms=None, stomp_minus_ping_ms=None)
+        o["turn_metrics"]["boot_agreement"]["pairs_timing_limited"] = None
+    def no_alignment(o):
+        o["turn_metrics"]["boot_agreement"].pop("alignment", None)
+        o["boot_comparison"].pop("alignment", None)
+    mutate(clean, P("align-null.zip"), {"analysis-summary.json": edit_json(null_alignment)})
+    rows = run_checks(P("align-null.zip"), ["T3"])
+    al = get(rows, "T3", "left-right alignment")
+    check("3b null alignment numbers: no tool error, n/a printed", al and not get(rows, "T3", "tool error") and "n/a" in al[0].value and al[0].status != FAIL,
+          al[0].value if al else "no row")
+    mutate(clean, P("align-missing.zip"), {"analysis-summary.json": edit_json(no_alignment)})
+    al = get(run_checks(P("align-missing.zip"), ["T3"]), "T3", "left-right alignment")
+    check("3b export without an alignment block is N/A", al and al[0].status == NA and "no alignment block" in al[0].why, al[0].why if al else "no row")
+
     # 4. unfitted drift is not a measurement; an empty epoch list is not a clock restart
     def unfit(o):
         o["L"]["epochs"][-1].update(drift_fitted=False, drift_ppm=0.0)
@@ -1149,6 +1190,14 @@ def build_expectations():
     E.append(Expect("fault-no-magnetometer.zip", "T2", "magnetometer field magnitude spread", (FAIL,), "no magnetometer data is a FAIL when T2 is named", explicit=True))
     for z in ("fault-no-magnetometer.zip", "fault-flash-gap.zip", "fault-flash-and-live-gap.zip"):
         nofail(z, "T6", "slip is unaffected")
+    # boot-to-boot alignment used by the left-right agreement (T3)
+    E.append(Expect("clean.zip", "T3", "left-right alignment", (INFO,), "clean: the stomp agrees with the pings and is applied", reason_has="agrees with the pings"))
+    E.append(Expect("fault-right-timeline-late.zip", "T3", "left-right alignment", (INFO,), "a 40 ms late right timeline is corrected by the stomp", reason_has="stomp sync measured"))
+    E.append(Expect("fault-right-timeline-late.zip", "T3", "", ok, "a timeline bias is not a FAIL"))
+    E.append(Expect("fault-no-end-stomp.zip", "T3", "left-right alignment", (INFO,), "no end stomp: the pings are used", reason_has="pings only"))
+    E.append(Expect("fault-no-pings.zip", "T3", "left-right alignment", (INFO,), "no pings: the stomp alone is used", reason_has="no ping pairs"))
+    E.append(Expect("fault-clock-reset.zip", "T3", "left-right alignment", (WARN,), "a clock reset leaves the agreement unaligned", reason_has="not aligned"))
+    E.append(Expect("fault-asymmetric-ping-bias.zip", "T3", "left-right alignment", (INFO, WARN), "ping bias: stomp kept within tolerance, or the disagreement is flagged"))
     return E
 
 
@@ -1195,6 +1244,16 @@ def cmd_regress(d):
             bad = [r for r in rows_for(name) if r.trial in unrelated and r.status == FAIL]
             res.append((f"{name} 'all': no FAIL in unrelated trials {','.join(unrelated)}", "ok" if not bad else "WRONG",
                         "; ".join(f"{r.trial} {r.check}" for r in bad) or "unrelated trials unaffected", not bad))
+    # numeric: aligning removes the injected 40 ms right-timeline bias from the onset lag (true lag 60 ms)
+    if "fault-right-timeline-late.zip" in zips:
+        try:
+            s = Export(zips["fault-right-timeline-late.zip"]).json("analysis-summary.json")["boot_comparison"]
+            al, un = jnum(s, "median_right_minus_left_onset_ms"), jnum(s, "unaligned_median_right_minus_left_onset_ms")
+            good = fin(al) and fin(un) and abs(al - 60.0) < abs(un - 60.0) and abs(al - 60.0) <= 12.0
+            res.append(("fault-right-timeline-late.zip aligned onset lag nearer the true 60 ms", "ok" if good else "WRONG",
+                        f"aligned {fm(al, 1)} ms, unaligned {fm(un, 1)} ms", good))
+        except (ExportError, KeyError, TypeError) as e:
+            res.append(("fault-right-timeline-late.zip aligned onset lag", "WRONG", str(e), False))
     # numeric: the biased ping must disagree more than the clean one
     try:
         cl = [r for r in rows_for("clean.zip") if r.check == "stomp minus ping"][0]
@@ -1218,7 +1277,7 @@ def cmd_regress(d):
         print(f"  {name.ljust(36)} " + "  ".join(f"{k} {v}" for k, v in c.items()))
     nbad = sum(1 for r in res if not r[3])
     print(f"\n{len(res) - nbad} of {len(res)} expectations met" + ("" if not nbad else f"; {nbad} NOT met"))
-    print("\nMutated-export selftest (findings the 15 ZIPs cannot show):")
+    print(f"\nMutated-export selftest (findings the {len(zips)} ZIPs cannot show):")
     st = selftest(d)
     return 1 if (nbad or st) else 0
 
