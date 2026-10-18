@@ -346,6 +346,12 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
         } finally { db.endTransaction() }
     }
 
+    /** Messages of [sessionId]'s events that start with [prefix], oldest first. */
+    @Synchronized fun eventMessages(sessionId: String, prefix: String): List<String> =
+        readableDatabase.rawQuery("SELECT message FROM session_events WHERE session_id=? ORDER BY time_ms", arrayOf(sessionId)).use { c ->
+            buildList { while (c.moveToNext()) c.getString(0).takeIf { it.startsWith(prefix) }?.let(::add) }
+        }
+
     @Synchronized fun event(sessionId: String, message: String) {
         writableDatabase.insertOrThrow("session_events", null, ContentValues().apply {
             put("session_id", sessionId); put("time_ms", System.currentTimeMillis()); put("message", message)

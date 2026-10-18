@@ -10,7 +10,7 @@ import android.os.SystemClock
  *
  * Cadence: a burst of [ClockSyncDefaults.BURST_PINGS] pings, [ClockSyncDefaults.BURST_SPACING_MS] apart, at connect
  * and at recording start (boots interleaved), one ping per [ClockSyncDefaults.PERIODIC_PING_MS] while recording,
- * and an extra burst for a boot whose drift monitor fires. Connection priority is raised to high for a burst and set
+ * an extra burst for a boot whose drift monitor fires, and a wider end burst ([endBurst]) just before a save. Connection priority is raised to high for a burst and set
  * back to balanced afterwards. A boot answering result 6 gets no further pings: it is "gesture sync only".
  */
 class ClockSyncCoordinator(
@@ -31,6 +31,7 @@ class ClockSyncCoordinator(
     private val burstTasks = mutableMapOf<String, MutableList<Runnable>>()
     private val periodicTasks = mutableListOf<Runnable>()
     private val lastExtraBurstMs = mutableMapOf<String, Long>()
+    private val endBurstPlanner = EndBurstPlanner()
     private var nextToken = 0
     private var lastPeriodicMs = 0L
 
@@ -62,15 +63,36 @@ class ClockSyncCoordinator(
     /** Pairs worth storing with a session that has just started: the current fit window of each boot. */
     fun recentPairs(): List<StoredClockPair> = syncs.values.flatMap { s -> s.pairs.takeLast(ClockSyncDefaults.WINDOW_PAIRS).map { it.stored() } }
 
+    /** A connect, recording-start or drift-alarm burst. A side whose end burst is running is left alone. */
     fun burst(sides: List<String>) {
-        val sel = sides.filter(::ready).sorted()
+        val now = SystemClock.elapsedRealtime()
+        val sel = sides.filter(::ready).filterNot { endBurstPlanner.blocksOtherBursts(it, now) }.sorted()
+        if (sel.isEmpty()) return
+        schedule(PingPlan.burst(sel))
+    }
+
+    /**
+     * The burst just before a recording or run is saved ([EndBurstPlanner]). The caller saves after
+     * [EndBurstPlanner.Decision.Burst.saveDelayMs] regardless of replies; a boot that drops mid-burst just misses its pings.
+     * It replaces any burst already running for a side, and no other burst may replace it until it ends.
+     */
+    fun endBurst(sessionId: String, testSession: Boolean, sides: List<String>): EndBurstPlanner.Decision {
+        val boots = sides.distinct().map { side ->
+            EndBurstPlanner.Boot(side, client(side)?.isReady == true, firmwareHasRecorder(side) && side !in gestureOnly)
+        }
+        return endBurstPlanner.request(sessionId, testSession, boots, SystemClock.elapsedRealtime()).also { d ->
+            if (d is EndBurstPlanner.Decision.Burst) schedule(d.slots)
+        }
+    }
+
+    private fun schedule(plan: List<PingPlan.Slot>) {
+        val sel = plan.map { it.boot }.distinct()
         if (sel.isEmpty()) return
         sel.forEach { side ->
             burstTasks.remove(side)?.forEach(handler::removeCallbacks)
             burstTasks[side] = mutableListOf()
             client(side)?.setHighPriority(true)
         }
-        val plan = PingPlan.burst(sel)
         plan.forEach { slot ->
             val task = Runnable { sendPing(slot.boot) }
             burstTasks[slot.boot]?.add(task)
@@ -127,6 +149,7 @@ class ClockSyncCoordinator(
 
     private fun extraBurst(side: String) {
         val now = SystemClock.elapsedRealtime()
+        if (endBurstPlanner.blocksOtherBursts(side, now)) return   // the end burst is already pinging this side
         if (now - (lastExtraBurstMs[side] ?: -ClockSyncDefaults.MIN_EXTRA_BURST_INTERVAL_MS) < ClockSyncDefaults.MIN_EXTRA_BURST_INTERVAL_MS) return
         lastExtraBurstMs[side] = now
         burst(listOf(side))

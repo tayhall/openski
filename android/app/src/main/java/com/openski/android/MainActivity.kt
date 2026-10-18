@@ -347,6 +347,21 @@ class MainActivity : Activity() {
             })
         }
         lab.addView(disclosure("Observer labels & sync markers", markers), bottomMargin(dp(16)))
+        val trialCard = SkiUi.card(this)
+        trialCard.addView(label("Phone and garden trials · experimental", 22f, WHITE, true))
+        val phoneMotion = PhoneMotionSettings(this)
+        trialCard.addView(android.widget.CheckBox(this).apply {
+            text = PhoneMotionRule.TITLE
+            setTextColor(WHITE); textSize = 15f; minHeight = dp(48)
+            buttonTintList = android.content.res.ColorStateList.valueOf(ACCENT)
+            isChecked = phoneMotion.enabled
+            setOnCheckedChangeListener { _, checked -> phoneMotion.enabled = checked }
+        }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(10) })
+        trialCard.addView(label(PhoneMotionRule.DESCRIPTION, 13f, SUBTLE), bottomMargin(dp(14)))
+        trialCard.addView(SkiUi.button(this, "Garden trials checklist (T0 to T6)") {
+            startActivity(Intent(this, TrialChecklistActivity::class.java))
+        })
+        lab.addView(trialCard, bottomMargin(dp(16)))
         lab.addView(label("Dry ski movements help validate the software. Real edge angles and carving still need snow validation.", 12f, MUTED))
         SkiUi.applyInsets(root)
         setContentView(root)

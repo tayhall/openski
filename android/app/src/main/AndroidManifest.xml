@@ -34,6 +34,7 @@
         <activity android:name=".CoachingActivity" android:exported="false" android:theme="@style/Theme.OpenSki.Snow" />
         <activity android:name=".MainActivity" android:exported="false" />
         <activity android:name=".BenchActivity" android:exported="false" />
+        <activity android:name=".TrialChecklistActivity" android:exported="false" />
         <service
             android:name=".SensorSessionService"
             android:exported="false"

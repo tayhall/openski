@@ -67,6 +67,14 @@ object ClockSyncDefaults {
     const val PERIODIC_PING_MS = 60_000L
     /** An extra burst requested by the drift monitor is at most this often per boot. */
     const val MIN_EXTRA_BURST_INTERVAL_MS = 30_000L
+    /**
+     * Burst just before a recording or run is saved. Spread over about 3 s rather than 0.7 s so the pings land on
+     * different connection events, which gives the min-RTT filter more to choose from (all 8 still form one cluster).
+     */
+    const val END_BURST_PINGS = 8
+    const val END_BURST_SPACING_MS = 400L
+    /** Time left after the last end-burst ping for its reply; the save then goes ahead whether or not it came. */
+    const val END_BURST_REPLY_GRACE_MS = 300L
 }
 
 data class ClockSyncConfig(
@@ -332,6 +340,108 @@ object PingPlan {
             boots.mapIndexed { k, boot -> Slot(round * spacingMs + k * spacingMs / boots.size, boot) }
         }.sortedBy { it.delayMs }
     }
+}
+
+/**
+ * The ping burst just before a recording or run is saved, so the clock map has fresh pairs at the end and not only
+ * the last one-a-minute ping (docs/clock-sync-design.md). Pure: the coordinator sends the pings and the service saves
+ * after [Decision.Burst.saveDelayMs] whether or not any reply came, so a lost reply or a dropped link never holds the
+ * save up for longer than the burst itself.
+ */
+class EndBurstPlanner(
+    private val count: Int = ClockSyncDefaults.END_BURST_PINGS,
+    private val spacingMs: Long = ClockSyncDefaults.END_BURST_SPACING_MS,
+    private val replyGraceMs: Long = ClockSyncDefaults.END_BURST_REPLY_GRACE_MS,
+) {
+    /** [timeSync] is false for a boot without a recorder or one that answered opcode 09 with a non-zero result. */
+    data class Boot(val side: String, val connected: Boolean, val timeSync: Boolean)
+
+    sealed interface Decision {
+        /** Nothing to ping (a test or drill recording, or no boot able to answer): save at once. */
+        data object SaveNow : Decision
+        /** Send [slots], then save after [saveDelayMs] whatever happened. */
+        data class Burst(val slots: List<PingPlan.Slot>, val saveDelayMs: Long) : Decision
+        /** This session's burst is already under way and its save is already scheduled. */
+        data object AlreadyScheduled : Decision
+    }
+
+    /** The longest a burst can hold the save up: the last slot is under count * spacing, plus the reply grace. */
+    val maxDelayMs: Long get() = count * spacingMs + replyGraceMs
+
+    private var burstSession: String? = null
+    private val activeUntilMs = mutableMapOf<String, Long>()
+
+    /** [nowMs] is the caller's monotonic clock; it only times [blocksOtherBursts]. */
+    fun request(sessionId: String, testSession: Boolean, boots: List<Boot>, nowMs: Long = 0L): Decision {
+        if (burstSession == sessionId) return Decision.AlreadyScheduled
+        if (testSession) return Decision.SaveNow   // drills and test recordings skip the extra sync
+        val sides = boots.filter { it.connected && it.timeSync }.map { it.side }.distinct().sorted()
+        if (sides.isEmpty()) return Decision.SaveNow
+        val slots = PingPlan.burst(sides, count, spacingMs)
+        if (slots.isEmpty()) return Decision.SaveNow
+        burstSession = sessionId
+        val saveDelayMs = slots.maxOf { it.delayMs } + replyGraceMs
+        sides.forEach { activeUntilMs[it] = nowMs + saveDelayMs }
+        return Decision.Burst(slots, saveDelayMs)
+    }
+
+    /**
+     * True while [side]'s end burst is running: a connect or drift-alarm burst for that side must then not be
+     * scheduled, because scheduling one would cancel the end burst's remaining pings.
+     */
+    fun blocksOtherBursts(side: String, nowMs: Long): Boolean = activeUntilMs[side]?.let { it > nowMs } ?: false
+}
+
+/**
+ * The stop, burst and save sequence of one recording (pure; the service owns the timer). A stop either saves at once
+ * or waits for the end burst; the save always uses the stop time of the tap, not the time the deadline fired.
+ */
+class StopSequencer {
+    private class Pending(val sessionId: String, val stopAtMs: Long, val token: Int)
+    private var pending: Pending? = null
+    private var nextToken = 0
+
+    sealed interface Action {
+        /** Save now, with [stopAtMs] as the session end. */
+        data class SaveNow(val stopAtMs: Long) : Action
+        /** Arm a timer for [delayMs] and call [deadline] with [token] when it fires. */
+        data class Wait(val delayMs: Long, val token: Int) : Action
+        /** A stop for this session is already waiting; do nothing. */
+        data object Ignore : Action
+    }
+
+    val waiting: Boolean get() = pending != null
+
+    /** A stop of [sessionId] at [nowMs]. [burst] asks for the end burst only when no stop is waiting already. */
+    fun stop(sessionId: String, nowMs: Long, burst: () -> EndBurstPlanner.Decision): Action {
+        if (pending?.sessionId == sessionId) return Action.Ignore
+        pending = null
+        return when (val d = burst()) {
+            is EndBurstPlanner.Decision.Burst -> Pending(sessionId, nowMs, ++nextToken).let { pending = it; Action.Wait(d.saveDelayMs, it.token) }
+            // Nothing to ping, or a burst planned but its wait has gone: never hold the save up.
+            else -> Action.SaveNow(nowMs)
+        }
+    }
+
+    /** A stop that must not wait (low storage, a run that failed to start): drops any wait. */
+    fun stopNow(nowMs: Long): Action.SaveNow { pending = null; return Action.SaveNow(nowMs) }
+
+    /** The timer fired. Returns the stop time to save with, or null when the wait is stale or the session is gone. */
+    fun deadline(token: Int, activeSessionId: String?): Long? {
+        val p = pending?.takeIf { it.token == token } ?: return null
+        pending = null
+        return p.stopAtMs.takeIf { p.sessionId == activeSessionId }
+    }
+
+    /** The service is going away mid-burst: returns the stop time to save with now, or null when nothing was waiting. */
+    fun flush(activeSessionId: String?): Long? {
+        val p = pending ?: return null
+        pending = null
+        return p.stopAtMs.takeIf { p.sessionId == activeSessionId }
+    }
+
+    /** A storage error ended the session: the waiting save is dropped (the error path closes the session). */
+    fun cancel() { pending = null }
 }
 
 /**

@@ -97,12 +97,47 @@ object PhoneMotionExport {
     }
 }
 
-/** The skier's switch for recording phone motion. On by default; there is no screen for it yet, so it is a stored flag. */
+/** Pure rules for the phone motion switch (JVM-tested); [PhoneMotionSettings] only stores the flag. */
+object PhoneMotionRule {
+    /** On unless the skier has turned it off, as before the switch had a screen. */
+    const val DEFAULT_ENABLED = true
+    const val TITLE = "Record phone motion (experimental)"
+    const val DESCRIPTION = "Phone in your jacket pocket as an upper-body reference; uses extra battery. Applies from the next recording."
+
+    /** [stored] is null when nothing was ever saved. */
+    fun enabled(stored: Boolean?): Boolean = stored ?: DEFAULT_ENABLED
+
+    /**
+     * Read once when a session starts. Plain test and calibration recordings never record the phone; drills (a test
+     * recording started by DrillActivity, used by garden trials T3 and T4) and ordinary sessions follow the switch.
+     */
+    fun recordsPhone(switchOn: Boolean, testSession: Boolean, drill: Boolean = false): Boolean = switchOn && (!testSession || drill)
+
+    /** The session events recording that decision, so a service restart reuses it. */
+    const val ON_EVENT = "phone_motion on (setting)"
+    const val OFF_EVENT = "phone_motion off (setting)"
+    fun decisionEvent(record: Boolean) = if (record) ON_EVENT else OFF_EVENT
+
+    /**
+     * After a service restart: the last decision logged for the session ([messages] oldest first). A session from
+     * before the decision was logged falls back to the old rule (the switch now, never for a test recording).
+     */
+    fun resumeDecision(messages: List<String>, testSession: Boolean, switchOn: Boolean): Boolean =
+        when (messages.lastOrNull { it == ON_EVENT || it == OFF_EVENT }) {
+            ON_EVENT -> true
+            OFF_EVENT -> false
+            else -> recordsPhone(switchOn, testSession)
+        }
+}
+
+/** The skier's switch for recording phone motion, shown in Geek mode's Test lab. */
 class PhoneMotionSettings(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences("openski-phone-motion", Context.MODE_PRIVATE)
     var enabled: Boolean
-        get() = prefs.getBoolean("enabled", true)
-        set(value) { prefs.edit().putBoolean("enabled", value).apply() }
+        get() = PhoneMotionRule.enabled(if (prefs.contains(KEY)) prefs.getBoolean(KEY, PhoneMotionRule.DEFAULT_ENABLED) else null)
+        set(value) { prefs.edit().putBoolean(KEY, value).apply() }
+
+    private companion object { const val KEY = "enabled" }
 }
 
 /**
