@@ -11,7 +11,11 @@
 #include "BatteryService.h"
 #include "BluetoothService.h"
 #include "ImuService.h"
+#ifdef OPENSKI_IMU_LSM6DSOX
+#include "Lsm6dsoxProfile.h"
+#else
 #include "Mpu6050Profile.h"
+#endif
 #include "SensorCalibration.h"
 #include "MotionService.h"
 #include "RecorderService.h"
@@ -276,6 +280,12 @@ void handleImu() {
   server.send(200, "application/json", body);
 }
 
+#ifdef OPENSKI_IMU_LSM6DSOX
+namespace imuProfile = imu::lsmProfile;
+#else
+namespace imuProfile = imu::mpuProfile;
+#endif
+
 void handleAcquisition() {
   const auto& monitor = imu::monitor();
   const auto& stats = monitor.stats();
@@ -283,7 +293,7 @@ void handleAcquisition() {
   // different acquisition profile than the one compiled in (e.g. legacy 8 g / 42 Hz vs research 16 g / 20 Hz).
   const char* measuredProfile = calibration::kMeasuredAcquisitionProfile;
   const bool calibrationNone = strcmp(measuredProfile, "none") == 0;
-  const bool calibrationMatches = calibrationNone || strcmp(measuredProfile, imu::mpuProfile::kId) == 0;
+  const bool calibrationMatches = calibrationNone || strcmp(measuredProfile, imuProfile::kId) == 0;
   char body[2100];
   snprintf(body, sizeof(body),
       "{\"schema_version\":1,\"profile_id\":\"%s\","
@@ -306,10 +316,10 @@ void handleAcquisition() {
       "\"latest_quality_flags\":%u,\"has_sample\":%s,"
       "\"quality_scope\":\"since_device_boot\",\"dual_boot_synchronised\":false,"
       "\"validation_status\":\"bench_and_field_validation_required\"}",
-      imu::mpuProfile::kId, monitor.sensorName(), stats.ready ? "true" : "false",
+      imuProfile::kId, monitor.sensorName(), stats.ready ? "true" : "false",
       config::kHostname, config::kBuildId, measuredProfile, calibrationMatches ? "true" : "false",
-      imu::mpuProfile::kSampleRateHz, imu::mpuProfile::kAccelRangeG,
-      imu::mpuProfile::kGyroRangeDps, imu::mpuProfile::kNominalGyroBandwidthHz,
+      imuProfile::kSampleRateHz, imuProfile::kAccelRangeG,
+      imuProfile::kGyroRangeDps, imuProfile::kNominalGyroBandwidthHz,
       static_cast<unsigned long>(stats.samples), static_cast<unsigned long>(stats.readFailures),
       static_cast<unsigned long>(stats.timestampGaps), static_cast<unsigned long>(stats.timestampWraps),
       static_cast<unsigned long>(stats.lastIntervalUs), static_cast<unsigned long>(stats.maxIntervalUs),

@@ -4,13 +4,27 @@
 #include <Wire.h>
 
 #include "AppConfig.h"
+#ifdef OPENSKI_IMU_LSM6DSOX
+#include "Lsm6dsoxSensor.h"
+#include "WireRegisterBus.h"
+#else
 #include "Mpu6050Sensor.h"
+#endif
 
 namespace openski::imu {
 namespace {
+#ifdef OPENSKI_IMU_LSM6DSOX
+WireRegisterBus imuBus(Wire, config::kImuSdaPin, config::kImuSclPin, config::kImuI2cAddress,
+                       config::kImuI2cFrequencyHz);
+uint32_t nowUs() { return micros(); }
+void delayMs(uint32_t ms) { delay(ms); }
+Lsm6dsoxSensor lsm6dsox(imuBus, nowUs, delayMs);
+ImuSensor* sensor = &lsm6dsox;
+#else
 Mpu6050Sensor mpu6050(Wire, config::kImuSdaPin, config::kImuSclPin,
                       config::kImuI2cAddress, config::kImuI2cFrequencyHz);
 ImuSensor* sensor = &mpu6050;
+#endif
 ImuMonitor imuMonitor(sensor);
 uint32_t lastLoggedSampleCount = 0;
 unsigned long lastSampleLogMs = 0;

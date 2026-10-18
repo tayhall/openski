@@ -198,3 +198,25 @@ From [research findings](research-findings.md). None has been run on this hardwa
 - 90 degree gyro scale.
 - Clipping and g-sensitivity.
 - Cold soak.
+
+## Next hardware: XIAO ESP32S3 + LSM6DSOX (built, untested on hardware)
+
+Status: firmware compiles and the driver passes host tests with a fake I2C device. **No board has run it.** Nothing here is bench-validated; the acquisition profile (`openski_lsm6dsox_v1`) must be checked on the bench before any field use.
+
+- Env `xiao-esp32s3-lsm6dsox` (and `-ota`): board `seeed_xiao_esp32s3` (8 MB flash), partition table `partitions/xiao-esp32s3-8mb.csv` (2 MB x 2 app slots, about 3.9 MB SPIFFS recorder, so a longer retained recording than the 4 MB boards), hostname `ski-xiao`. Existing envs still use the MPU-6050 and are unchanged; the LSM6DSOX is selected by `-DOPENSKI_IMU_LSM6DSOX`, which also moves the default I2C address to 0x6A (`OPENSKI_IMU_I2C_ADDRESS` overrides).
+- Driver `lib/ImuLsm6dsox` implements `lib/Imu`: bus access goes through the injectable `RegisterBus`, so the same code runs in `test/test_imu_lsm6dsox`. Accelerometer +-16 g, gyro +-2000 dps, same near-rail flag rule as the MPU-6050 driver (within 8 counts of full scale).
+- **Sample rate is 104 Hz, not 100.** The LSM6DSOX only offers 12.5/26/52/104/208 Hz. Firmware code that assumes 100 Hz (recorder and Android timing assumptions, recogniser constants) has not been reviewed for this; timestamps are real, so the stream stays valid, but check before relying on it.
+- Filters: accelerometer LPF2 on (ODR/4, about 26 Hz); gyro LPF1 on with FTYPE 011. The gyro bandwidth that setting gives at 104 Hz was **not** checked against the datasheet table (ST's PDF could not be fetched); the figure in `Lsm6dsoxProfile.h` is a placeholder to measure. Register addresses, WHO_AM_I (0x6C), full-scale codes and sensitivities (0.488 mg/LSB, 70 mdps/LSB, 256 LSB/degC + 25 degC) come from ST's reference driver (`lsm6dsox_reg.h/.c`).
+- No per-unit calibration constants exist for this chip (`SensorCalibration.h` is unset), and the mounting-axis defaults in `AppConfig.h` are the MPU-6050 board's.
+- `lib/MagLis3mdl` is a raw LIS3MDL reader (WHO_AM_I 0x3D, address 0x1C; 80 Hz, +-4 gauss, 6842 LSB/gauss) with host tests. It is **not** wired into BLE, the recorder or the firmware loop yet. The multi-byte read sets bit 7 of the sub-address (auto-increment); confirm on hardware.
+
+Wiring (one boot; cable colours as ordered):
+
+| Cable | XIAO ESP32S3 pin | GPIO | Sensor board pin |
+|-------|------------------|------|------------------|
+| Black | GND | - | GND |
+| Red | 3V3 | - | VIN / 3V3 |
+| Blue | D4 (SDA) | GPIO5 | SDA |
+| Yellow | D5 (SCL) | GPIO6 | SCL |
+
+Pin source: Seeed XIAO ESP32S3 getting-started wiki (D4 = GPIO5, D5 = GPIO6). The MPU-6050 (0x68), LSM6DSOX (0x6A, or 0x6B with the SDO jumper) and LIS3MDL (0x1C) addresses do not collide, so they can share this bus for an A/B comparison, but the firmware only drives one IMU per build.
