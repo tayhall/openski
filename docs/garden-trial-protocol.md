@@ -39,6 +39,17 @@ Use the 'ready at the top' flow: stomp when asked, make about ten turns, stop an
 **T6. Mount slip and strap check.**
 After T3 to T5, check the Analysis tab's mount-slip line for each boot. Pass: no slip flagged. If flagged, retighten and repeat the roll drill.
 
+## Judging a trial
+
+One command per trial, on the exported ZIP: `python tools/analysis/trial_report.py export.zip --trial T1` (T0 to T6, or `all`). It prints one row per check: the measured value, the starting pass line from this document and a verdict. PASS and FAIL mean the value is on the right or wrong side of the line; WARN means measured but marginal or the recording does not suit the check (for example the still-noise figures on a recording that is moving); N/A means the export cannot show it, with the reason (stalls, the battery against the multimeter, the temperature range, the run GPS track and the phone battery drain are checked by hand); INFO is a figure the protocol gives no line for, to copy into the bench-results entry. The exit code is 1 when any selected check FAILs, and `--json out.json` writes the same table. T3 needs both sessions for the direction checks: `--trial T3 --compare smooth.zip rough.zip`. With `--trial all` the checks that make no sense for the recording are N/A; with one trial named they FAIL or WARN, because that trial should have produced the matching recording. All lines are the starting values in constants at the top of the script; change them there when real data says so.
+
+`python tools/analysis/trial_report.py --regress <dir>` runs the tool over the dress-rehearsal ZIPs and asserts the verdicts each fault should give (it exits 1 if an expectation is not met, which means the tool or the exporter changed). The ZIPs are not committed. To regenerate them, from `android/`:
+
+```
+$env:OPENSKI_DRESS_REHEARSAL_DIR = "D:\path\to\dress-rehearsal"
+.\gradlew.bat :app:cleanTestDebugUnitTest :app:testDebugUnitTest --tests "com.openski.android.GardenDressRehearsalTest"
+```
+
 ## Before going on snow
 
 - T0 to T5 pass with no stalls, and the ping-versus-stomp disagreement is measured and understood.
