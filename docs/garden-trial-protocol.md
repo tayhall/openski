@@ -45,6 +45,22 @@ After T3 to T5, check the Analysis tab's mount-slip line for each boot. Pass: no
 - The cold test and tilt checks still open in [POC plan](poc-plan.md) are done or consciously deferred.
 - A dated entry per trial in [bench results](bench-results.md), with the raw ZIPs kept.
 
+## Dress rehearsal (synthetic, runs on the JVM)
+
+Before any of the trials above, one synthetic garden session with known truths goes through the real analysis and `SessionExport`: `SyntheticGardenSession` (test sources) builds about 185 s of two boots (flash record format 3 at 104 Hz with quality flags, live frames at 52 Hz with connection-event jitter, each boot on its own clock with a known offset and ppm skew, one wrapping variant), stomps at 5 s and 25 s before the end, 20 alternating half-turns with the right boot 60 ms late, ping pairs (connect burst, start burst, one a minute, optional asymmetric-delay bias), phone rows at 100 Hz, magnetometer rows at 10 Hz (left boot, hard-iron offset) and the events and health snapshots the recorder writes. Every offset, skew, stomp time, dropped run, clipping share and missing source is a `GardenParams` argument. `GardenDressRehearsalTest` unzips the export and compares it with the truths, then runs the fault cases (missing end stomp, stomp on one boot only, clock reset, clock wrap, missing right boot, no phone, no magnetometer, no pings, flash gap with and without live cover, live only, heavy clipping, ping bias).
+
+```
+cd android
+.\gradlew.bat :app:testDebugUnitTest --tests "com.openski.android.GardenDressRehearsalTest"
+# also keep the ZIPs (clean.zip and fault-*.zip) for offline tools:
+$env:OPENSKI_DRESS_REHEARSAL_DIR = "D:\path\to\dress-rehearsal"
+.\gradlew.bat :app:cleanTestDebugUnitTest :app:testDebugUnitTest --tests "com.openski.android.GardenDressRehearsalTest"
+```
+
+The system property of the same name works too. `cleanTestDebugUnitTest` is needed because Gradle does not treat the variable as a task input and would otherwise skip an up-to-date test run. Synthetic data only: a pass says the pieces fit together, not that the thresholds suit real boots.
+
+Findings from the first run (18 October 2026): the stomp aligner lost the start window when a boot's 32-bit microsecond clock wrapped mid-session, because live samples were not unwrapped (fixed in `GestureSync.series`); the ping map is a few milliseconds off at the middle pairs but about 11 ms off at the last single one-a-minute ping, inside its reported 13 ms uncertainty; a live-only session (no flash) refuses the stomp as `low_correlation` when the stomp rings at 18 Hz, since the 52 Hz live stream aliases it differently on each boot.
+
 ## Not covered
 
 On-snow behaviour, vertical-load calculations (rows 5, 6 and 12 of the [starter calculations](turn-metric-starters.md)), and any combined score. Those wait on a weight-shift test with scales and on real recordings.

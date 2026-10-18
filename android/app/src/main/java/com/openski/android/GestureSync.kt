@@ -70,7 +70,18 @@ object GestureSync {
      */
     fun series(data: SessionData, side: String): ClockAlign.Series? {
         val live = data.live.filter { it.side == side }
-        val referenceUs = live.minOfOrNull { it.sample.timestampMs * 1000.0 }
+        // Live frames carry the 32-bit microsecond clock in ms, which wraps every 71.6 minutes. Unwrap it the way
+        // SessionAnalysis does, or the post-wrap samples land far from the rest of the series and break the windows.
+        var previousMs: Long? = null
+        var wrapSec = 0.0
+        val liveSec = live.map { l ->
+            val ms = l.sample.timestampMs
+            val p = previousMs
+            if (p != null && ms < p && p > 4_200_000 && ms < 100_000) wrapSec += 4294.967296
+            previousMs = ms
+            ms / 1000.0 + wrapSec
+        }
+        val referenceUs = liveSec.minOrNull()?.times(1e6)
             ?: data.clockPairs.filter { it.side == side }.minOfOrNull { it.sensorUs.toDouble() }
         val times = ArrayList<Double>()
         val values = ArrayList<Double>()
@@ -94,8 +105,8 @@ object GestureSync {
             }
             spans.add(times[start] to times[times.size - 1])
         }
-        for (l in live) {
-            val t = l.sample.timestampMs / 1000.0
+        for ((i, l) in live.withIndex()) {
+            val t = liveSec[i]
             if (spans.none { t >= it.first - 0.005 && t <= it.second + 0.005 }) add(t, l.sample)
         }
         if (times.isEmpty()) return null
