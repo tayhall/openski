@@ -22,3 +22,4 @@ test/*.log
 /sensors-*.pdf
 /run*.txt.zip
 .claude/worktrees/
+__pycache__/

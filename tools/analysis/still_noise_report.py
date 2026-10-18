@@ -104,22 +104,35 @@ def longest_segment(t, med_dt):
 
 
 # ------------------------------------------------------------------ per-boot analysis
+WRAP_SEC = 4294.967296   # the boot's 32-bit microsecond clock, also what its live millisecond stamp wraps at
+
+
+def unwrap_seconds(t):
+    """Add one wrap after each large step backwards (a rollover); smaller backwards steps are left for the sort."""
+    steps = np.where(np.diff(t) < -WRAP_SEC / 2, WRAP_SEC, 0.0)
+    return t + np.concatenate([[0.0], np.cumsum(steps)])
+
+
 def boot_time_s(d):
+    """(seconds on the boot clock, unwrapped; True when only the 1 ms live stamp was available)."""
     us = d["sensor_time_us"]
     if np.all(np.isfinite(us)):
-        return us * 1e-6
-    return d["sensor_time_ms"] * 1e-3
+        return unwrap_seconds(us * 1e-6), False
+    return unwrap_seconds(d["sensor_time_ms"] * 1e-3), True
 
 
 def analyse_boot(d):
-    t = boot_time_s(d)
+    t, quantised = boot_time_s(d)
     order = np.argsort(t, kind="stable")
     t = t[order]
     d = {k: v[order] for k, v in d.items()}
     dt = np.diff(t)
     med = float(np.median(dt))
+    if med <= 0:   # runs of equal stamps (1 ms live stamps at 104 Hz): fall back to the mean interval
+        med = float(np.mean(dt)) if np.mean(dt) > 0 else 1.0 / 104.0
     dur = float(t[-1] - t[0])
     r = {"samples": int(len(t)), "duration_s": dur,
+         "time_source": "sensor_time_ms (1 ms resolution: intervals are quantised, noise figures are approximate)" if quantised else "sensor_time_us",
          "rate_hz_median_interval": 1.0 / med, "rate_hz_mean": (len(t) - 1) / dur,
          "interval_ms": {"median": med * 1e3, "std": float(np.std(dt)) * 1e3, "min": float(dt.min()) * 1e3,
                          "max": float(dt.max()) * 1e3, "p99": float(np.percentile(dt, 99)) * 1e3},
@@ -248,7 +261,7 @@ def selftest():
     n = len(t)
     header = ["side", "source", "capture_id", "record_index", "session_elapsed_ms", "aligned_time_ms", "received_at_ms",
               "sensor_time_ms", "sensor_time_us", "sequence", "ax_mps2", "ay_mps2", "az_mps2", "gx_radps", "gy_radps", "gz_radps", "quality"]
-    rows = [["L", "flash", 1, i, "", "", "", int(t[i] * 1e3), int(t[i] * 1e6), "", *(acc[i] * G), *(gyro[i] / RAD2DEG), q[i]] for i in range(n)]
+    rows = [["L", "flash", "0b9d5c3e-1c2a-4e44-9f5b-6a3c1d2e7f10", i, "", "", "", int(t[i] * 1e3), int(t[i] * 1e6), "", *(acc[i] * G), *(gyro[i] / RAD2DEG), q[i]] for i in range(n)]
     with tempfile.TemporaryDirectory() as d:
         export_io.write_csvs(d, {"samples.csv": (header, rows)})
         res = analyse_export(d)

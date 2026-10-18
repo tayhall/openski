@@ -6,7 +6,7 @@ import zipfile
 
 import numpy as np
 
-TEXT_COLUMNS = {"side", "source", "calibration", "near_range", "missed_samples"}
+TEXT_COLUMNS = {"side", "source", "capture_id", "calibration", "near_range", "missed_samples"}  # hints; any column that is not numeric also stays text
 
 
 def read_text(path, name):
@@ -26,7 +26,7 @@ def read_text(path, name):
 
 def parse_csv(text):
     """Header-keyed columns: numeric columns become float arrays (empty field -> nan), the TEXT_COLUMNS stay string arrays."""
-    rows = list(csv.reader(io.StringIO(text)))
+    rows = [r for r in csv.reader(io.StringIO(text)) if r and not r[0].startswith("#")]   # '#' lines are comments
     if not rows:
         return {}
     header, body = rows[0], [r for r in rows[1:] if r]
@@ -36,7 +36,10 @@ def parse_csv(text):
         if h in TEXT_COLUMNS:
             cols[h] = np.array(raw, dtype=object)
         else:
-            cols[h] = np.array([float(v) if v not in ("", None) else np.nan for v in raw], dtype=float)
+            try:
+                cols[h] = np.array([float(v) if v not in ("", None) else np.nan for v in raw], dtype=float)
+            except ValueError:   # not numeric (for example a UUID): keep it as text instead of failing the whole file
+                cols[h] = np.array(raw, dtype=object)
     return cols
 
 

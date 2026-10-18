@@ -8,7 +8,7 @@ class LiveSensorClock {
     private var anchor = 0.0
     fun timestamp(sensorMs: Long, receivedMs: Long): Double {
         val old = previous
-        val rollover = old != null && sensorMs < old && old > 4_200_000 && sensorMs < 100_000
+        val rollover = old != null && BootClockWrap.isRollover(old, sensorMs)
         if (rollover) wrap += 4_294_967.296
         if (old == null || (sensorMs < old && !rollover) || receivedMs - lastReceipt > 30_000) {
             wrap = 0.0

@@ -488,6 +488,20 @@ class GardenDressRehearsalTest {
         assertEquals(20, detected(e, "R").size)
         assertEquals("usable", stream(e, "L", "flash").getString("verdict"))
         assertEquals(t.liveGapRuns.getValue("L"), stream(e, "L", "live").getInt("gap_count"))
+        // The ping fit uses the 64-bit clock, so the wrap must not move the two sync methods apart.
+        assertTrue(e.json("clock-sync-fit.json").getJSONObject("boot_to_boot").getBoolean("available"))
+        assertTrue("stomp minus ping ${g.optDouble("stomp_minus_ping_ms")}", Math.abs(g.getDouble("stomp_minus_ping_ms")) < 25.0)
+    }
+
+    @Test fun aLiveStreamThatStartsAfterTheWrapStillAlignsWithFlashBeforeIt() {
+        // Both boots wrap about 85 s in; the live stream is lost until 95 s, so it starts after the wrap while flash
+        // started before it. Live must be put on the same epoch as flash or the stomp windows are lost.
+        val e = run("fault-live-starts-after-wrap", GardenParams(leftClockStartSec = 4210.0, rightClockStartSec = 4213.7,
+            liveBlackouts = listOf(GardenWindow("L", 0.0, 95.0), GardenWindow("R", 0.0, 95.0))))
+        val t = e.truth
+        val g = e.json("gesture-sync.json")
+        assertEquals(g.optString("reason"), "measured", g.getString("status"))
+        assertEquals(t.offsetRightMinusLeft(g.getDouble("ref_left_time_s")), g.getDouble("offset_s"), 0.010)
     }
 
     @Test fun aSessionWithoutFlashEitherAlignsToASampleOrTwoOrRefuses() {

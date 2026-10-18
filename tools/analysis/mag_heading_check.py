@@ -247,23 +247,23 @@ def analyse_arrays(tm, P, samples, side, near_range_count=0):
         r["inplane_ellipse"] = {"semi_axes_gauss": axes2.tolist(), "axis_ratio": float(axes2.max() / axes2.min())}
         if axes2.max() / axes2.min() > SOFT_IRON_RATIO_FLAG:
             flags.append(f"soft-iron: in-plane ellipse axis ratio {axes2.max() / axes2.min():.2f} above {SOFT_IRON_RATIO_FLAG}")
-        h = (p2 - c2) @ W2.T
-        mean_n = float(np.mean((P - mu) @ n_hat))
-        # normal component kept relative to its own mean: its absolute offset cannot be known, so only the in-plane
-        # radius and the scatter of the normal component feed the corrected magnitude
-        hn = (P - mu) @ n_hat - mean_n
+        # In-plane radius about the fitted centre, NOT whitened, so soft-iron distortion still shows as spread. The
+        # normal component's absolute offset is unobservable from a level turn, so the total field magnitude cannot
+        # be judged here; the normal-axis wobble (tilt) is reported on its own.
+        h = p2 - c2
+        corrected = h
         r["hard_iron_offset_gauss"]["normal_component_unobservable"] = True
-        base = float(np.sqrt(np.mean(np.sum(h * h, 1))))
-        corrected = np.column_stack([h, hn])
-        r["_corrected_extra_constant"] = base
-    # corrected magnitude spread. In planar mode the unknown constant normal component is not included, so the
-    # in-plane radius stays the mean and the normal wobble adds to the spread.
+        wobble = float(np.std((P - mu) @ n_hat))
+        r["normal_axis_wobble"] = {"std_gauss": wobble, "percent_of_inplane_radius":
+                                   float(wobble / max(float(np.mean(np.linalg.norm(h, axis=1))), 1e-12) * 100)}
+    # corrected magnitude spread. Three-axis coverage: the full field. Planar coverage: the in-plane radius only.
     mag_c = np.linalg.norm(corrected, axis=1)
     r["magnitude_corrected"] = {"mean": float(mag_c.mean()), "std": float(mag_c.std()),
                                 "spread_percent_of_mean": float(mag_c.std() / mag_c.mean() * 100),
-                                "note": "in planar mode this is the in-plane field only plus the normal-axis wobble"
-                                if coverage < COVERAGE_PLANAR else "all three axes"}
-    r.pop("_corrected_extra_constant", None)
+                                "quantity": "in-plane radius about the fitted centre (not whitened); total field magnitude "
+                                            "cannot be judged from a level turn" if coverage < COVERAGE_PLANAR else "total field magnitude"}
+    if coverage < COVERAGE_PLANAR and r["normal_axis_wobble"]["percent_of_inplane_radius"] > SPREAD_WARN_PCT:
+        notes.append(f"normal-axis wobble is {r['normal_axis_wobble']['percent_of_inplane_radius']:.1f} % of the in-plane radius (tilt during the turn)")
     pct_raw, pct_c = r["magnitude_raw_gauss"]["spread_percent_of_mean"], r["magnitude_corrected"]["spread_percent_of_mean"]
     if pct_c > SPREAD_WARN_PCT:
         flags.append(f"field magnitude spread {pct_c:.1f} % after correction is above {SPREAD_WARN_PCT} %")
@@ -273,13 +273,16 @@ def analyse_arrays(tm, P, samples, side, near_range_count=0):
         notes.append(f"raw spread {pct_raw:.1f} % is high but is mostly the hard-iron offset (removed in the corrected figure)")
 
     # ---- heading from the horizontal projection
-    x_ref = np.array([1.0, 0.0, 0.0])
-    e1 = x_ref[None, :] - (up @ x_ref)[:, None] * up
-    bad = np.linalg.norm(e1, axis=1) < 0.2
-    if np.any(bad):
-        y_ref = np.array([0.0, 1.0, 0.0])
-        e1[bad] = y_ref[None, :] - (up[bad] @ y_ref)[:, None] * up[bad]
-    e1 /= np.linalg.norm(e1, axis=1, keepdims=True)
+    # One reference axis for the whole recording (the sensor axis that is on average more horizontal), so the heading
+    # basis never jumps; samples where it is close to vertical are noted rather than switched to another axis.
+    axis = 0 if np.mean(np.abs(up[:, 0])) <= np.mean(np.abs(up[:, 1])) else 1
+    ref = np.zeros(3)
+    ref[axis] = 1.0
+    e1 = ref[None, :] - (up @ ref)[:, None] * up
+    near_vertical = float(np.mean(np.linalg.norm(e1, axis=1) < 0.2))
+    if near_vertical > 0.05:
+        notes.append(f"the heading reference axis (sensor {'xy'[axis]}) is within about 12 degrees of vertical for {near_vertical * 100:.0f} % of the samples; heading is unreliable there")
+    e1 /= np.maximum(np.linalg.norm(e1, axis=1, keepdims=True), 1e-9)
     e2 = np.cross(up, e1)
     hx, hy = np.sum(P * e1, 1), np.sum(P * e2, 1)
     H = np.column_stack([hx, hy])
@@ -344,7 +347,7 @@ def fmt_report(r):
         if e:
             L.append("  in-plane soft-iron ellipse semi-axes G: " + "  ".join(f"{v:.4f}" for v in e["semi_axes_gauss"]) + f"; axis ratio {e['axis_ratio']:.3f}")
     c = r["magnitude_corrected"]
-    L.append(f"field magnitude corrected: mean {c['mean']:.4f} G, std {c['std']:.4f} G, spread {c['spread_percent_of_mean']:.1f} % ({c['note']})")
+    L.append(f"field magnitude corrected: mean {c['mean']:.4f} G, std {c['std']:.4f} G, spread {c['spread_percent_of_mean']:.1f} % ({c['quantity']})")
     if "horizontal_ellipse" in r:
         h = r["horizontal_ellipse"]
         L.append(f"horizontal-plane ellipse (heading calibration): centre {h['centre_gauss'][0]:+.4f} {h['centre_gauss'][1]:+.4f} G, axis ratio {h['axis_ratio']:.3f}")
@@ -416,7 +419,7 @@ def simulate_turns(rng, offset, S, degrade, fs_i=104.0, fs_m=10.0, secs=300.0):
 def write_export(d, t, gyro, acc, tm, meas):
     sh = ["side", "source", "capture_id", "record_index", "session_elapsed_ms", "aligned_time_ms", "received_at_ms",
           "sensor_time_ms", "sensor_time_us", "sequence", "ax_mps2", "ay_mps2", "az_mps2", "gx_radps", "gy_radps", "gz_radps", "quality"]
-    rows = [["L", "flash", 1, i, "", "", "", int(round(t[i] * 1e3)), int(round(t[i] * 1e6)), "", *acc[i], *gyro[i], 0] for i in range(len(t))]
+    rows = [["L", "flash", "0b9d5c3e-1c2a-4e44-9f5b-6a3c1d2e7f10", i, "", "", "", int(round(t[i] * 1e3)), int(round(t[i] * 1e6)), "", *acc[i], *gyro[i], 0] for i in range(len(t))]
     mh = ["side", "sensor_ms", "phone_receipt_ms", "session_elapsed_ms", "raw_x", "raw_y", "raw_z", "gauss_x", "gauss_y", "gauss_z",
           "flags", "near_range", "missed_samples", "calibration"]
     mrows = [["L", int(round(tm[i] * 1e3)), "", "", *np.round(meas[i] * 6842).astype(int), *meas[i], 0, "false", "false", "uncalibrated"]

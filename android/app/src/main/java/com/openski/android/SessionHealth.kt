@@ -102,7 +102,7 @@ object SessionHealth {
             val old = previous
             if (old != null) {
                 val backwards = r.sample.timestampMs < old.sample.timestampMs
-                val rollover = backwards && old.sample.timestampMs > 4_200_000 && r.sample.timestampMs < 100_000
+                val rollover = backwards && BootClockWrap.isRollover(old.sample.timestampMs, r.sample.timestampMs)
                 if ((backwards && !rollover) || r.receivedAtMs - old.receivedAtMs > RECEIPT_GAP_RESET_MS) seg++
             }
             segment[i] = seg

@@ -59,7 +59,7 @@ $env:OPENSKI_DRESS_REHEARSAL_DIR = "D:\path\to\dress-rehearsal"
 .\gradlew.bat :app:cleanTestDebugUnitTest :app:testDebugUnitTest --tests "com.openski.android.GardenDressRehearsalTest"
 ```
 
-The system property of the same name works too. `cleanTestDebugUnitTest` is needed because Gradle does not treat the variable as a task input and would otherwise skip an up-to-date test run. Synthetic data only: a pass says the pieces fit together, not that the thresholds suit real boots.
+Use the environment variable: a system property set on the Gradle command line does not reach the forked test JVM. `cleanTestDebugUnitTest` is needed because Gradle does not treat the variable as a task input and would otherwise skip an up-to-date test run. Synthetic data only: a pass says the pieces fit together, not that the thresholds suit real boots.
 
 Findings from the first run (18 October 2026): the stomp aligner lost the start window when a boot's 32-bit microsecond clock wrapped mid-session, because live samples were not unwrapped (fixed in `GestureSync.series`); the ping map is a few milliseconds off at the middle pairs but about 11 ms off at the last single one-a-minute ping, inside its reported 13 ms uncertainty; a live-only session (no flash) refuses the stomp as `low_correlation` when the stomp rings at 18 Hz, since the 52 Hz live stream aliases it differently on each boot.
 

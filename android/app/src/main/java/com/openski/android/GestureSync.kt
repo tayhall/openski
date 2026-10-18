@@ -62,6 +62,15 @@ object GestureSync {
         ClockAlign.Reject.DRIFT_IMPLAUSIBLE -> "the implied clock drift is implausibly large"
     }
 
+    private fun distanceToSpans(t: Double, spans: List<Pair<Double, Double>>): Double =
+        spans.minOf { if (t in it.first..it.second) 0.0 else minOf(abs(t - it.first), abs(t - it.second)) }
+
+    /** The whole number of wraps (-1, 0 or 1) times the wrap length that puts [t] nearest the flash [spans]. */
+    internal fun nearestWrapShift(t: Double, spans: List<Pair<Double, Double>>): Double {
+        val best = listOf(0, 1, -1).minByOrNull { distanceToSpans(t + it * BootClockWrap.WRAP_SEC, spans) } ?: 0
+        return best * BootClockWrap.WRAP_SEC
+    }
+
     /**
      * One boot's acceleration magnitude (m/s2) against its own sensor clock in seconds. Flash samples are used inside
      * the span each capture covers and live samples fill the rest. Flash timestamps are unwrapped as [SessionHealth]
@@ -77,7 +86,7 @@ object GestureSync {
         val liveSec = live.map { l ->
             val ms = l.sample.timestampMs
             val p = previousMs
-            if (p != null && ms < p && p > 4_200_000 && ms < 100_000) wrapSec += 4294.967296
+            if (p != null && BootClockWrap.isRollover(p, ms)) wrapSec += BootClockWrap.WRAP_SEC
             previousMs = ms
             ms / 1000.0 + wrapSec
         }
@@ -105,8 +114,11 @@ object GestureSync {
             }
             spans.add(times[start] to times[times.size - 1])
         }
+        // The live stream only knows its own wraps from the ones it saw. If it started after a wrap that flash saw (a
+        // blackout at the start), it sits one wrap early against flash, so shift it to the epoch nearest the flash spans.
+        val liveShift = if (spans.isNotEmpty() && liveSec.isNotEmpty()) nearestWrapShift(liveSec.first(), spans) else 0.0
         for ((i, l) in live.withIndex()) {
-            val t = liveSec[i]
+            val t = liveSec[i] + liveShift
             if (spans.none { t >= it.first - 0.005 && t <= it.second + 0.005 }) add(t, l.sample)
         }
         if (times.isEmpty()) return null
@@ -127,8 +139,7 @@ object GestureSync {
             val t = l.sample.timestampMs
             val p = prev
             if (p != null && t < p - 1000) {
-                val rollover = p > 4_200_000 && t < 100_000   // the 32-bit microsecond counter, shown in ms, wraps at about 4,295,000
-                if (!rollover) return "the ${sideName(side)} boot's clock went backwards during the session (a reset)"
+                if (!BootClockWrap.isRollover(p, t)) return "the ${sideName(side)} boot's clock went backwards during the session (a reset)"
             }
             prev = t
         }
