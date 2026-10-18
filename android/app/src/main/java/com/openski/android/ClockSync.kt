@@ -37,6 +37,8 @@ object ClockSyncDefaults {
     const val REJECT_MARGIN_NS = 20 * MS
     /** Drift is fitted only from pairs at least this far apart in time. */
     const val MIN_SLOPE_SPAN_NS = 10 * S
+    /** Drift is fitted only when the kept pairs span at least this long (starting value; shorter baselines read as zero drift). */
+    const val MIN_DRIFT_FIT_SPAN_NS = 150 * S
     /** Crystal drift beyond this is treated as unreliable and the fit is clamped (a real crystal is tens of ppm). */
     const val MAX_DRIFT_PPM = 200.0
     /** Drift monitor: a trusted pair this far from the current fit fires an alarm. */
@@ -75,6 +77,7 @@ data class ClockSyncConfig(
     val rejectFactor: Double = ClockSyncDefaults.REJECT_FACTOR,
     val rejectMarginNs: Long = ClockSyncDefaults.REJECT_MARGIN_NS,
     val minSlopeSpanNs: Long = ClockSyncDefaults.MIN_SLOPE_SPAN_NS,
+    val minDriftFitSpanNs: Long = ClockSyncDefaults.MIN_DRIFT_FIT_SPAN_NS,
     val maxDriftPpm: Double = ClockSyncDefaults.MAX_DRIFT_PPM,
     val residualAlarmNs: Long = ClockSyncDefaults.RESIDUAL_ALARM_NS,
     val slopeAlarmPpm: Double = ClockSyncDefaults.SLOPE_ALARM_PPM,
@@ -136,7 +139,10 @@ object ClockFitter {
         if (good.isEmpty()) return null
         val kept = select(good, config)
         val slopes = ArrayList<Double>()
-        for (i in kept.indices) for (j in i + 1 until kept.size) {
+        // Pairs a few tens of seconds apart carry several ms of round-trip jitter each, which is hundreds of ppm over
+        // that span and would swing the slope to its clamp; fit drift only once the baseline is long enough.
+        val baselineNs = (kept.last().sensorUs - kept.first().sensorUs) * 1000L
+        if (baselineNs >= config.minDriftFitSpanNs) for (i in kept.indices) for (j in i + 1 until kept.size) {
             val spanNs = (kept[j].sensorUs - kept[i].sensorUs) * 1000L
             if (spanNs >= config.minSlopeSpanNs) slopes.add((kept[j].offsetNs - kept[i].offsetNs).toDouble() / spanNs)
         }

@@ -17,7 +17,7 @@ namespace openski::magnetometer {
 namespace {
 constexpr uint8_t kMagI2cAddress = 0x1C;
 constexpr uint32_t kRetryIntervalMs = 2000;
-constexpr uint32_t kPollIntervalMs = 6;  // the sensor runs at 80 Hz (12.5 ms), so this never misses one
+constexpr uint32_t kPollIntervalMs = 20;  // only 10 frames a second go out, so poll lightly: the bus is shared with the IMU
 constexpr uint32_t kMaxConsecutiveErrors = 50;
 
 // ownsBus false: the IMU's bus object starts and recovers the shared Wire bus.

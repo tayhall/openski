@@ -358,7 +358,7 @@ bool notifyMagnetometer() {
   m.nearRail = motion::magNearRail(mag.rawX, mag.rawY, mag.rawZ);
   m.gap = mag.readErrors != lastErrors;
   m.sequence = sequence++;
-  m.timeMs = static_cast<uint32_t>(esp_timer_get_time() / 1000ULL);  // same clock as the live frame
+  m.timeMs = static_cast<uint32_t>(esp_timer_get_time()) / 1000U;  // same clock, and same 71.6 minute wrap, as the live and state frames
   m.rawX = mag.rawX;
   m.rawY = mag.rawY;
   m.rawZ = mag.rawZ;

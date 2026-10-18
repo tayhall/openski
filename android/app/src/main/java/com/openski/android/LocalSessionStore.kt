@@ -401,7 +401,8 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
         } finally { db.endTransaction() }
     }
 
-    @Synchronized fun loadData(id: String): SessionData? {
+    /** [includeSync] adds the clock pairs and magnetometer rows, which only the export needs; the detail and analysis views skip them. */
+    @Synchronized fun loadData(id: String, includeSync: Boolean = true): SessionData? {
         val session = getSession(id) ?: return null
         val live = readableDatabase.rawQuery("SELECT side,received_at_ms,sensor_time_ms,sequence,ax,ay,az,gx,gy,gz,quality FROM samples WHERE session_id=? ORDER BY id", arrayOf(id)).use { c ->
             buildList { while (c.moveToNext()) add(StoredLive(c.getString(0), c.getLong(1), SensorSample(c.getInt(3), c.getLong(2),
@@ -424,7 +425,7 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
                 if(c.isNull(3)) null else c.getLong(3),if(c.isNull(4)) null else c.getInt(4),if(c.isNull(5)) null else c.getLong(5))) }
         }
         return SessionData(session, live, flash, captures, events,markers,health, if (session.kind == "run") runData(id) else null,
-            clockPairs(id), magSamples(id))
+            if (includeSync) clockPairs(id) else emptyList(), if (includeSync) magSamples(id) else emptyList())
     }
 
     @Synchronized fun createSession(id: String, startedAtMs: Long, testSession: Boolean=false, origin: String="sensor", kind: String="session") {

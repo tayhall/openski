@@ -163,6 +163,14 @@ class RecorderProtocolTest {
         assertFalse(reply.ok)
         assertEquals(0x1234, reply.token)
     }
+    @Test fun anyFailureResultToATimeSyncRequestIsNotOkWhateverTheTokenBytesHold() {
+        // Old firmware answers opcode 09 with an ordinary recorder status: result 6 (invalid command) or 1 (flash
+        // not ready), with bytes 4 to 5 holding a sample count, not our token.
+        for (result in listOf(1, 6)) {
+            val reply = ClockPong.decode(pong(token = 0x7f31, sensorUs = 123_456, result = result))!!
+            assertFalse(reply.ok)
+        }
+    }
     @Test fun timeSyncRepliesAreNotMistakenForRecorderStatus() {
         assertTrue(ClockPong.isTimeSyncReply(pong()))
         assertFalse(ClockPong.isTimeSyncReply(ByteArray(16).also { it[0] = 3; it[1] = 0x85.toByte() }))

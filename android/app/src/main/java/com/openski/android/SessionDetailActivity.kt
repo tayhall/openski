@@ -47,7 +47,7 @@ class SessionDetailActivity : Activity() {
         setContentView(text("Loading session…",18f).apply { setBackgroundColor(SkiUi.CANVAS); setPadding(dp(24),dp(48),dp(24),dp(24)) })
         io.execute {
             try {
-                val loaded = LocalSessionStore(this).use { it.loadData(id) }
+                val loaded = LocalSessionStore(this).use { it.loadData(id, includeSync = false) }
                 val result = loaded?.let(SessionAnalysis::build)
                 val calibrations=loaded?.let { item -> LocalSessionStore(this).use { it.calibrations(item.session) } }.orEmpty()
                 val corrector=ProgressStore(this)
@@ -575,7 +575,9 @@ class SessionDetailActivity : Activity() {
         } else if(requestCode==REQUEST_EXPORT) {
             val snapshot=pendingExport; pendingExport=null
             io.execute { try {
-                val current=snapshot ?: LocalSessionStore(this).use { it.loadData(id) } ?: error("Session unavailable")
+                val base=snapshot ?: LocalSessionStore(this).use { it.loadData(id) } ?: error("Session unavailable")
+                // The detail view skips the clock pairs and magnetometer rows; the export needs them.
+                val current=if (base.clockPairs.isEmpty() && base.mag.isEmpty()) LocalSessionStore(this).use { s -> base.copy(clockPairs=s.clockPairs(id), mag=s.magSamples(id)) } else base
                 contentResolver.openOutputStream(uri,"w")?.use { SessionExport.write(current,it,ProgressStore(this)::correctionForSide) } ?: error("Export destination unavailable")
                 runOnUiThread { message("Session exported") }
             } catch(error: Exception) { runOnUiThread { message("Export failed: ${error.message}") } } }

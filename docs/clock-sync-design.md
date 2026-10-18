@@ -19,7 +19,7 @@ Today the app estimates alignment from live samples and phone receipt times (`Li
 
 ## Protocol: one new control opcode
 
-Recorder-control opcode `09`, "time sync". It is additive, so the control version stays `3`. A firmware without it answers result `6` (invalid command, the existing default case), which the app treats as "not supported, use gesture sync only".
+Recorder-control opcode `09`, "time sync". It is additive, so the control version stays `3`. A firmware without it answers a failure result (`6`, invalid command, the existing default case, or `1` when flash is not ready) in an ordinary recorder status whose token bytes are not the request's token; the app treats any non-zero result to opcode `09` as "not supported, use gesture sync only".
 
 Request (3 bytes, fits the 5-byte `kControlRequestSize`): `09 token[2]`, token a little-endian `uint16` chosen by the phone. Any other length returns result `6`.
 
@@ -107,3 +107,11 @@ The floor is about half a connection interval (roughly 5 to 25 ms depending on w
 
 1. Ping burst against one boot, plot RTT distribution and the fitted skew over 10 minutes (no skiing needed).
 2. Stomp at start and end with both boots and the phone, and compare gesture offsets with the protocol fit.
+
+## Known bias in the ping estimate (to measure, then correct)
+
+The midpoint assumes the outbound and return delays are equal. They are not. The write reaches the boot at a connection event, after waiting up to one connection interval (CI) from the moment the phone queued it, and the notification then leaves at the next connection event, so the return leg is close to one CI plus the 2 ms loop tick. Choosing the lowest-RTT pairs selects the pings with the shortest outbound wait, so the kept pairs share a bias of about CI/2 (several ms at 15 to 30 ms intervals) instead of averaging out, and two boots on different connection intervals may not cancel. This has not been measured; the gesture sync (stomp or tap) is the ground truth against which to check it on hardware. If it shows up, the likely fix is to estimate the sensor time as the receive time minus the return delay (about the smallest round trip seen in a burst) instead of the midpoint. Until then, treat the offset uncertainty as at least CI/2 and rely on the raw pairs being stored so the fit can be redone offline.
+
+## Known limitations of the live-stream disturbance check
+
+The live-gap and burst check timestamps each sample when the main thread processes it, not when the BLE callback received it, so a main-thread stall of more than about 500 ms (garbage collection, heavy UI work) can read as a 'live_burst' and open a `clock_uncertain` stretch plus an extra ping burst even though the link and the sensor clock were fine. The export replays the same samples from their wall-clock receipt times, so its stretches can differ slightly from the ones the live monitor opened. Both are conservative (they over-flag, never hide a problem); moving the live check onto callback-time stamps is a later refinement once real traces show how often it matters.

@@ -21,3 +21,4 @@ test/*.log
 /archive.zip
 /sensors-*.pdf
 /run*.txt.zip
+.claude/worktrees/

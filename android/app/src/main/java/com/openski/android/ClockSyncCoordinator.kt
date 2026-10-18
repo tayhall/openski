@@ -29,6 +29,7 @@ class ClockSyncCoordinator(
     private val liveMonitors = mutableMapOf<String, LiveDisturbanceMonitor>()
     private val pending = mutableMapOf<Int, Pending>()
     private val burstTasks = mutableMapOf<String, MutableList<Runnable>>()
+    private val periodicTasks = mutableListOf<Runnable>()
     private val lastExtraBurstMs = mutableMapOf<String, Long>()
     private var nextToken = 0
     private var lastPeriodicMs = 0L
@@ -95,15 +96,19 @@ class ClockSyncCoordinator(
     }
 
     fun onPong(side: String, pong: ClockPong, recvNs: Long) {
-        val entry = pending.remove(pong.token)?.takeIf { it.side == side && it.sendNs > 0 } ?: return   // unknown or foreign token
-        if (pong.unsupported) {
-            gestureOnly.add(side)
-            dropSide(side)
-            client(side)?.setHighPriority(false)
-            onGestureOnly(side)
+        // A firmware without opcode 09 answers with an ordinary recorder status (result 6, or 1 when flash is not
+        // ready) whose bytes 4 to 5 are not our token, so it cannot be matched by token. Current firmware never
+        // answers a well-formed 3-byte request with a failure, so any non-zero result means "not supported".
+        if (!pong.ok) {
+            if (side !in gestureOnly) {
+                gestureOnly.add(side)
+                dropSide(side)
+                client(side)?.setHighPriority(false)
+                onGestureOnly(side)
+            }
             return
         }
-        if (!pong.ok) return
+        val entry = pending.remove(pong.token)?.takeIf { it.side == side && it.sendNs > 0 } ?: return   // unknown or foreign token
         val sync = syncs.getOrPut(side) { ClockSync(side) }
         val pair = PingPair(side, pong.token, entry.sendNs, recvNs, pong.sensorUs)
         val result = sync.add(pair)
@@ -131,14 +136,19 @@ class ClockSyncCoordinator(
     fun tick(nowMs: Long, recording: Boolean) {
         if (!recording || nowMs - lastPeriodicMs < ClockSyncDefaults.PERIODIC_PING_MS) return
         lastPeriodicMs = nowMs
+        periodicTasks.clear()  // earlier ones have long since run
         syncs.keys.plus(addresses.keys).distinct().filter(::ready).sorted().forEachIndexed { i, side ->
-            handler.postDelayed({ sendPing(side) }, i * 500L)
+            val task = Runnable { sendPing(side) }
+            periodicTasks.add(task)
+            handler.postDelayed(task, i * 500L)
         }
     }
 
     fun stop() {
         burstTasks.values.flatten().forEach(handler::removeCallbacks)
         burstTasks.clear()
+        periodicTasks.forEach(handler::removeCallbacks)
+        periodicTasks.clear()
     }
 
     private fun RecordedPair.stored() = StoredClockPair(pair.boot, pair.token, pair.tSendNs, pair.tRecvNs, pair.sensorUs, pair.rttNs, accepted)

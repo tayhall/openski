@@ -43,6 +43,18 @@ class ClockSyncTest {
         assertTrue(fit.baseUncertaintyNs >= fit.bestRttNs / 2)
     }
 
+    @Test fun aShortBaselineDoesNotFitDriftSoItCannotSwingToTheClamp() {
+        // One burst, then a single ping a minute later: the two pairs carry several ms of jitter each, which over
+        // 60 s reads as hundreds of ppm. Below the minimum baseline the drift stays zero instead.
+        repeat(20) { trial ->
+            val boot = SimBoot("L", phoneStart - 50 * s, 20.0)
+            val sync = ClockSync("L")
+            burst(sync, boot, phoneStart)
+            sync.add(ping(boot, phoneStart + 60 * s))
+            assertEquals("trial $trial", 0.0, sync.fit()!!.driftPpm, 0.0)
+        }
+    }
+
     @Test fun recoversSkewOverTenMinutes() {
         for (drift in listOf(-40.0, 25.0, 60.0)) {
             val boot = SimBoot("L", phoneStart - 50 * s, drift)

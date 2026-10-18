@@ -126,7 +126,7 @@ Sent only by builds with a LIS3MDL magnetometer (the left boot, `OPENSKI_MAG_LIS
 | 0 | 1 | version | `5` |
 | 1 | 1 | flags | bit 0 a raw axis is within 100 counts of the +-4 gauss limit (27368 counts), bit 1 reads failed since the previous magnetometer frame; other bits 0 |
 | 2 | 2 | sequence | `uint16`, own counter, wraps |
-| 4 | 4 | time | `uint32` milliseconds, the same clock as the live frame (`esp_timer_get_time() / 1000`) |
+| 4 | 4 | time | `uint32` milliseconds, the same clock as the live frame (`uint32(esp_timer_get_time()) / 1000`, so it wraps every 71.6 minutes like the live and state frames) |
 | 8 | 2 | raw X | `int16` counts |
 | 10 | 2 | raw Y | `int16` counts |
 | 12 | 2 | raw Z | `int16` counts |
@@ -146,7 +146,7 @@ Three commands are written to the recorder control characteristic. They work eve
 
 ### Time sync (opcode `09`)
 
-Lets the phone map each boot's clock to its own. Additive: the control version stays `3`, and a firmware without it answers result `6`. It works without flash storage and in both modes. Request: `09 token_lo token_hi`, the token a little-endian `uint16` chosen by the phone. The 16-byte response uses its own layout after the usual first four bytes:
+Lets the phone map each boot's clock to its own. Additive: the control version stays `3`, and a firmware without it answers a failure result (`6`, or `1` when flash is not ready) in an ordinary recorder status whose bytes 4 to 5 are not the request's token; the app treats any non-zero result to opcode `09` as 'not supported'. It works without flash storage and in both modes. Request: `09 token_lo token_hi`, the token a little-endian `uint16` chosen by the phone. The 16-byte response uses its own layout after the usual first four bytes:
 
 | Offset | Size | Field |
 | --- | ---: | --- |
