@@ -62,6 +62,9 @@ object SessionHealth {
     const val RATE_SHORTFALL_POOR = 0.20
     const val GAP_PERCENT_MARGINAL = 2.0         // gap time as % of continuous span
     const val GAP_PERCENT_POOR = 10.0
+    /** The longest single gap: a hole of this length loses whole turns even when it is a tiny share of the stream. */
+    const val LONGEST_GAP_MS_MARGINAL = 500.0
+    const val LONGEST_GAP_MS_POOR = 5000.0
     const val DROPPED_PERCENT_MARGINAL = 0.5     // dropped-flag samples as % of samples
     const val DROPPED_PERCENT_POOR = 5.0
     const val RAIL_PERCENT_MARGINAL = 0.5        // near-rail samples (either channel) as % of samples
@@ -98,11 +101,13 @@ object SessionHealth {
         val segment = IntArray(records.size)
         var seg = 0
         var previous: StoredLive? = null
+        var resets = 0
         records.forEachIndexed { i, r ->
             val old = previous
             if (old != null) {
                 val backwards = r.sample.timestampMs < old.sample.timestampMs
                 val rollover = backwards && BootClockWrap.isRollover(old.sample.timestampMs, r.sample.timestampMs)
+                if (backwards && !rollover) resets++
                 if ((backwards && !rollover) || r.receivedAtMs - old.receivedAtMs > RECEIPT_GAP_RESET_MS) seg++
             }
             segment[i] = seg
@@ -110,7 +115,7 @@ object SessionHealth {
             previous = r
         }
         val slope = clockSlope(times, records.map { it.receivedAtMs.toDouble() }, segment)
-        return stream(side, "live", LIVE_NOMINAL_INTERVAL_MS, records.map { it.sample.quality }, times, segment, slope)
+        return stream(side, "live", LIVE_NOMINAL_INTERVAL_MS, records.map { it.sample.quality }, times, segment, slope, resets)
     }
 
     private fun flash(data: SessionData, side: String): StreamHealth? {
@@ -132,7 +137,8 @@ object SessionHealth {
             seg++
         }
         if (times.isEmpty()) return null
-        return stream(side, "flash", FLASH_NOMINAL_INTERVAL_MS, quality, times, segment.toIntArray(), null)
+        // A second recording segment for the same boot starts the sensor clock again, like a reset.
+        return stream(side, "flash", FLASH_NOMINAL_INTERVAL_MS, quality, times, segment.toIntArray(), null, clockResets = seg - 1)
     }
 
     /** Span-weighted mean of per-segment least-squares slopes of phone receipt time against reconstructed sensor time. */
@@ -158,7 +164,7 @@ object SessionHealth {
     }
 
     private fun stream(side: String, source: String, defaultNominal: Double, quality: List<Int>, times: List<Double>,
-        segment: IntArray, slope: Pair<Double, Double>?): StreamHealth {
+        segment: IntArray, slope: Pair<Double, Double>?, clockResets: Int = 0): StreamHealth {
         val all = ArrayList<Double>()
         for (i in 1 until times.size) {
             if (segment[i] != segment[i - 1]) continue
@@ -198,6 +204,9 @@ object SessionHealth {
             check(shortfall, RATE_SHORTFALL_MARGINAL, RATE_SHORTFALL_POOR, "sample rate ${"%.1f".format(rate)} Hz is below nominal")
         }
         check(gapPercent, GAP_PERCENT_MARGINAL, GAP_PERCENT_POOR, "${"%.1f".format(gapPercent)}% of the time is in gaps")
+        check(longest, LONGEST_GAP_MS_MARGINAL, LONGEST_GAP_MS_POOR, "longest gap ${"%.0f".format(longest)} ms")
+        if (clockResets > 0) flag(HealthVerdict.MARGINAL,
+            "the boot's clock restarted $clockResets time(s) (a reset or a new recording segment), so its timestamps are not one continuous clock")
         check(100.0 * dropped / n, DROPPED_PERCENT_MARGINAL, DROPPED_PERCENT_POOR, "$dropped samples follow dropped samples")
         check(rail, RAIL_PERCENT_MARGINAL, RAIL_PERCENT_POOR, "${"%.1f".format(rail)}% of samples near full scale")
         if (slope != null) check(abs(slope.first), CLOCK_SLOPE_PPM_MARGINAL, CLOCK_SLOPE_PPM_POOR,
