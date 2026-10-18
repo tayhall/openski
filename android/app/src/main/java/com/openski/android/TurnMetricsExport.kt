@@ -1,0 +1,114 @@
+package com.openski.android
+
+import org.json.JSONArray
+import org.json.JSONObject
+
+/** One roll-curve turn candidate with its experimental metrics, for one boot. */
+data class TurnMetricsRow(
+    val side: String, val direction: String, val metrics: TurnMetrics,
+    val yawTurnShape: Double?, val yawTurnClosureDegrees: Double?, val yawLeadMs: Double?
+) {
+    /** True when the shape window was gap-free with near-neutral ends, so the shape metrics are filled in. */
+    val usable: Boolean get() = metrics.peakPhase != null
+}
+
+/** Boot-to-boot agreement over one pair of overlapping left and right candidates (union window). */
+data class BootAgreementPair(
+    val startMs: Double, val endMs: Double,
+    val derivativeSimilarity: Double?, val rollCorrelation: Double?, val wedgeFraction: Double?
+)
+
+/**
+ * Wires the experimental turn-metric extractors into the session export. Everything here is a descriptor of dry-ski
+ * boot roll, unvalidated on real recordings, and never alters raw samples. Pure (no Android types in the CSV and
+ * summary logic) so it is JVM-tested.
+ */
+object TurnMetricsExport {
+    const val DETECTOR = "experimental_turn_metrics"
+    const val NOTE = "EXPERIMENTAL and unvalidated: shape descriptors of dry-ski boot roll excursions (not edge angle, " +
+        "not ski turn classification, not a quality score). Built on synthetic signals only so far. Shape metrics are blank " +
+        "when the excursion has fewer than 10 samples, a gap over 100 ms, or does not start and end within 2 degrees of neutral " +
+        "(usable=false). Direction uses the saved per-boot roll polarity, like detected-movements.csv."
+
+    val HEADER = listOf("side", "direction", "positive_roll", "start_ms", "end_ms", "usable", "peak_estimated_boot_roll_deg",
+        "duration_ms", "build_ms", "early_roll_rate_dps", "peak_phase", "roughness", "heading_change_deg", "edge_hold",
+        "entry_roll_deg", "peak_from_entry_deg", "yaw_turn_shape", "yaw_turn_closure_deg", "yaw_lead_ms", "detector")
+
+    fun rows(side: String, rolls: List<BootRoll>, movements: List<DryMovement>, headingTurns: List<HeadingTurn>,
+             positiveLeft: Boolean): List<TurnMetricsRow> {
+        val ordered = rolls.sortedBy { it.timeMs }
+        return TurnMetricsExtractor.extract(ordered, movements, headingTurns).map { m ->
+            TurnMetricsRow(side, if (m.positive == positiveLeft) "LEFT" else "RIGHT", m,
+                YawTurnShape.turnShape(ordered, m.startMs, m.endMs), YawTurnShape.turnClosure(ordered, m.startMs, m.endMs),
+                YawTurnShape.yawLeadMs(ordered, m.startMs, m.endMs))
+        }
+    }
+
+    fun csv(rows: List<TurnMetricsRow>): String {
+        val sb = StringBuilder()
+        sb.append("# ").append(NOTE).append('\n')
+        sb.append("# Blank cell = not available. Metric definitions: docs/turn-metrics.md and docs/turn-metric-starters.md.\n")
+        sb.append(HEADER.joinToString(",")).append('\n')
+        rows.forEach { r ->
+            val m = r.metrics
+            sb.append(listOf(r.side, r.direction, m.positive, m.startMs, m.endMs, r.usable, m.peakDegrees, m.durationMs,
+                m.buildMs, m.earlyRateDps, m.peakPhase, m.roughness, m.headingChangeDegrees, m.edgeHold, m.entryDegrees,
+                m.peakFromEntryDegrees, r.yawTurnShape, r.yawTurnClosureDegrees, r.yawLeadMs, DETECTOR)
+                .joinToString(",") { it?.toString() ?: "" }).append('\n')
+        }
+        return sb.toString()
+    }
+
+    /** Boot rolls with positive roll meaning LEFT, so both boots share one sign convention for the agreement functions. */
+    private fun leftPositive(rolls: List<BootRoll>, positiveLeft: Boolean): List<BootRoll> =
+        if (positiveLeft) rolls else rolls.map { it.copy(degrees = -it.degrees, rollRateRadps = -it.rollRateRadps) }
+
+    /** Pairs each left candidate with the right candidate it overlaps most, and compares the boots over the union. */
+    fun agreementPairs(left: List<BootRoll>, right: List<BootRoll>, leftMoves: List<DryMovement>, rightMoves: List<DryMovement>,
+                       leftPositiveLeft: Boolean, rightPositiveLeft: Boolean): List<BootAgreementPair> {
+        val l = leftPositive(left, leftPositiveLeft)
+        val r = leftPositive(right, rightPositiveLeft)
+        return leftMoves.mapNotNull { a ->
+            val b = rightMoves.map { it to (minOf(it.endMs, a.endMs) - maxOf(it.startMs, a.startMs)) }
+                .filter { it.second > 0 }.maxByOrNull { it.second }?.first ?: return@mapNotNull null
+            val start = minOf(a.startMs, b.startMs)
+            val end = maxOf(a.endMs, b.endMs)
+            BootAgreementPair(start, end, BootAgreement.derivativeSimilarity(l, r, start, end),
+                TurnMetricsExtractor.agreement(l, r, start, end), BootAgreement.wedgeFraction(l, r, start, end))
+        }
+    }
+
+    /** JSON-ready tree (nulls stay null; [toJson] maps them to JSON null). */
+    fun block(rowsBySide: Map<String, List<TurnMetricsRow>>, pairs: List<BootAgreementPair>): Map<String, Any?> {
+        fun spread(s: MetricSpread?): Any? = s?.let { mapOf("mean" to it.mean, "sd" to it.sd) }
+        fun mean(v: List<Double>): Double? = if (v.isEmpty()) null else v.average()
+        val sides = rowsBySide.mapValues { (_, rows) ->
+            val s = TurnMetricsExtractor.summarise(rows.map { it.metrics })
+            mapOf("candidates" to s.count, "usable" to rows.count { it.usable },
+                "peak_deg" to spread(s.peakDegrees), "duration_ms" to spread(s.durationMs), "build_ms" to spread(s.buildMs),
+                "early_roll_rate_dps" to spread(s.earlyRateDps), "peak_phase" to spread(s.peakPhase),
+                "roughness" to spread(s.roughness), "edge_hold" to spread(s.edgeHold))
+        }
+        val agreement = mapOf(
+            "pairs" to pairs.size,
+            "pairs_with_data" to pairs.count { it.derivativeSimilarity != null || it.rollCorrelation != null || it.wedgeFraction != null },
+            "mean_derivative_similarity" to mean(pairs.mapNotNull { it.derivativeSimilarity }),
+            "mean_roll_correlation" to mean(pairs.mapNotNull { it.rollCorrelation }),
+            "mean_wedge_fraction" to mean(pairs.mapNotNull { it.wedgeFraction }),
+            "per_pair" to pairs.map { mapOf("start_ms" to it.startMs, "end_ms" to it.endMs,
+                "derivative_similarity" to it.derivativeSimilarity, "roll_correlation" to it.rollCorrelation,
+                "wedge_fraction" to it.wedgeFraction) },
+            "note" to "Each left candidate is paired with the right candidate it overlaps most and the boots are compared over the union window. " +
+                "Both boots are put on one sign convention (positive roll = LEFT) first. Null when either boot has gaps over 100 ms or too few samples. " +
+                "Spread is mean and sample SD (needs two candidates).")
+        return mapOf("experimental" to true, "note" to NOTE, "detector" to DETECTOR, "per_boot" to sides, "boot_agreement" to agreement)
+    }
+
+    fun toJson(value: Any?): Any = when (value) {
+        null -> JSONObject.NULL
+        is Map<*, *> -> JSONObject().also { o -> value.forEach { (k, v) -> o.put(k.toString(), toJson(v)) } }
+        is List<*> -> JSONArray().also { a -> value.forEach { a.put(toJson(it)) } }
+        is Double -> if (value.isNaN() || value.isInfinite()) JSONObject.NULL else value
+        else -> value
+    }
+}
