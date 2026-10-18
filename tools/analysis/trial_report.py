@@ -98,9 +98,14 @@ def sanitize(o):
     return o
 
 
+_COLLECT = None   # while run_checks judges a trial, every Row created registers here, so rows built before an exception survive it
+
+
 class Row:
     def __init__(self, trial, check, value, line, status, why="", num=None):
         self.trial, self.check, self.value, self.line, self.status, self.why, self.num = trial, check, value, line, status, why, num
+        if _COLLECT is not None:
+            _COLLECT.append(self)
 
     def as_dict(self):
         d = {"trial": self.trial, "check": self.check, "value": self.value, "pass_line": self.line, "status": self.status, "reason": self.why}
@@ -212,72 +217,77 @@ def t0(ex, explicit):
     rows = []
     T = "T0"
     h, boots = health_streams(ex)
-    fit = ex.json("clock-sync-fit.json") or {}
+    fit = ex.json("clock-sync-fit.json")
+    fit = fit if isinstance(fit, dict) else {}
     sess = ex.json("session.json")
-    if h is None:
-        rows.append(Row(T, "health verdict", "n/a", "usable", NA, "session-health.json is not in the export"))
     for side in EXPECTED_SIDES:
         b = boots.get(side)
+        streams = {s["source"]: s for s in (b or {}).get("streams", [])}
         if b is None:
-            if h is not None:
-                rows.append(Row(T, f"health verdict {side}", "no data", "usable", FAIL, f"boot {side} has no streams in session-health.json"))
-            continue
-        v = b.get("verdict")
-        st = PASS if v == "usable" else (WARN if v == "marginal" else FAIL)
-        rows.append(Row(T, f"health verdict {side}", str(v), "usable", st, "; ".join(b.get("reasons", [])) if st != PASS else ""))
-        streams = {s["source"]: s for s in b.get("streams", [])}
-        for src, nominal in (("flash", FLASH_RATE_HZ), ("live", LIVE_RATE_HZ)):
-            s = streams.get(src)
-            chk = f"{src} rate {side}"
-            line = f"{nominal:.0f} +/- {RATE_TOL_HZ:.0f} Hz"
-            if s is None:
-                rows.append(Row(T, chk, "no stream", line, FAIL, f"no {src} samples for boot {side}"))
-                continue
-            rate = jnum(s, "rate_hz")
-            if not fin(rate):
-                rows.append(Row(T, chk, "n/a", line, NA, "rate_hz is null in session-health.json (too few samples to measure)"))
-                continue
-            d = rate - nominal
-            rows.append(Row(T, chk, f"{rate:.2f} Hz ({d:+.2f})", line, PASS if abs(d) <= RATE_TOL_HZ else FAIL, num=rate))
-        longest = {src: jnum(s, "longest_gap_ms") for src, s in streams.items()}
-        longest = {src: ms for src, ms in longest.items() if fin(ms)}
-        if longest:
-            bad = {src: ms for src, ms in longest.items() if ms > GAP_LONG_MS}
-            val = ", ".join(f"{src} {ms:.0f} ms" for src, ms in sorted(longest.items())) + " longest"
-            why = ""
-            if bad:
-                why = "gap over the line in " + ", ".join(sorted(bad)) + "; "
-                drops = [c.get("dropped_samples") for c in (sess or {}).get("captures", []) if c.get("side") == side]
-                if drops and fin(drops[0]) and drops[0]:
-                    why += f"firmware reported {int(drops[0])} dropped flash samples; "
-                pct = ", ".join(f"{src} {fm(jnum(s, 'gap_percent'), 2)} %" for src, s in sorted(streams.items()))
-                why += f"gap share {pct}"
-            rows.append(Row(T, f"gaps {side}", val, f"longest <= {GAP_LONG_MS:.0f} ms", FAIL if bad else PASS, why.strip("; ")))
+            st = miss(explicit) if h is None else FAIL
+            why = "session-health.json is not in the export" if h is None else f"boot {side} has no streams in session-health.json"
+            rows.append(Row(T, f"health verdict {side}", "no data", "usable", st, why))
+            rows.append(Row(T, f"flash rate {side}", "no stream", f"{FLASH_RATE_HZ:.0f} +/- {RATE_TOL_HZ:.0f} Hz", st, why))
+            rows.append(Row(T, f"live rate {side}", "no stream", f"{LIVE_RATE_HZ:.0f} +/- {RATE_TOL_HZ:.0f} Hz", st, why))
+            rows.append(Row(T, f"gaps {side}", "n/a", f"longest <= {GAP_LONG_MS:.0f} ms", st, why))
         else:
-            rows.append(Row(T, f"gaps {side}", "n/a", f"longest <= {GAP_LONG_MS:.0f} ms", NA, "no stream with a measured longest gap"))
-        # clock slope: the health slope, else a FITTED drift (an unfitted placeholder is not a measurement)
-        slopes = [x for x in (jnum(s, "clock_slope_ppm") for s in streams.values()) if fin(x)]
-        ep = (fit.get(side) or {}).get("epochs") or []
+            v = b.get("verdict")
+            st = PASS if v == "usable" else (WARN if v == "marginal" else FAIL)
+            rows.append(Row(T, f"health verdict {side}", str(v), "usable", st, "; ".join(b.get("reasons", [])) if st != PASS else ""))
+            for src, nominal in (("flash", FLASH_RATE_HZ), ("live", LIVE_RATE_HZ)):
+                s = streams.get(src)
+                chk = f"{src} rate {side}"
+                line = f"{nominal:.0f} +/- {RATE_TOL_HZ:.0f} Hz"
+                if s is None:
+                    rows.append(Row(T, chk, "no stream", line, FAIL, f"no {src} samples for boot {side}"))
+                    continue
+                rate = jnum(s, "rate_hz")
+                if not fin(rate):
+                    rows.append(Row(T, chk, "n/a", line, NA, "rate_hz is null in session-health.json (too few samples to measure)"))
+                    continue
+                d = rate - nominal
+                rows.append(Row(T, chk, f"{rate:.2f} Hz ({d:+.2f})", line, PASS if abs(d) <= RATE_TOL_HZ else FAIL, num=rate))
+            longest = {src: jnum(s, "longest_gap_ms") for src, s in streams.items()}
+            longest = {src: ms for src, ms in longest.items() if fin(ms)}
+            if longest:
+                bad = {src: ms for src, ms in longest.items() if ms > GAP_LONG_MS}
+                val = ", ".join(f"{src} {ms:.0f} ms" for src, ms in sorted(longest.items())) + " longest"
+                why = ""
+                if bad:
+                    why = "gap over the line in " + ", ".join(sorted(bad)) + "; "
+                    drops = [c.get("dropped_samples") for c in (sess or {}).get("captures", []) if c.get("side") == side]
+                    if drops and fin(drops[0]) and drops[0]:
+                        why += f"firmware reported {int(drops[0])} dropped flash samples; "
+                    pct = ", ".join(f"{src} {fm(jnum(s, 'gap_percent'), 2)} %" for src, s in sorted(streams.items()))
+                    why += f"gap share {pct}"
+                rows.append(Row(T, f"gaps {side}", val, f"longest <= {GAP_LONG_MS:.0f} ms", FAIL if bad else PASS, why.strip("; ")))
+            else:
+                rows.append(Row(T, f"gaps {side}", "n/a", f"longest <= {GAP_LONG_MS:.0f} ms", NA, "no stream with a measured longest gap"))
+        # clock slope: the LIVE stream's health slope, else a FITTED drift (an unfitted placeholder is not a measurement)
+        fside = fit.get(side) or {}
+        ep = [e for e in (fside.get("epochs") or []) if isinstance(e, dict)]
+        live_slope = jnum(streams.get("live"), "clock_slope_ppm")
         slope, src, why = None, "", ""
-        if slopes:
-            slope, src = slopes[0], "health live stream"
+        if fin(live_slope):
+            slope, src = live_slope, "health live stream"
         elif ep and ep[-1].get("drift_fitted") is True and fin(jnum(ep[-1], "drift_ppm")):
             slope, src = jnum(ep[-1], "drift_ppm"), "clock-sync fit"
         else:
-            why = "no health slope and no fitted clock-sync drift (drift_fitted is not true or there is no fit): a placeholder is not a measurement"
+            why = "no health slope for the live stream and no fitted clock-sync drift (drift_fitted is not true or there is no fit): a placeholder is not a measurement"
         sline = f"|slope| < {CLOCK_SLOPE_PPM:.0f} ppm"
         if slope is None:
             rows.append(Row(T, f"clock slope {side}", "n/a", sline, NA, why))
         else:
             rows.append(Row(T, f"clock slope {side}", f"{slope:+.1f} ppm ({src})", sline, PASS if abs(slope) < CLOCK_SLOPE_PPM else FAIL, num=slope))
-        # one clock epoch
-        if side in fit:
-            if not ep:
-                rows.append(Row(T, f"single clock epoch {side}", "no fit", "1 epoch", NA, str(fit[side].get("reason") or "clock-sync-fit.json has no epoch for this boot (no accepted ping pairs)")))
-            else:
-                unc = fit[side].get("clock_uncertain_stretches") or []
-                rows.append(Row(T, f"single clock epoch {side}", f"{len(ep)} epoch(s), {len(unc)} uncertain stretch(es)", "1 epoch", PASS if len(ep) == 1 else FAIL,
-                                "" if len(ep) == 1 else "the boot's clock restarted or jumped during the session; offsets are only valid per epoch"))
+        # one clock epoch (always one row)
+        if not fit:
+            rows.append(Row(T, f"single clock epoch {side}", "no fit", "1 epoch", miss(explicit), "clock-sync-fit.json is not in the export"))
+        elif not ep:
+            rows.append(Row(T, f"single clock epoch {side}", "no fit", "1 epoch", NA, str(fside.get("reason") or "clock-sync-fit.json has no epoch for this boot (no accepted ping pairs)")))
+        else:
+            unc = fside.get("clock_uncertain_stretches") or []
+            rows.append(Row(T, f"single clock epoch {side}", f"{len(ep)} epoch(s), {len(unc)} uncertain stretch(es)", "1 epoch", PASS if len(ep) == 1 else FAIL,
+                            "" if len(ep) == 1 else "the boot's clock restarted or jumped during the session; offsets are only valid per epoch"))
     # ping round trips
     cs = ex.csv("clock-sync.csv")
     for side in EXPECTED_SIDES:
@@ -287,13 +297,17 @@ def t0(ex, explicit):
             allm = int(np.sum(cs["side"] == side))
             if n:
                 rtt = cs["rtt_ns"][m] * 1e-6
+                rtt = rtt[np.isfinite(rtt)]
+                if not len(rtt):
+                    rows.append(Row(T, f"ping round trips {side}", f"{n} accepted, no round-trip time", ">= 1 accepted pair", WARN, "rtt_ns is blank for every accepted pair"))
+                    continue
                 rows.append(Row(T, f"ping round trips {side}", f"{n} accepted of {allm}, median {np.nanmedian(rtt):.1f} ms, best {np.nanmin(rtt):.1f} ms", ">= 1 accepted pair", PASS, num=float(np.nanmedian(rtt))))
                 continue
         rows.append(Row(T, f"ping round trips {side}", "none", ">= 1 accepted pair", FAIL, f"no accepted ping pair for boot {side} in clock-sync.csv"))
     # still-noise, only for a still recording
     for side in EXPECTED_SIDES:
         rms = gyro_rms_dps(ex, side)
-        chk = f"gyro bias drift and noise {side}"
+        chk = f"gyro bias and drift {side}"
         if rms is None:
             rows.append(Row(T, chk, "no samples", "report only", miss(explicit), f"boot {side} has no samples in samples.csv"))
             continue
@@ -312,7 +326,7 @@ def t0(ex, explicit):
             continue
         dr = max(abs(v) for v in b["gyro_bias_drift_dps_per_min"])
         bias = max(abs(v) for v in b["gyro_bias_dps"])
-        rows.append(Row(T, f"gyro bias and drift {side}", f"bias <= {bias:.3f} dps (worst axis), drift <= {dr:.4f} dps/min over {b['duration_s']:.0f} s",
+        rows.append(Row(T, chk, f"bias <= {bias:.3f} dps (worst axis), drift <= {dr:.4f} dps/min over {b['duration_s']:.0f} s",
                         "report only (no protocol line)", INFO, "temperature is not in the export, so no bias-versus-temperature figure", num=dr))
         if b.get("allan"):
             dens = np.mean([v["gyro"]["white_density_per_rthz"] for v in b["allan"]["axes"].values()])
@@ -389,14 +403,19 @@ def t2(ex, explicit):
     yd = r.get("yaw_difference_deg")
     if not gyro or not yd:
         rows.append(Row(T, "magnetometer heading vs gyro yaw", "n/a", hline, NA, "no gyro samples overlap the magnetometer samples in time, so there is no gyro yaw to compare with"))
+    elif not fin(turns):
+        rows.append(Row(T, "magnetometer heading vs gyro yaw", "n/a", hline, NA, "the number of turns is not available (null or non-finite), so heading cannot be compared"))
     elif not on_spot:
         rows.append(Row(T, "magnetometer heading vs gyro yaw", f"gyro yaw total {fm(turns, 2)} turns", hline, miss(explicit),
                         "the recording has no turn on the spot (needs at least " + f"{mag_heading_check.MIN_ROTATION_TURNS:.1f} turns), so heading cannot be compared"))
     else:
         rms = jnum(yd, "rms_offset_and_linear_trend_removed")
-        st = PASS if rms <= MAG_HEADING_OK_DEG else (WARN if rms <= MAG_HEADING_WARN_DEG else FAIL)
-        rows.append(Row(T, "magnetometer heading vs gyro yaw", f"RMS {fm(rms)} deg after offset and trend; mag {fm(jnum(magt, 'net_ccw_positive'), 2)} turns vs gyro {fm(jnum(gyro, 'net_ccw_positive'), 2)}", hline, st,
-                        "; ".join(r.get("flags", [])), num=rms))
+        if not fin(rms):
+            rows.append(Row(T, "magnetometer heading vs gyro yaw", "n/a", hline, NA, "the heading RMS is null or non-finite in the analysis result"))
+        else:
+            st = PASS if rms <= MAG_HEADING_OK_DEG else (WARN if rms <= MAG_HEADING_WARN_DEG else FAIL)
+            rows.append(Row(T, "magnetometer heading vs gyro yaw", f"RMS {fm(rms)} deg after offset and trend; mag {fm(jnum(magt, 'net_ccw_positive'), 2)} turns vs gyro {fm(jnum(gyro, 'net_ccw_positive'), 2)}", hline, st,
+                            "; ".join(r.get("flags", [])), num=rms))
     return rows
 
 
@@ -414,9 +433,14 @@ def usable_share(tm):
 
 
 def mean_roughness(tm):
-    v = [jnum(b.get("roughness"), "mean") for b in tm.get("per_boot", {}).values() if b.get("roughness")]
-    v = [x for x in v if fin(x)]
-    return float(np.mean(v)) if v else None
+    """Candidate-weighted mean of the per-boot mean roughness (the candidates pooled, like the usable share)."""
+    num = den = 0.0
+    for b in tm.get("per_boot", {}).values():
+        m, w = jnum(b.get("roughness"), "mean"), jnum(b, "candidates")
+        if fin(m) and fin(w) and w > 0:
+            num += m * w
+            den += w
+    return num / den if den else None
 
 
 def t3(ex, explicit, compare=None):
@@ -555,9 +579,11 @@ def t4(ex, explicit):
         rows.append(Row(T, "phone largest gap", "n/a", f"< {PHONE_GAP_WARN_MS:.0f} ms", st, why))
     else:
         off = None
-        m = re.search(r"offset_ms=(-?\d+(?:\.\d+)?)", txt)
+        m = re.search(r"(?:Clock base check:|phone_clock_check)\s+offset_ms=\s*([+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?|[+-]?(?:nan|inf(?:inity)?))", txt, re.IGNORECASE)
         if m:
             off = float(m.group(1))
+            if not math.isfinite(off):
+                off = None
         if off is None:
             rows.append(Row(T, "phone clock offset", "not recorded", line_off, FAIL, "phone-motion.csv carries no phone_clock_check offset, so the sensor clock base is unknown"))
         else:
@@ -574,8 +600,11 @@ def t4(ex, explicit):
             rate = (n - 1) / span if span > 0 else NAN
             lo, hi = PHONE_ROWS_PER_S
             wl, wh = PHONE_WARN_ROWS_PER_S
-            st = PASS if lo <= rate <= hi else (WARN if wl <= rate <= wh else FAIL)
-            rows.append(Row(T, "phone rows per second", f"{fm(rate)} rows/s ({n} rows over {span:.1f} s, from phone_ns)", line_rows, st, num=rate))
+            if not fin(rate):
+                rows.append(Row(T, "phone rows per second", f"{n} rows over {span:.1f} s", line_rows, NA, "the rows span no time (identical phone_ns), so no rate can be measured"))
+            else:
+                st = PASS if lo <= rate <= hi else (WARN if wl <= rate <= wh else FAIL)
+                rows.append(Row(T, "phone rows per second", f"{fm(rate)} rows/s ({n} rows over {span:.1f} s, from phone_ns)", line_rows, st, num=rate))
             gap = float(np.max(np.diff(t)))
             st = PASS if gap < PHONE_GAP_WARN_MS else (WARN if gap < PHONE_GAP_FAIL_MS else FAIL)
             rows.append(Row(T, "phone largest gap", f"{gap:.0f} ms", f"< {PHONE_GAP_WARN_MS:.0f} ms (fail at {PHONE_GAP_FAIL_MS:.0f})", st, num=gap))
@@ -661,16 +690,21 @@ def run_checks(path, trials, compare=None):
     ex.validate()
     explicit = len(trials) == 1
     rows = []
+    global _COLLECT
     for t in trials:
+        _COLLECT = []
         try:
             if t == "T3":
-                rows += t3(ex, explicit, compare)
+                t3(ex, explicit, compare)
             else:
-                rows += FUNCS[t](ex, explicit)
+                FUNCS[t](ex, explicit)
         except SystemExit as e:
-            rows.append(Row(t, "tool error", "SystemExit", "", FAIL, f"a called analysis tool exited ({e}); this trial could not be judged: treated as a FAIL"))
+            Row(t, "tool error", "SystemExit", "", FAIL, f"a called analysis tool exited ({e}); the rows above are what was judged before it stopped; the rest of this trial is treated as a FAIL")
         except Exception as e:   # never let one malformed file hide the verdict of the others, and never pass it silently
-            rows.append(Row(t, "tool error", type(e).__name__, "", FAIL, f"{e}; this trial could not be judged: treated as a FAIL, check the export by hand"))
+            Row(t, "tool error", type(e).__name__, "", FAIL, f"{e}; the rows above are what was judged before it stopped; the rest of this trial is treated as a FAIL, check the export by hand")
+        finally:
+            rows += _COLLECT
+            _COLLECT = None
     return rows
 
 
@@ -714,6 +748,12 @@ def write_json(path, payload):
 
 def cmd_report(a):
     trials = ORDER if a.trial == "all" else [a.trial]
+    try:
+        for cp in (a.compare or []):
+            Export(cp).validate()
+    except ExportError as e:
+        print(f"ERROR: cannot read a --compare file: {e}. Nothing was judged.", file=sys.stderr)
+        return 2
     try:
         rows = run_checks(a.export, trials, a.compare)
     except ExportError as e:
@@ -785,7 +825,22 @@ def get(rows, trial, prefix):
     return [r for r in rows if r.trial == trial and r.check.startswith(prefix)]
 
 
+_LAST_TMP = None
+
+
 def selftest(d):
+    """Run _selftest in a temporary directory that is always removed, and check that it was."""
+    global _LAST_TMP
+    with tempfile.TemporaryDirectory(prefix="trial_report_selftest_") as tmp:
+        _LAST_TMP = tmp
+        code = _selftest(d, tmp)
+    if os.path.exists(_LAST_TMP):
+        print("FAILED: the selftest left its temporary directory behind: " + _LAST_TMP)
+        return 1
+    return code
+
+
+def _selftest(d, tmp):
     clean = os.path.join(d, "clean.zip")
     if not os.path.exists(clean):
         print(f"selftest needs clean.zip in {d} (see docs/garden-trial-protocol.md, Dress rehearsal)")
@@ -795,7 +850,6 @@ def selftest(d):
     def check(name, cond, detail=""):
         results.append((name, bool(cond), detail))
 
-    tmp = tempfile.mkdtemp(prefix="trial_report_selftest_")
     P = lambda n: os.path.join(tmp, n)   # noqa: E731
 
     # 1. unreadable exports and tool errors are failures, never a quiet exit 0
@@ -935,6 +989,101 @@ def selftest(d):
     nan_row = Row("T9", "x", "n/a", "", INFO, num=NAN).as_dict()
     check("9 a NaN number in a row is written as null", nan_row["number"] is None)
 
+    # ---- second review
+    # R1 an unreadable --compare file exits 2 (not a generic tool-error FAIL)
+    code, _, err = run_cli([clean, "--trial", "T3", "--compare", P("garbage.zip"), clean])
+    check("R1 unreadable --compare file exits 2 with a clear message", code == 2 and "--compare" in err, f"exit {code}")
+    code, _, err = run_cli([clean, "--trial", "T3", "--compare", clean, P("does-not-exist.zip")])
+    check("R1 missing --compare file exits 2", code == 2, f"exit {code}")
+
+    # R2 rows built before an exception survive it
+    real = still_noise_report.analyse_export
+    def boom(*a, **k):
+        raise RuntimeError("synthetic failure")
+    still_noise_report.analyse_export = boom
+    try:
+        rows = run_checks(P("soak.zip"), ["T0"])
+    finally:
+        still_noise_report.analyse_export = real
+    check("R2 an exception mid-trial keeps the earlier rows and adds a FAIL tool error",
+          get(rows, "T0", "health verdict L") and get(rows, "T0", "ping round trips R") and get(rows, "T0", "tool error") and get(rows, "T0", "tool error")[0].status == FAIL,
+          f"{len(rows)} rows")
+
+    # R3 null / non-finite figures are N/A, never FAIL
+    real_an = mag_heading_check.analyse
+    def fake(path, side=None):
+        r = real_an(path, side)
+        r["gyro_rotation_turns"] = {"net_ccw_positive": 1.0, "total_absolute": 3.0}
+        r["yaw_difference_deg"] = {"rms_offset_and_linear_trend_removed": None}
+        return r
+    mag_heading_check.analyse = fake
+    try:
+        rows = run_checks(clean, ["T2"])
+    finally:
+        mag_heading_check.analyse = real_an
+    hd = get(rows, "T2", "magnetometer heading")
+    check("R3 a null heading RMS is N/A, not FAIL", hd and hd[0].status == NA, hd[0].status if hd else "no row")
+    def same_ns(h, rows):
+        i = h.index("phone_ns")
+        for r in rows:
+            r[i] = "7200000000000"
+        return rows
+    mutate(clean, P("phone-same-ns.zip"), {"phone-motion.csv": edit_csv(same_ns)})
+    rows = run_checks(P("phone-same-ns.zip"), ["T4"])
+    pr = get(rows, "T4", "phone rows per second")
+    check("R3 phone rows with zero time span: rate N/A, not FAIL", pr and pr[0].status == NA, pr[0].status if pr else "no row")
+
+    # R4 missing session-health.json / clock-sync-fit.json: named trial FAILs, 'all' is N/A, rows always present
+    mutate(clean, P("nohealth.zip"), {"session-health.json": None, "clock-sync-fit.json": None})
+    for trials, want in ((["T0"], FAIL), (ORDER, NA)):
+        rows = run_checks(P("nohealth.zip"), trials)
+        sel = [r for r in rows if r.trial == "T0" and r.check.split(" ")[0] in ("health", "flash", "live", "gaps", "single") and r.check.split(" ")[-1] in ("L", "R")]
+        check(f"R4 missing health and fit files, {'named T0' if want == FAIL else 'all'}: {len(sel)} rows, all {want}",
+              len(sel) == 10 and all(r.status == want for r in sel), "; ".join(f"{r.check}={r.status}" for r in sel if r.status != want))
+
+    # R5 the slope is the live stream's, not the first stream's
+    def slopes(o):
+        for s in o["boots"][0]["streams"]:
+            s["clock_slope_ppm"] = 10.0 if s["source"] == "live" else 500.0
+    mutate(clean, P("slope-live.zip"), {"session-health.json": edit_json(slopes)})
+    sl = get(run_checks(P("slope-live.zip"), ["T0"]), "T0", "clock slope L")
+    check("R5 live slope is used and labelled live (flash 500 ppm ignored)", sl and sl[0].status == PASS and "+10.0" in sl[0].value and "live" in sl[0].value, sl[0].value if sl else "no row")
+    def live_null(o):
+        for s in o["boots"][0]["streams"]:
+            s["clock_slope_ppm"] = None if s["source"] == "live" else 500.0
+    mutate(clean, P("slope-flash-only.zip"), {"session-health.json": edit_json(live_null)})
+    sl = get(run_checks(P("slope-flash-only.zip"), ["T0"]), "T0", "clock slope L")
+    check("R5 a flash-only health slope is never labelled 'health live stream'", sl and "500" not in sl[0].value and "health live" not in sl[0].value, sl[0].value if sl else "no row")
+
+    # R6 null per-boot entry in clock-sync-fit.json
+    def null_r(o):
+        o["R"] = None
+    mutate(clean, P("fit-null.zip"), {"clock-sync-fit.json": edit_json(null_r)})
+    rows = run_checks(P("fit-null.zip"), ["T0"])
+    check("R6 clock-sync-fit.json with R: null does not raise", not get(rows, "T0", "tool error") and get(rows, "T0", "single clock epoch R")[0].status == NA)
+
+    # R7 one check name whatever the outcome
+    names_moving = {r.check for r in run_checks(clean, ["T0"]) if r.check.startswith("gyro bias")}
+    names_still = {r.check for r in run_checks(P("soak.zip"), ["T0"]) if r.check.startswith("gyro bias")}
+    check("R7 still-noise check has the same name for a moving and a still recording", names_moving == names_still == {"gyro bias and drift L", "gyro bias and drift R"}, f"{sorted(names_moving)} vs {sorted(names_still)}")
+
+    # R8 phone clock offset forms
+    def with_offset(text):
+        return lambda data: data.decode("utf-8").replace("offset_ms=-0.425", "offset_ms=" + text).encode("utf-8")
+    for text, want, val in (("-1.5e-1", PASS, -0.15), ("+2.0", PASS, 2.0), ("NaN", FAIL, None), ("60.0", FAIL, 60.0)):
+        mutate(clean, P("off.zip"), {"phone-motion.csv": with_offset(text)})
+        of = get(run_checks(P("off.zip"), ["T4"]), "T4", "phone clock offset")
+        check(f"R8 offset_ms={text} -> {want}" + (" (not recorded)" if val is None else ""),
+              of and of[0].status == want and ((val is None and of[0].value == "not recorded") or (val is not None and abs(of[0].num - val) < 1e-9)), of[0].value if of else "no row")
+
+    # R10 roughness is weighted by candidates, like the usable share
+    def boot(n, rough):
+        return {"candidates": n, "usable": n, "roughness": {"mean": rough, "sd": 1.0}}
+    smooth = {"per_boot": {"L": boot(20, 5.0), "R": boot(20, 5.0)}, "boot_agreement": {}}
+    rough = {"per_boot": {"L": boot(2, 20.0), "R": boot(18, 3.0)}, "boot_agreement": {}}
+    st = get(compare_summaries(smooth, rough), "T3", "rough vs smooth: usable share or roughness")[0].status
+    check("R10 a 2-candidate boot cannot drive the roughness direction (pooled 4.7 < 5, not the unweighted 11.5)", st != PASS and abs(mean_roughness(rough) - 4.7) < 1e-9, f"{st}, pooled {mean_roughness(rough)}")
+
     w = max(len(n) for n, _, _ in results)
     for n, ok, dtl in results:
         print(f"{n.ljust(w)} | {'ok' if ok else 'FAILED'}" + ("" if ok or not dtl else f" | {dtl}"))
@@ -962,8 +1111,8 @@ def build_expectations():
             nofail(z, t, "a clean session has no FAIL in " + t)
     E.append(Expect("clean.zip", "T1", "stomp minus ping", (PASS,), "clean stomp and ping agree"))
     E.append(Expect("clean.zip", "T2", "magnetometer heading", (NA,), "the garden session has no turn on the spot: N/A, not a verdict"))
-    E.append(Expect("clean.zip", "T0", "gyro bias drift and noise", (NA,), "moving recording: still-noise is N/A under 'all'"))
-    E.append(Expect("clean.zip", "T0", "gyro bias drift and noise", (WARN,), "moving recording: still-noise is WARN when T0 is named", explicit=True))
+    E.append(Expect("clean.zip", "T0", "gyro bias and drift", (NA,), "moving recording: still-noise is N/A under 'all'"))
+    E.append(Expect("clean.zip", "T0", "gyro bias and drift", (WARN,), "moving recording: still-noise is WARN when T0 is named", explicit=True))
     E.append(Expect("clean.zip", "T3", "rough vs smooth: derivative similarity", (PASS,), "the late right boot lowers left-right similarity (compared with clean-no-lag.zip)"))
     E.append(Expect("clean.zip", "T3", "rough vs smooth: usable share or roughness", (PASS,), "compared with clean-no-lag.zip: equal usable share, slightly rougher right boot"))
     E.append(Expect("clean.zip", "T3", "rough vs smooth: wedge fraction", (WARN,), "synthetic wedge fraction is 0 in both: WARN (cannot separate), never FAIL"))
