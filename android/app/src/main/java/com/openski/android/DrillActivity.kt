@@ -123,8 +123,6 @@ class DrillActivity : Activity() {
     }
 
     private fun t(text: String, type: Snow.Type = Snow.Type.BODY, tint: Int = Snow.INK) = Snow.text(this, text, type, tint)
-    private fun LinearLayout.add(view: android.view.View, top: Int = 0, bottom: Int = 0) =
-        addView(view, LinearLayout.LayoutParams(-1, -2).apply { topMargin = Snow.dp(this@DrillActivity, top); bottomMargin = Snow.dp(this@DrillActivity, bottom) })
     private fun show(actions: List<PhaseLayout.Action> = emptyList(), screen: String = "result", content: LinearLayout.() -> Unit) {
         counter = null; status = null; line = null
         val column = LinearLayout(this).apply {

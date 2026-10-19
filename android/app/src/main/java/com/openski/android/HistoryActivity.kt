@@ -80,7 +80,7 @@ class HistoryActivity : Activity() {
             if (selected) {
                 view.isSelected = true
                 view.contentDescription = "$value, selected"
-                view.background = android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x33000000), Snow.rounded(this, Snow.GLACIER, 28, Snow.INK, 3), null)
+                view.background = android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(Snow.RIPPLE), Snow.rounded(this, Snow.GLACIER, 28, Snow.INK, 3), null)
             }
             column.addView(view, Snow.fullWidth(0, this, 12))
         }

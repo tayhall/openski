@@ -110,8 +110,6 @@ class RunActivity : Activity() {
     }
 
     private fun t(text: String, type: Snow.Type = Snow.Type.BODY, tint: Int = Snow.INK) = Snow.text(this, text, type, tint)
-    private fun LinearLayout.add(view: View, top: Int = 0, bottom: Int = 0) =
-        addView(view, LinearLayout.LayoutParams(-1, -2).apply { topMargin = Snow.dp(this@RunActivity, top); bottomMargin = Snow.dp(this@RunActivity, bottom) })
 
     private fun name(side: String) = if (side == "L") "Left" else "Right"
     private fun clock(ms: Long) = "%d:%02d".format(ms / 60000, ms / 1000 % 60)
@@ -204,7 +202,7 @@ class RunActivity : Activity() {
     }
 
     private fun ready(column: LinearLayout, s: RunState) {
-        column.add(t("Ready to ski?", Snow.Type.DISPLAY))
+        column.add(Snow.titleWithChip(this, "Ready to ski?", Snow.Type.DISPLAY))
         column.add(t(CoachSettingsStore(this).settings.targetLabel(), Snow.Type.STRONG), top = 4)
         column.add(t("Check your boots and earbuds, then start. Your phone goes in your pocket.", Snow.Type.BODY, Snow.INK_SOFT), top = 4, bottom = 16)
         column.add(t(GestureSyncPrompts.READY, Snow.Type.STRONG), bottom = 12)

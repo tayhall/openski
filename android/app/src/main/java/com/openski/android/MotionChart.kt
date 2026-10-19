@@ -39,6 +39,12 @@ class MotionChart(context: Context) : View(context) {
         6,7 -> s.accelX
         else -> sqrt(s.accelX*s.accelX+s.accelY*s.accelY+s.accelZ*s.accelZ)
     } }
+    override fun onInitializeAccessibilityNodeInfo(info: android.view.accessibility.AccessibilityNodeInfo) {
+        super.onInitializeAccessibilityNodeInfo(info)
+        val shown = if(channel in 5..7) roll.filter { it.timeMs in startMs..endMs }.map { when(channel) { 6->it.pitchDegrees; 7->it.yawDegrees; else->it.degrees }.toDouble() }
+            else points.filter { it.timeMs in startMs..endMs }.map { value(it).toDouble() }
+        info.contentDescription = ChartText.motion(channel, shown.size, (startMs-originMs)/1000, (endMs-originMs)/1000, shown.minOrNull(), shown.maxOrNull())
+    }
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         canvas.drawRoundRect(0f,0f,width.toFloat(),height.toFloat(),unit(16f),unit(16f),paint.apply { color=SkiUi.SURFACE_RAISED })
@@ -54,7 +60,7 @@ class MotionChart(context: Context) : View(context) {
         if(high-low<minimumSpan) { val centre=(low+high)/2; low=centre-minimumSpan/2; high=centre+minimumSpan/2 }
         val padding = (high - low) * 0.1f
         low -= padding; high += padding
-        paint.textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP,10f,resources.displayMetrics)
+        paint.textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP,12f,resources.displayMetrics)
         paint.typeface=Typeface.create("sans-serif",Typeface.NORMAL)
         val left = (0..4).maxOf { paint.measureText(String.format(java.util.Locale.US,"%.1f",low+(high-low)*it/4)) }+unit(16f)
         val right = width - unit(14f)

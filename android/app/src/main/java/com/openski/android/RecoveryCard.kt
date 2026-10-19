@@ -62,7 +62,7 @@ class RecoveryCard(context: Context, private val sessionId: String? = null, priv
             addView(body, gap())
             addView(SkiUi.button(context, "Open preparation and recovery") { open() })
         } else {
-            background = Snow.rounded(context, Snow.PAPER, 24, Snow.GLACIER)
+            background = Snow.rounded(context, Snow.PAPER, 24, Snow.EDGE)
             val pad = Snow.dp(context, 18); setPadding(pad, pad, pad, pad)
             addView(Snow.text(context, "Recording recovery", Snow.Type.TITLE), Snow.fullWidth(0, context, 8))
             addView(body, Snow.fullWidth(0, context, 8))

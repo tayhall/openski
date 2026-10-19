@@ -141,9 +141,9 @@ class HomeActivity : Activity() {
         syncBackCallback()
         navItems.forEachIndexed { index, item ->
             val selected = index == tab
-            item.setTextColor(if (selected) Snow.INK else Snow.INK_SOFT)
+            item.setTextColor(if (selected) Snow.PAPER else Snow.INK_SOFT)
             item.setTypeface(resources.getFont(if (selected) R.font.barlow_condensed_bold else R.font.barlow_condensed_semibold))
-            item.background = if (selected) Snow.rounded(this, Snow.GLACIER, 20) else null
+            item.background = if (selected) Snow.rounded(this, Snow.INK, 20) else null
             item.isSelected = selected
         }
     }
@@ -173,12 +173,11 @@ class HomeActivity : Activity() {
         return ScrollView(this).apply { isFillViewport = true; addView(column) }
     }
 
-    private fun LinearLayout.add(view: View, top: Int = 0, bottom: Int = 0) =
-        addView(view, LinearLayout.LayoutParams(-1, -2).apply { topMargin = Snow.dp(this@HomeActivity, top); bottomMargin = Snow.dp(this@HomeActivity, bottom) })
 
     private fun t(text: String, type: Snow.Type = Snow.Type.BODY, tint: Int = Snow.INK) = Snow.text(this, text, type, tint)
     private fun openDrill(drill: Drill) = startActivity(Intent(this, DrillActivity::class.java).putExtra("drill", drill.id))
-    private fun openBoots() = startActivity(Intent(this, MainActivity::class.java))
+    private fun openBoots() = startActivity(Intent(this, BootSetupActivity::class.java).reuseIfOpen())
+    private fun openGeek() = startActivity(Intent(this, MainActivity::class.java))
     private fun openBench() = startActivity(Intent(this, BenchActivity::class.java))
 
     // Onboarding ----------------------------------------------------------------------------------------
@@ -211,7 +210,7 @@ class HomeActivity : Activity() {
                 add(t("Your boots", Snow.Type.HERO), bottom = 8)
                 add(t("Drills score how you roll from boot to boot. Start with demo boots now and pair real sensors when you are ready.", Snow.Type.BODY, Snow.INK_SOFT), bottom = 24)
                 add(Snow.button(this@HomeActivity, "Start with demo boots") { finishOnboarding(false) }, bottom = 12)
-                add(Snow.button(this@HomeActivity, "Pair my boots first", Snow.ButtonKind.SECONDARY) { finishOnboarding(true) })
+                add(Snow.button(this@HomeActivity, "Set up boots first", Snow.ButtonKind.SECONDARY) { finishOnboarding(true) })
                 add(t("Demo boots are simulated and always labelled. They are for learning the drills, not a measurement of your skiing.", Snow.Type.CAPTION, Snow.INK_SOFT), top = 16)
             }
         }
@@ -239,7 +238,7 @@ class HomeActivity : Activity() {
             }
             val inset = Snow.dp(this@HomeActivity, 18)
             setPadding(inset, inset, inset, inset)
-            background = Snow.rounded(this@HomeActivity, if (selected) Snow.GLACIER else Snow.PAPER, 24, if (selected) Snow.INK else Snow.GLACIER, if (selected) 2 else 1)
+            background = Snow.rounded(this@HomeActivity, if (selected) Snow.GLACIER else Snow.PAPER, 24, if (selected) Snow.INK else Snow.EDGE, if (selected) 2 else 1)
             addView(PisteMarker(this@HomeActivity, piste, 30).apply { importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO })
             addView(LinearLayout(this@HomeActivity).apply {
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
@@ -303,7 +302,7 @@ class HomeActivity : Activity() {
         // Whole-day tracking: a secondary action, so "Start a run" stays the one primary on this screen.
         val dayStatus = DayTrackingService.status
         val dayCard = Snow.card(this@HomeActivity, 22, radius = 28)
-        dayCard.addView(t("Ski day", Snow.Type.DISPLAY))
+        dayCard.addView(Snow.titleWithChip(this@HomeActivity, "Ski day", Snow.Type.DISPLAY))
         dayCard.add(t(if (dayStatus.tracking) "Tracking today's runs and lifts. Open the day to see them or stop tracking."
             else "Track the whole day from the phone's GPS: runs, lifts and rests, named from a downloaded resort map. Boots optional. Experimental.",
             Snow.Type.BODY, Snow.INK_SOFT), top = 6)
@@ -375,16 +374,18 @@ class HomeActivity : Activity() {
             progress.week(now).forEach { (day, trained) ->
                 val isToday = day == today
                 val cell = TextView(this@HomeActivity).apply {
-                    text = day.dayOfWeek.getDisplayName(TextStyle.NARROW, Locale.getDefault())
+                    // A tick as well as the orange fill, so a trained day is not shown by colour alone.
+                    text = day.dayOfWeek.getDisplayName(TextStyle.NARROW, Locale.getDefault()) + if (trained) "\n✓" else ""
+                    minHeight = Snow.dp(this@HomeActivity, 48)
                     textSize = 15f; gravity = Gravity.CENTER; includeFontPadding = false
                     typeface = resources.getFont(R.font.barlow_condensed_bold)
                     setTextColor(if (trained) Snow.INK else Snow.INK_SOFT)
                     background = Snow.rounded(this@HomeActivity, if (trained) Snow.ORANGE else Snow.SNOW, 20,
-                        if (isToday) Snow.INK else Snow.GLACIER, if (isToday) 2 else 1)
+                        if (isToday) Snow.INK else Snow.EDGE, if (isToday) 2 else 1)
                     contentDescription = day.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.getDefault()) +
                         if (trained) ", trained" else if (isToday) ", today" else ""
                 }
-                addView(cell, LinearLayout.LayoutParams(0, Snow.dp(this@HomeActivity, 40), 1f).apply {
+                addView(cell, LinearLayout.LayoutParams(0, -2, 1f).apply {
                     marginStart = Snow.dp(this@HomeActivity, 2); marginEnd = Snow.dp(this@HomeActivity, 2)
                 })
             }
@@ -441,7 +442,7 @@ class HomeActivity : Activity() {
             background = Snow.rounded(this@HomeActivity, if (stars > 0) color else if (open) Snow.PAPER else Snow.SNOW, 12, if (open) color else Snow.GLACIER_DEEP, 3)
         }, FrameLayout.LayoutParams(Snow.dp(this, 24), Snow.dp(this, 24), Gravity.CENTER_HORIZONTAL).apply { topMargin = Snow.dp(this@HomeActivity, 16) })
         row.addView(rail, LinearLayout.LayoutParams(Snow.dp(this, 36), -1))
-        val card = Snow.card(this, 16, if (open) Snow.PAPER else Snow.SNOW, 20).apply { alpha = if (open) 1f else .6f }
+        val card = Snow.card(this, 16, if (open) Snow.PAPER else Snow.SNOW, 20)
         val top = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         top.addView(t(drill.title, Snow.Type.TITLE), LinearLayout.LayoutParams(0, -2, 1f))
         if (open) top.addView(StarRow(this, stars, 16))
@@ -520,7 +521,7 @@ class HomeActivity : Activity() {
             }
         }
         add(status, bottom = 12)
-        add(Snow.button(this@HomeActivity, if (paired.isEmpty()) "Pair my boots" else "Prepare boots and recover recordings", if (paired.isEmpty()) Snow.ButtonKind.PRIMARY else Snow.ButtonKind.SECONDARY) {
+        add(Snow.button(this@HomeActivity, if (paired.isEmpty()) "Set up boots" else "Prepare boots and recover recordings", if (paired.isEmpty()) Snow.ButtonKind.PRIMARY else Snow.ButtonKind.SECONDARY) {
             startActivity(Intent(this@HomeActivity, BootSetupActivity::class.java).reuseIfOpen())
         }, bottom = 28)
 
@@ -537,7 +538,7 @@ class HomeActivity : Activity() {
         val geek = Snow.card(this@HomeActivity, 18, Snow.INK)
         geek.addView(t("Raw telemetry and the logbook", Snow.Type.TITLE, Snow.SNOW))
         geek.add(t("Live acceleration, gyro and orientation, the dry-ski test lab, flash recovery, and every saved session with replay, analysis and export.", Snow.Type.BODY, Snow.GLACIER), top = 6)
-        geek.add(Snow.button(this@HomeActivity, "Open Geek mode", Snow.ButtonKind.SECONDARY) { openBoots() }, top = 14)
+        geek.add(Snow.button(this@HomeActivity, "Open Geek mode", Snow.ButtonKind.SECONDARY) { openGeek() }, top = 14)
         geek.add(Snow.button(this@HomeActivity, "Bench tools for a loose board", Snow.ButtonKind.SECONDARY) { openBench() }, top = 10)
         add(geek, bottom = 28)
 

@@ -71,8 +71,6 @@ class CoachingActivity : Activity() {
     }
 
     private fun t(text: String, type: Snow.Type = Snow.Type.BODY, tint: Int = Snow.INK) = Snow.text(this, text, type, tint)
-    private fun LinearLayout.add(view: View, top: Int = 0, bottom: Int = 0) =
-        addView(view, LinearLayout.LayoutParams(-1, -2).apply { topMargin = Snow.dp(this@CoachingActivity, top); bottomMargin = Snow.dp(this@CoachingActivity, bottom) })
 
     private fun change(update: (CoachSettings) -> CoachSettings) {
         settings = update(settings).normalised()
@@ -102,7 +100,7 @@ class CoachingActivity : Activity() {
             val inset = Snow.dp(this@CoachingActivity, 20)
             setPadding(inset, inset, inset, Snow.dp(this@CoachingActivity, 28))
         }
-        column.add(t("Coaching", Snow.Type.HERO), bottom = 8)
+        column.add(Snow.titleWithChip(this, "Coaching", Snow.Type.HERO), bottom = 8)
         column.add(t("Audio cues for pace and depth, so you can ski with the phone in a pocket and listen.", Snow.Type.BODY, Snow.INK_SOFT), bottom = 16)
 
         val status = Snow.card(this, 18)

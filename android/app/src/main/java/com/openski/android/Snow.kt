@@ -24,7 +24,10 @@ object Snow {
     val SNOW = 0xFFF4F7F9.toInt()
     val PAPER = 0xFFFFFFFF.toInt()
     val GLACIER = 0xFFCFE3EC.toInt()
-    val GLACIER_DEEP = 0xFF93B4C4.toInt()
+    val GLACIER_DEEP = 0xFF5F7F91.toInt()
+    /** Card and control outlines: 3:1 against PAPER and SNOW, where GLACIER alone is 1.3:1. */
+    val RIPPLE = 0x33000000
+    val EDGE = 0xFF6F90A2.toInt()
     val INK = 0xFF14232E.toInt()
     val INK_SOFT = 0xFF4A5C69.toInt()
     val ORANGE = 0xFFFF5B2E.toInt()
@@ -43,7 +46,7 @@ object Snow {
         TITLE(22f, R.font.barlow_condensed_semibold),
         BODY(16f, R.font.barlow_regular),
         STRONG(16f, R.font.barlow_medium),
-        CAPTION(13f, R.font.barlow_medium),
+        CAPTION(14f, R.font.barlow_medium),
     }
 
     fun dp(context: Context, value: Int) = (value * context.resources.displayMetrics.density + .5f).toInt()
@@ -68,7 +71,7 @@ object Snow {
 
     fun card(context: Context, padding: Int = 20, fill: Int = PAPER, radius: Int = 24) = LinearLayout(context).apply {
         orientation = LinearLayout.VERTICAL
-        background = rounded(context, fill, radius, GLACIER)
+        background = rounded(context, fill, radius, EDGE)
         val inset = dp(context, padding)
         setPadding(inset, inset, inset, inset)
     }
@@ -99,7 +102,7 @@ object Snow {
                 addState(intArrayOf(-android.R.attr.state_enabled), off)
                 addState(intArrayOf(), shape)
             }
-            background = RippleDrawable(ColorStateList.valueOf(0x33000000), states, null)
+            background = RippleDrawable(ColorStateList.valueOf(RIPPLE), states, null)
             setOnClickListener { onClick() }
         }
 
@@ -121,7 +124,7 @@ object Snow {
                 contentDescription = "Back"
                 isClickable = true
                 isFocusable = true
-                background = RippleDrawable(ColorStateList.valueOf(0x33000000), null, rounded(activity, PAPER, 28))
+                background = RippleDrawable(ColorStateList.valueOf(RIPPLE), null, rounded(activity, PAPER, 28))
                 setOnClickListener { up() }
             }, LinearLayout.LayoutParams(-2, -2))
             addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
@@ -142,6 +145,30 @@ object Snow {
     }
 
     private fun ScrollViewOf(context: Context, child: View) = android.widget.ScrollView(context).apply { addView(child) }
+
+    /** Small label for features whose output is not validated yet; sits beside the title and keeps the caveat visible at a glance. */
+    fun experimentalChip(context: Context) = TextView(context).apply {
+        text = "EXPERIMENTAL"
+        textSize = 12f
+        setTextColor(INK)
+        typeface = context.resources.getFont(R.font.barlow_condensed_bold)
+        includeFontPadding = false
+        letterSpacing = .06f
+        setPadding(dp(context, 8), dp(context, 4), dp(context, 8), dp(context, 4))
+        background = rounded(context, GLACIER, 8, EDGE)
+    }
+
+    /** A title with the experimental chip on its right. */
+    fun titleWithChip(context: Context, title: String, type: Type): LinearLayout = LinearLayout(context).apply {
+        // At large font sizes the chip drops under the title instead of squeezing it.
+        val stacked = context.resources.configuration.fontScale > 1.3f
+        orientation = if (stacked) LinearLayout.VERTICAL else LinearLayout.HORIZONTAL
+        gravity = if (stacked) Gravity.START else Gravity.CENTER_VERTICAL
+        addView(text(context, title, type), LinearLayout.LayoutParams(-2, -2))
+        addView(experimentalChip(context), LinearLayout.LayoutParams(-2, -2).apply {
+            if (stacked) topMargin = dp(context, 6) else marginStart = dp(context, 12)
+        })
+    }
 
     fun fullWidth(topDp: Int = 0, context: Context? = null, bottomDp: Int = 0): LinearLayout.LayoutParams =
         LinearLayout.LayoutParams(-1, -2).apply {
@@ -169,6 +196,10 @@ object Snow {
     }
 }
 
+/** Adds a child to a vertical list at full width with margins in dp, the way every Snow screen lays out its column. */
+fun LinearLayout.add(view: View, top: Int = 0, bottom: Int = 0) =
+    addView(view, LinearLayout.LayoutParams(-1, -2).apply { topMargin = Snow.dp(context, top); bottomMargin = Snow.dp(context, bottom) })
+
 /** Opening a screen that is already in the task brings it back instead of stacking a second copy, so Back cannot loop. */
 fun Intent.reuseIfOpen(): Intent = addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
 
@@ -195,6 +226,8 @@ class PisteMarker(context: Context, private val piste: Piste, sizeDp: Int = 22, 
 /** One to three gold stars, always drawn as three so the maximum is visible. */
 class StarRow(context: Context, private val stars: Int, private val sizeDp: Int = 18) : View(context) {
     private val fill = Paint(Paint.ANTI_ALIAS_FLAG)
+    // Every star gets a dark outline so an empty one is still visible (gold alone is 1.9:1 on white).
+    private val outline = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; color = Snow.INK_SOFT; strokeWidth = Snow.dp(context, 1).toFloat() }
     private val unit = Snow.dp(context, sizeDp)
     private val gap = Snow.dp(context, 3)
     init { contentDescription = "$stars of 3 stars" }
@@ -203,7 +236,7 @@ class StarRow(context: Context, private val stars: Int, private val sizeDp: Int 
         for (index in 0 until 3) {
             fill.color = if (index < stars) Snow.GOLD else Snow.GLACIER
             val cx = index * (unit + gap) + unit / 2f; val cy = unit / 2f; val outer = unit / 2f; val inner = outer * .42f
-            canvas.drawPath(Path().apply {
+            val star = Path().apply {
                 for (point in 0 until 10) {
                     val radius = if (point % 2 == 0) outer else inner
                     val angle = Math.PI / 5 * point - Math.PI / 2
@@ -211,7 +244,8 @@ class StarRow(context: Context, private val stars: Int, private val sizeDp: Int 
                     if (point == 0) moveTo(x, y) else lineTo(x, y)
                 }
                 close()
-            }, fill)
+            }
+            canvas.drawPath(star, fill); canvas.drawPath(star, outline)
         }
     }
 }

@@ -229,8 +229,6 @@ class ResortPickerActivity : Activity() {
     }
 
     private fun t(text: String, type: Snow.Type = Snow.Type.BODY, tint: Int = Snow.INK) = Snow.text(this, text, type, tint)
-    private fun LinearLayout.add(view: View, top: Int = 0, bottom: Int = 0) =
-        addView(view, LinearLayout.LayoutParams(-1, -2).apply { topMargin = Snow.dp(this@ResortPickerActivity, top); bottomMargin = Snow.dp(this@ResortPickerActivity, bottom) })
 
     private fun render() {
         if (destroyed) return

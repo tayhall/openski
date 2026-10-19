@@ -13,14 +13,18 @@ class TurnProfileChart(context: Context): View(context) {
     var positiveLeft = true
     private val paint=Paint(Paint.ANTI_ALIAS_FLAG)
     private fun unit(n: Float)=n*resources.displayMetrics.density
-    init { contentDescription="Mean boot roll profiles. Left direction is lime, right direction is blue." }
+    init { contentDescription=ChartText.turnProfile(emptyList(), true) }
+    override fun onInitializeAccessibilityNodeInfo(info: android.view.accessibility.AccessibilityNodeInfo) {
+        super.onInitializeAccessibilityNodeInfo(info)
+        info.contentDescription = ChartText.turnProfile(profiles, positiveLeft)
+    }
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         canvas.drawRoundRect(0f,0f,width.toFloat(),height.toFloat(),unit(16f),unit(16f),paint.apply { color=SkiUi.SURFACE_RAISED })
         val left=unit(48f); val right=width-unit(24f); val top=unit(28f); val bottom=height-unit(30f)
         if(right<=left || bottom<=top) return
         val maximum=(profiles.maxOfOrNull { it.peakDegrees } ?: 1.0).coerceAtLeast(5.0)*1.1
-        paint.textSize=TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP,10f,resources.displayMetrics)
+        paint.textSize=TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP,12f,resources.displayMetrics)
         paint.strokeWidth=unit(1f)
         for(i in 0..4) {
             val y=bottom-(bottom-top)*i/4

@@ -132,8 +132,6 @@ class SkiDayActivity : Activity() {
     }
 
     private fun t(text: String, type: Snow.Type = Snow.Type.BODY, tint: Int = Snow.INK) = Snow.text(this, text, type, tint)
-    private fun LinearLayout.add(view: View, top: Int = 0, bottom: Int = 0) =
-        addView(view, LinearLayout.LayoutParams(-1, -2).apply { topMargin = Snow.dp(this@SkiDayActivity, top); bottomMargin = Snow.dp(this@SkiDayActivity, bottom) })
 
     private fun trackingLine(s: DayTrackingStatus): String = when {
         s.error != null -> s.error
@@ -158,7 +156,7 @@ class SkiDayActivity : Activity() {
         }
         val data = loaded
         val status = DayTrackingService.status
-        column.add(t("Ski day", Snow.Type.HERO))
+        column.add(Snow.titleWithChip(this, "Ski day", Snow.Type.HERO))
         column.add(t("Runs, lifts and rests from the phone's GPS (and barometer where the phone has one). Experimental: thresholds untested on a real day.",
             Snow.Type.BODY, Snow.INK_SOFT), top = 4, bottom = 16)
 
