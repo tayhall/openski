@@ -99,6 +99,13 @@ class DrillActivity : Activity() {
     }
     override fun onDestroy() { repeatIo.shutdown(); super.onDestroy() }
 
+    // A reused screen showing another drill cannot switch in place, so open the requested drill instead.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        val wanted = intent.getStringExtra("drill")
+        if (wanted != null && wanted != drill.id) { startActivity(Intent(intent).setFlags(0)); finish() }
+    }
+
     override fun onStart() {
         super.onStart()
         bound = bindService(Intent(this, SensorSessionService::class.java), connection, Context.BIND_AUTO_CREATE)

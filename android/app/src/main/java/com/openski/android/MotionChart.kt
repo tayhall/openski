@@ -39,11 +39,11 @@ class MotionChart(context: Context) : View(context) {
         6,7 -> s.accelX
         else -> sqrt(s.accelX*s.accelX+s.accelY*s.accelY+s.accelZ*s.accelZ)
     } }
+    // Built in onDraw from the samples it already filtered, so TalkBack queries never rescan the timeline.
+    private var summary: String? = null
     override fun onInitializeAccessibilityNodeInfo(info: android.view.accessibility.AccessibilityNodeInfo) {
         super.onInitializeAccessibilityNodeInfo(info)
-        val shown = if(channel in 5..7) roll.filter { it.timeMs in startMs..endMs }.map { when(channel) { 6->it.pitchDegrees; 7->it.yawDegrees; else->it.degrees }.toDouble() }
-            else points.filter { it.timeMs in startMs..endMs }.map { value(it).toDouble() }
-        info.contentDescription = ChartText.motion(channel, shown.size, (startMs-originMs)/1000, (endMs-originMs)/1000, shown.minOrNull(), shown.maxOrNull())
+        summary?.let { info.contentDescription = it }
     }
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
@@ -54,6 +54,10 @@ class MotionChart(context: Context) : View(context) {
             val value=when(channel) { 6->it.pitchDegrees; 7->it.yawDegrees; else->it.degrees }
             TimelinePoint(it.side,it.timeMs,SensorSample(0,0,value.toFloat(),0f,0f,0f,0f,0f),"orientation")
         } else points.filter { it.timeMs in startMs..endMs }
+        summary = ChartText.motion(channel, (startMs-originMs)/1000, (endMs-originMs)/1000, listOf("L", "R").map { side ->
+            val values = visible.filter { it.side == side }.map { value(it).toDouble() }
+            ChartText.BootRange(side, values.size, values.minOrNull() ?: 0.0, values.maxOrNull() ?: 0.0)
+        })
         var low = visible.minOfOrNull(::value) ?: 0f
         var high = visible.maxOfOrNull(::value) ?: 1f
         val minimumSpan=when(channel) { in 5..7 -> 10f; in 1..4 -> 0.5f; else -> 1f }

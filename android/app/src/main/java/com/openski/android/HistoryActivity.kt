@@ -51,12 +51,24 @@ class HistoryActivity : Activity() {
         }
     }
     private fun refreshInPlace() {
-        if (rows.size > 100) return // a long paged list is left as it is rather than cut back to one page
-        val token = ++generation; val selected = kind; val source = demo; val keep = rows.size.coerceIn(50, 100)
+        // A load still in flight finishes on its own; a failed one is retried from the start.
+        if (loading) return
+        if (error != null) { load(false); return }
+        val token = ++generation; val selected = kind; val source = demo; val want = rows.size.coerceAtLeast(50)
         io.execute {
-            val result = runCatching { LocalSessionStore(this).use { HistoryStore(it).page(selected, source, null, keep) } }
+            // Re-read as many rows as are shown, plus one to tell whether more remain, in pages the store allows.
+            val result = runCatching { LocalSessionStore(this).use { db ->
+                val history = HistoryStore(db)
+                buildList<HistoryRow> {
+                    while (size <= want) {
+                        val page = history.page(selected, source, lastOrNull()?.let { HistoryCursor(it.time, it.id) }, 100)
+                        addAll(page)
+                        if (page.size < 100) break
+                    }
+                }
+            } }
             runOnUiThread {
-                if (!isDestroyed && token == generation) { result.onSuccess { rows = it; more = it.size == keep }; render() }
+                if (!isDestroyed && token == generation) { result.onSuccess { rows = it.take(want); more = it.size > want }; render() }
             }
         }
     }

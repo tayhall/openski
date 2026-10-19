@@ -239,7 +239,7 @@ class RunActivity : Activity() {
         s.readiness.issues.forEach { issue ->
             column.add(t(issue.message, Snow.Type.STRONG), bottom = 6)
             val label = when (issue.action) {
-                PreparationAction.CONNECT -> "Connect"
+                PreparationAction.CONNECT -> "Connect${issue.side?.let { " · ${name(it)} boot" } ?: ""}"
                 PreparationAction.RECOVER -> "Open recovery${issue.side?.let { " · ${name(it)} boot" } ?: ""}"
                 PreparationAction.AUDIO -> "Choose audio route and test sounds"
                 PreparationAction.STORAGE -> "Manage phone storage"

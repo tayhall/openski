@@ -164,7 +164,7 @@ class BootSetupActivity : Activity() {
 
     private fun update(snapshot: PreparationSnapshot) {
         last = snapshot
-        returnButton.visibility = if (service?.let { activeCapture(it) } != null) View.VISIBLE else View.GONE
+        returnButton.visibility = if (service?.let { activeCaptureScreen(it) } != null) View.VISIBLE else View.GONE
         recoverButton.isEnabled = !snapshot.captureActive && snapshot.recovery.items.any { it.canRetry }
         recoverButton.visibility = if (snapshot.recovery.items.any { it.canRetry }) View.VISIBLE else View.GONE
         connectButton.visibility = if (snapshot.boots.any { it.address != null }) View.VISIBLE else View.GONE
@@ -249,20 +249,20 @@ class BootSetupActivity : Activity() {
         override fun onScanFailed(code: Int) { runOnUiThread { stopScan(); notice.text = "Search failed ($code). Check Bluetooth and permissions, then retry." } }
     }
     /** The screen the user left an active drill, run, coaching session or recording on, if any. */
-    private fun activeCapture(connected: SensorSessionService): Intent? {
-        val drill = connected.drillState()
-        return when {
-            drill.phase !in listOf(DrillPhase.IDLE, DrillPhase.DONE) -> Intent(this, DrillActivity::class.java).putExtra("drill", drill.drill?.id)
-            connected.runState().phase !in listOf(RunPhase.READY, RunPhase.DONE) -> Intent(this, RunActivity::class.java)
-            connected.coachState().running -> Intent(this, CoachingActivity::class.java)
-            connected.sessionId() != null -> Intent(this, MainActivity::class.java)
-            else -> null
-        }?.reuseIfOpen()
+    /** The screen that owns the practice, run, coaching or recording in progress, if any. Checked every second. */
+    private fun activeCaptureScreen(connected: SensorSessionService): Class<out Activity>? = when {
+        connected.drillState().phase !in listOf(DrillPhase.IDLE, DrillPhase.DONE) -> DrillActivity::class.java
+        connected.runState().phase !in listOf(RunPhase.READY, RunPhase.DONE) -> RunActivity::class.java
+        connected.coachState().running -> CoachingActivity::class.java
+        connected.sessionId() != null -> MainActivity::class.java
+        else -> null
     }
 
     private fun returnToCapture() {
         val connected = service ?: return
-        activeCapture(connected)?.let { startActivity(it); return }
-        notice.text = "No practice or recording is active."
+        val screen = activeCaptureScreen(connected) ?: run { notice.text = "No practice or recording is active."; return }
+        val intent = Intent(this, screen).reuseIfOpen()
+        if (screen == DrillActivity::class.java) intent.putExtra("drill", connected.drillState().drill?.id)
+        startActivity(intent)
     }
 }

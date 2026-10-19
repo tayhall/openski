@@ -10,11 +10,15 @@ object ChartText {
 
     private fun number(value: Double) = String.format(Locale.US, "%.1f", value)
 
-    fun motion(channel: Int, samples: Int, startS: Double, endS: Double, low: Double?, high: Double?): String {
+    /** One boot's samples in the visible window. */
+    data class BootRange(val side: String, val samples: Int, val low: Double, val high: Double)
+
+    fun motion(channel: Int, startS: Double, endS: Double, boots: List<BootRange>): String {
         val name = MOTION_CHANNELS.getOrElse(channel) { "Motion" }
         val span = "from ${number(startS)} to ${number(endS)} seconds"
-        val range = if (samples == 0 || low == null || high == null) "No samples in this window."
-            else "$samples samples, lowest ${number(low)}, highest ${number(high)}."
+        val shown = boots.filter { it.samples > 0 }
+        val range = if (shown.isEmpty()) "No samples in this window."
+            else shown.joinToString(" ") { "${if (it.side == "L") "Left" else "Right"} boot: ${it.samples} samples, lowest ${number(it.low)}, highest ${number(it.high)}." }
         return "$name $span. $range Drag to seek, or use left and right arrow keys."
     }
 
