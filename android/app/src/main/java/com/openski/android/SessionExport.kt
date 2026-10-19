@@ -16,7 +16,6 @@ object SessionExport {
         val calibrations = boot.calibrations
         val metadata = JSONObject().put("format_version", 1).put("session_id", session.id)
             .put("test_session",session.testSession)
-            .put("practice_reviews", JSONArray().apply { data.practiceReviews.forEach { put(it.json()) } })
             .put("data_origin",session.origin).put("analysis_settings",settings)
             .put("title", session.title).put("notes", session.notes).put("started_at_ms", session.startedAtMs)
             .put("equipment", session.equipment)
@@ -38,6 +37,7 @@ object SessionExport {
                 .put("estimated_coverage", q.coverage).put("gaps_over_100ms", q.gaps).put("longest_gap_ms", q.longestGapMs)
                 .put("rail_samples", q.railSamples).put("rail_percent", q.railPercent)
                 .put("dropped_before_samples", q.droppedBefore)) } })
+        if (data.practiceReviews.isNotEmpty()) metadata.put("practice_reviews", JSONArray().apply { data.practiceReviews.forEach { put(it.json()) } })
         val correctedTimeline=boot.correctedTimeline
         val orientation=boot.orientation
         val clockSyncs=boot.clockSyncs
