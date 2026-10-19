@@ -59,7 +59,9 @@ class SensorSessionService : Service() {
         onGestureOnly = { side -> activeSessionId?.let { logEvent(it, "$side boot has no time sync; gesture sync only") }; updateInfo(side) }) }
     private data class Wait(val opcode: Int, val timeout: Runnable, val action: (RecorderStatus) -> Unit)
     private val waits = mutableMapOf<String, Wait>()
-    private data class Transfer(val capture: SensorCapture, val validator: TransferValidator, val generation: Int)
+    private data class Transfer(val capture: SensorCapture, val validator: TransferValidator, val generation: Int, var validating: Boolean = false)
+    private val modeRequests = ModeRequestTracker()
+    private var pendingRecoverySides = emptySet<String>() // Refreshed on the I/O executor for passive readiness updates.
     private val transfers = mutableMapOf<String, Transfer>()
     private val transferTimeouts = mutableMapOf<String, Runnable>()
     private var recordingWakeLock: PowerManager.WakeLock? = null
@@ -202,13 +204,13 @@ class SensorSessionService : Service() {
     private val gps by lazy { GpsListener(this) { fix -> runController.onFix(fix) } }
     private val runBoots = object : RunBoots {
         override fun connected(side: String) = clients[side]?.isReady == true
-        override fun productionMode(side: String): Boolean? = if (side in modeSeen) side in productionSides else null
+        override fun productionMode(side: String): Boolean? = if (clients[side]?.isReady == true && side in modeSeen && !modeRequests.pending(side)) side in productionSides else null
+        override fun modeChangePending(side: String): Boolean = modeRequests.pending(side)
         override fun zeroed(side: String) = zeroTracker.isZeroed(side)
         override fun flashRetained(side: String) = recorderStates[side]?.let { it.hasSession || it.recording } == true
         override fun flashFull(side: String) = side in runFullSides
         // A run sets the mode itself, so it goes straight to the boot and skips the app-side recording guard.
-        override fun setProduction(side: String, production: Boolean): Boolean =
-            clients[side]?.command(RecorderCommand.SET_MODE, if (production) 1 else 0) == true
+        override fun setProduction(side: String, production: Boolean): Boolean = requestMode(side, production, ownedRun = true)
         override fun zero(side: String) {
             zeroTracker.requested(side, System.currentTimeMillis())
             clients[side]?.command(RecorderCommand.ZERO)
@@ -269,6 +271,16 @@ class SensorSessionService : Service() {
         override fun earbudsReady() = CoachAudio(this@SensorSessionService, {}, {}).headphonesConnected() ||
             CoachSettingsStore(this@SensorSessionService).settings.allowPhoneSpeaker
         override fun storageOk() = StatFs(filesDir.absolutePath).availableBytes >= 20L * 1024 * 1024
+        override fun preparationIssues(): List<ReadinessIssue> = buildList {
+            if (drillController.active || (activeSessionId != null && activeSessionId != runSessionId) || (coachState.running && !runActive()))
+                add(ReadinessIssue(IssueKind.CAPTURE_CONFLICT, "Another practice, recording or coaching session is active. Return to it before starting a run.", PreparationAction.RETURN_TO_CAPTURE))
+            if (activeSessionId == null) pendingRecoverySides.forEach { side ->
+                add(ReadinessIssue(IssueKind.RETAINED_DATA, "${if (side == "L") "Left" else "Right"} boot recovery is pending. Finish recovery before starting.", PreparationAction.RECOVER, side))
+            }
+            RunController.SIDES.filter { progressStore.sensorAddress(it) != null && progressStore.mounting(it) == null }.forEach {
+                add(ReadinessIssue(IssueKind.MOUNTING, "Choose the ${if (it == "L") "left" else "right"} sensor's mounting before dry-ski drills.", PreparationAction.MOUNTING, it, IssueSeverity.GUIDANCE))
+            }
+        }
     }
     private val runLocation = object : RunLocation {
         override val enabled: Boolean get() = GpsSettings(this@SensorSessionService).enabled
@@ -328,6 +340,11 @@ class SensorSessionService : Service() {
     private var destroyed = false
     private var storageFailed = false
     private var recoveryPaused = false
+        set(value) {
+            if (field == value) return
+            field = value
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean("recovery_paused", value).apply()
+        }
     private var lastInfoPoll = 0L
     private var lastStorageCheck = 0L
     private val orientationTrackers=mutableMapOf<String,BootOrientation.Tracker>()
@@ -342,6 +359,7 @@ class SensorSessionService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        recoveryPaused = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean("recovery_paused", false)
         createNotificationChannel()
         activeSessionId = store.latestOpenSessionId()
         val interrupted = PracticeStore(store).interruptActive(System.currentTimeMillis())
@@ -415,6 +433,7 @@ class SensorSessionService : Service() {
 
     fun connect(side: String, device: BluetoothDevice) {
         if (!canAssign(side, device.address)) return
+        recoveryPaused = false // Explicit assignment/connection resumes recovery; passive observers do not.
         startMonitoring()
         addresses[side] = device.address
         corrections = null
@@ -424,9 +443,11 @@ class SensorSessionService : Service() {
         connectAddress(side, device.address, device)
     }
 
-    fun canAssign(side: String, address: String): Boolean = side in listOf("L","R") &&
-        addresses[if(side=="L") "R" else "L"]!=address &&
-        (addresses[side] == address || (!recordingActive() && !store.hasPendingRecovery()))
+    private fun assignedAddress(side: String): String? = addresses[side]
+        ?: getSharedPreferences(PREFS, MODE_PRIVATE).getString("sensor_$side", null)
+
+    fun canAssign(side: String, address: String): Boolean = AssignmentPolicy.canAssign(side, address,
+        RunController.SIDES.associateWith(::assignedAddress), recordingActive() || store.hasPendingRecovery())
 
     fun restoreConnections() {
         listOf("L", "R").forEach { side ->
@@ -437,10 +458,11 @@ class SensorSessionService : Service() {
         }
     }
 
+    fun resumeSavedConnections() { recoveryPaused = false; restoreConnections() }
+
     private fun startMonitoring() {
         if (monitoring) return
         monitoring = true
-        recoveryPaused = false
         try {
             startForegroundService(Intent(this, SensorSessionService::class.java).setAction(ACTION_MONITOR))
             ensureForeground()
@@ -474,8 +496,8 @@ class SensorSessionService : Service() {
 
     fun swapSensors(): Boolean {
         if (recordingActive() || transfers.isNotEmpty() || store.hasPendingRecovery()) return false
-        val left = addresses["L"]
-        val right = addresses["R"]
+        val left = assignedAddress("L")
+        val right = assignedAddress("R")
         listOf("L", "R").forEach { invalidate(it); clients.remove(it)?.disconnect()
             reconnectTasks.remove(it)?.let(mainHandler::removeCallbacks) }
         val edit = getSharedPreferences(PREFS, MODE_PRIVATE).edit()
@@ -486,11 +508,12 @@ class SensorSessionService : Service() {
         addresses.clear()
         sensorStatuses.clear()
         sensorInfo.clear()
-        restoreConnections()
+        runCatching { restoreConnections() }.onFailure { reportStatus("L", "Assignments saved; connect boots to continue") }
         return true
     }
 
     private fun invalidate(side: String) {
+        zeroTracker.disconnected(side)
         generations[side] = (generations[side] ?: 0) + 1
         waits.remove(side)?.let { mainHandler.removeCallbacks(it.timeout) }
         transfers.remove(side)
@@ -502,6 +525,7 @@ class SensorSessionService : Service() {
         clients.remove(side)?.disconnect()
         recorderSupported.remove(side)
         recorderStates.remove(side)
+        modeSeen.remove(side); modeRequests.clear(side)
         lastSampleTime.remove(side)
         batteryLevels.remove(side)
         batteryTimes.remove(side)
@@ -606,12 +630,15 @@ class SensorSessionService : Service() {
         recorderStates[side] = status
         if (status.production) productionSides.add(side) else productionSides.remove(side)
         modeSeen.add(side)
+        if (status.opcode == (RecorderCommand.SET_MODE or 0x80))
+            modeRequests.acknowledged(side, status.result, status.production)
         if (runSessionId != null && status.full) runFullSides.add(side)
         updateInfo(side)
         if (status.opcode == 0x85) {
             val transfer = transfers[side] ?: return
             transferTimeouts.remove(side)?.let(mainHandler::removeCallbacks)
             if (!transfer.validator.complete(status)) { retryFlash(side, "Incomplete download; flash retained"); return }
+            transfer.validating = true
             // All chunk writes have already been queued on this same executor.
             io.execute {
                 try {
@@ -812,6 +839,7 @@ class SensorSessionService : Service() {
 
     private fun pauseRecovery() {
         recoveryPaused = true
+        monitoring = false
         listOf("L", "R").forEach { side ->
             invalidate(side)
             clients.remove(side)?.disconnect()
@@ -886,6 +914,7 @@ class SensorSessionService : Service() {
     /** Starts a run. Returns null if it started, otherwise the reason it could not. */
     fun startRun(demo: Boolean): String? {
         if (drillController.active) return "A practice set is active. Return to it or finish it first."
+        if (!demo && (transfers.isNotEmpty() || store.hasPendingRecovery())) return "Finish sensor recovery before starting a run. Open preparation and recovery."
         val reason = runController.start(System.currentTimeMillis(), demo)
         if (reason == null) {
             runStartedMonitoring = !monitoring
@@ -927,7 +956,10 @@ class SensorSessionService : Service() {
     /** Stop waiting for the boots' data; recovery carries on in the background and the boot modes are left as they are. */
     fun abandonRunSave() { runController.abandonSave(System.currentTimeMillis()); runListener?.invoke(runState()) }
     fun resetRun() { runController.reset(); runListener?.invoke(runState()) }
-    fun setOnSnowMode(production: Boolean) { if (drillController.active) return; runController.setOnSnowMode(production); runListener?.invoke(runState()) }
+    fun setOnSnowMode(production: Boolean) {
+        if (recordingActive() || transfers.isNotEmpty() || store.hasPendingRecovery()) return
+        runController.setOnSnowMode(production); runListener?.invoke(runState())
+    }
 
     private fun runFinished() {
         if (runStartedMonitoring) { monitoring = false; runStartedMonitoring = false }
@@ -1017,19 +1049,59 @@ class SensorSessionService : Service() {
 
     /** Boots with a live, ready link; only these can take a command. */
     fun connectedSides(): List<String> = clients.filterValues { it.isReady }.keys.sorted()
+    fun canConfigureMounting(): Boolean = !recordingActive() && !coachState.running
 
     /** Ask a boot to recapture its neutral pose from the next still second. Stand upright and still first. */
-    fun zeroSensor(side: String): Boolean = !drillController.active && clients[side]?.command(RecorderCommand.ZERO) == true
+    fun zeroSensor(side: String): Boolean {
+        if (recordingActive() || transfers.isNotEmpty() || store.hasPendingRecovery()) return false
+        zeroTracker.requested(side, System.currentTimeMillis())
+        return clients[side]?.command(RecorderCommand.ZERO) == true
+    }
 
     /** Production turns the boot's Wi-Fi and raw stream off to save battery; diagnostics turns them back on. */
     fun setSensorMode(side: String, production: Boolean): Boolean {
-        if (ProductionModeRule.blockedReason(recordingActive(), transfers.isNotEmpty() || waits.isNotEmpty(), production) != null) return false
-        return clients[side]?.command(RecorderCommand.SET_MODE, if (production) 1 else 0) == true
+        return requestMode(side, production, ownedRun = false)
+    }
+
+    private fun requestMode(side: String, production: Boolean, ownedRun: Boolean): Boolean {
+        if ((!ownedRun && recordingActive()) || transfers.isNotEmpty() || store.hasPendingRecovery()) return false
+        if (clients[side]?.isReady != true) return false
+        val now = SystemClock.elapsedRealtime()
+        if (!modeRequests.shouldSend(side, production, now)) return true
+        val queued = clients[side]?.command(RecorderCommand.SET_MODE, if (production) 1 else 0) == true
+        if (queued) modeRequests.queued(side, production, now)
+        return queued
+    }
+
+    /** Main-thread snapshot of runtime facts; persisted captures are read on the existing I/O executor. */
+    fun loadPreparation(sessionId: String? = null, callback: (Result<PreparationSnapshot>) -> Unit) {
+        val boots = RunController.SIDES.map { side -> BootPreparation(side, progressStore.sensorAddress(side),
+            clients[side]?.isReady == true, progressStore.mounting(side)?.label(progressStore.landmarks()),
+            runBoots.productionMode(side), zeroTracker.isZeroed(side), batteryLevels[side]) }
+        val progress = transfers.values.associate { t -> t.capture.id to (t.validator.next * 100L / maxOf(1, t.validator.expected)).toInt() }
+        val validating = transfers.values.filter { it.validating }.map { it.capture.id }.toSet()
+        val failed = flashRetries.filterValues { it >= 3 }.keys.toSet()
+        val paused = recoveryPaused
+        val storage = storageFailed
+        val active = activeSessionId
+        val busy = recordingActive() || coachState.running
+        io.execute {
+            val result = runCatching {
+                val items = store.recoveryCaptures(sessionId).map { c -> RecoverySummary.item(c, progress[c.id], c.id in validating,
+                    paused, storage || c.side in failed, active, store.hasCommittedCopy(c.id)) }
+                items to store.pendingRecoverySides()
+            }
+            mainHandler.post { if (!destroyed) {
+                result.onSuccess { pendingRecoverySides = it.second }
+                callback(result.mapCatching { (items, _) -> PreparationSnapshot(boots, runController.readiness(), RecoveryReport(items), busy) })
+            } }
+        }
     }
 
     /** Why production mode cannot be entered right now, or null if it can. */
     fun productionBlockedReason(): String? =
-        ProductionModeRule.blockedReason(recordingActive(), transfers.isNotEmpty() || waits.isNotEmpty())
+        if (store.hasPendingRecovery()) "Finish sensor recovery before changing boot mode."
+        else ProductionModeRule.blockedReason(recordingActive(), transfers.isNotEmpty() || waits.isNotEmpty())
 
     fun calibrateTest(side: String, axis: Int, sign: Int, completed: (String)->Unit) {
         if (drillController.active) { completed("A practice set owns calibration. Finish it first."); return }

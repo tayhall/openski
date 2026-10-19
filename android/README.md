@@ -59,6 +59,14 @@ Snow actions use native buttons; navigation and comparison windows expose select
 
 Run results open their exact saved session. Drill results open a persisted attempt summary by ID, including standalone legacy/demo attempts. Missing raw sessions leave the practice summary intact and show an explanation. “Continue saving in background” retains the existing recovery behaviour and explains that boots remain in On snow mode until switched back.
 
+## Guided boot preparation and recovery
+
+Boots → Pair my boots / Prepare boots and recover recordings opens the guided setup screen. Search uses the existing OpenSki BLE service filter; assign discovered sensors to Left or Right, choose mounting, and request neutral zero while standing still. Saved assignments and live connection status are separate. Recording and pending recovery protect replacement, forgetting and swaps. Advanced telemetry and recording export remain available from Review/export recordings and advanced tools.
+
+Run readiness lists all blockers with actions for connection, recovery, audio, active capture and phone storage. Mounting guidance applies to dry-ski drills and does not unnecessarily block runs; runs still perform their own neutral zero. GPS remains optional. Shared recovery cards on Today, Run and saved results distinguish downloading, phone-copy validation, checked copies awaiting sensor erase, paused recovery and failures. Reopening setup reads persisted capture state; opening it does not itself resume paused recovery. Connect saved boots and resume recovery or Recover saved recordings / retry resumes explicitly.
+
+Both mode directions are guarded during capture and retained-data recovery. Return to Training becomes available when recovery permits it; the reported mode and neutral-zero status require sensor confirmation. Queuing a mode command does not count as restored mode. Reconnect clears the old neutral report until the sensor sends a fresh one.
+
 ## Windows USB debugging
 
 Google's signed USB driver must be installed for Pixel debugging, not just Microsoft's generic WinUSB driver. The Pixel should appear as **Android Composite ADB Interface** in Device Manager. If it appears as a generic Pixel/WinUSB device and ADB cannot see it, install **Google USB Driver** from Android Studio's SDK Manager, then bind the driver through Device Manager or an administrator `pnputil /add-driver <android_winusb.inf> /install` command. Reconnect once after installation and accept the phone's debugging prompt. See [Google USB driver](https://developer.android.com/studio/run/win-usb).

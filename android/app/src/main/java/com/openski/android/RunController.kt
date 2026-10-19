@@ -15,6 +15,8 @@ interface RunBoots {
     fun flashFull(side: String): Boolean
     /** Sends the mode to the boot. False if it could not be delivered (the boot is not connected). */
     fun setProduction(side: String, production: Boolean): Boolean
+    /** A queued mode command still awaits the boot's acknowledgement. */
+    fun modeChangePending(side: String): Boolean = false
     fun zero(side: String)
     /** Starts the phone session (which starts each boot's recorder) and coaching. Null if it started, otherwise the reason it could not. */
     fun beginSession(demo: Boolean): String?
@@ -27,6 +29,7 @@ interface RunBoots {
     fun flashSaveFailed(): Boolean
     fun earbudsReady(): Boolean
     fun storageOk(): Boolean
+    fun preparationIssues(): List<ReadinessIssue> = emptyList()
 }
 
 /** Phone location for a run. The service implements it; tests fake it. */
@@ -64,7 +67,14 @@ interface RunSink {
     fun fix(fix: GpsFix) {}
 }
 
-data class Readiness(val ok: Boolean, val reason: String?)
+data class Readiness(val ok: Boolean, val reason: String?, val issues: List<ReadinessIssue> = emptyList()) {
+    companion object {
+        fun from(issues: List<ReadinessIssue>): Readiness {
+            val blocker = issues.firstOrNull { it.severity == IssueSeverity.BLOCKER }
+            return Readiness(blocker == null, blocker?.message, issues)
+        }
+    }
+}
 
 data class RunSummary(
     val durationMs: Long, val endedBy: RunEnd, val turns: Map<String, Int>,
@@ -127,15 +137,19 @@ class RunController(
     private val fixes = mutableListOf<GpsFix>()
 
     fun readiness(forDemo: Boolean = false): Readiness {
+        val issues = mutableListOf<ReadinessIssue>()
         if (!forDemo) {
-            SIDES.firstOrNull { !boots.connected(it) }?.let { return Readiness(false, "Connect your ${name(it)} boot") }
-            SIDES.firstOrNull { boots.flashRetained(it) }?.let {
-                return Readiness(false, "The ${name(it)} boot still holds an unsaved recording. Open Geek mode and tap Recover sensor flash")
+            SIDES.filter { !boots.connected(it) }.forEach {
+                issues += ReadinessIssue(IssueKind.CONNECTION, "Connect your ${name(it)} boot", PreparationAction.CONNECT, it)
+            }
+            SIDES.filter { boots.flashRetained(it) }.forEach {
+                issues += ReadinessIssue(IssueKind.RETAINED_DATA, "The ${name(it)} boot still holds an unsaved recording. Recover it before starting.", PreparationAction.RECOVER, it)
             }
         }
-        if (!boots.earbudsReady()) return Readiness(false, "Connect earbuds, or allow the phone speaker in the coaching settings")
-        if (!boots.storageOk()) return Readiness(false, "Phone storage is too low to record")
-        return Readiness(true, null)
+        if (!boots.earbudsReady()) issues += ReadinessIssue(IssueKind.AUDIO_ROUTE, "Connect earbuds, or allow the phone speaker in the coaching settings", PreparationAction.AUDIO)
+        if (!boots.storageOk()) issues += ReadinessIssue(IssueKind.STORAGE, "Phone storage is too low to record", PreparationAction.STORAGE)
+        issues += boots.preparationIssues().filter { !forDemo || it.kind in listOf(IssueKind.CAPTURE_CONFLICT, IssueKind.STORAGE) }
+        return Readiness.from(issues.distinctBy { it.kind to it.side })
     }
 
     /** Flips both connected boots between training (false) and on-snow (true) mode. Only outside a run. */
@@ -204,7 +218,7 @@ class RunController(
 
     /** Delivers a mode restore that could not be sent earlier. Call when a boot reconnects. */
     fun retryRestore() {
-        for (side in pendingRestore.toList()) if (boots.connected(side) && boots.setProduction(side, false)) pendingRestore.remove(side)
+        for (side in pendingRestore.toList()) if (boots.connected(side) && restoreConfirmed(side)) pendingRestore.remove(side)
     }
 
     /** Leaves the Done screen. */
@@ -343,9 +357,16 @@ class RunController(
 
     /** Puts back the mode of every boot this run switched to on-snow. A command that cannot be delivered is kept and retried. */
     private fun restoreMode() {
-        for (side in changed.toList()) if (boots.setProduction(side, false)) changed.remove(side)
+        for (side in changed.toList()) if (restoreConfirmed(side, mustRequest = true)) changed.remove(side)
         pendingRestore.addAll(changed)
         changed.clear()
+    }
+
+    /** Queuing a command is not an acknowledgement of the boot's resulting mode. */
+    private fun restoreConfirmed(side: String, mustRequest: Boolean = false): Boolean {
+        if (!mustRequest && boots.productionMode(side) == false && !boots.modeChangePending(side)) return true
+        val queued = boots.setProduction(side, false)
+        return queued && boots.productionMode(side) == false && !boots.modeChangePending(side)
     }
 
     private fun name(side: String) = if (side == "L") "left" else "right"
@@ -360,7 +381,7 @@ class RunController(
         const val DEMO_SAVE_MS = 6_000L
         /** Give up waiting for the boots' data after this long; the recovery carries on in the service. */
         const val SAVE_TIMEOUT_MS = 30 * 60_000L
-        const val FAILED_MESSAGE = "Saving did not finish. The boots keep their data and stay in on-snow mode; open Geek mode and tap Recover sensor flash."
+        const val FAILED_MESSAGE = "Saving did not finish. The boots keep their data and stay in on-snow mode; open preparation and retry recovery."
         const val LATER_MESSAGE = "Saving carries on in the background. Check the logbook, then switch the boots back to Training when it has finished."
     }
 }

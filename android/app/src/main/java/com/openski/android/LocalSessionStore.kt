@@ -453,6 +453,23 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
         "SELECT 1 FROM captures WHERE state NOT IN ('erased','unavailable','lost') LIMIT 1", null,
     ).use { it.moveToFirst() }
 
+    @Synchronized fun pendingRecoverySides(): Set<String> = readableDatabase.rawQuery(
+        "SELECT DISTINCT side FROM captures WHERE state NOT IN ('erased','unavailable','lost')", null,
+    ).use { c -> buildSet { while (c.moveToNext()) add(c.getString(0)) } }
+
+    /** Only validateDownload commits rows here; a later retry never deletes the validated copy until replacement validates. */
+    @Synchronized fun hasCommittedCopy(captureId: String): Boolean = readableDatabase.rawQuery(
+        "SELECT 1 FROM flash_samples WHERE capture_id=? LIMIT 1", arrayOf(captureId),
+    ).use { it.moveToFirst() }
+
+    /** Pending work plus the latest capture session, or all captures of one exact result. */
+    @Synchronized fun recoveryCaptures(sessionId: String? = null): List<SensorCapture> =
+        if (sessionId != null) captures(sessionId) else readableDatabase.rawQuery(
+            "SELECT id,session_id,side,address,started_at_ms,state,expected,dropped,error,record_format FROM captures " +
+                "WHERE state NOT IN ('erased','unavailable','lost') OR session_id=(SELECT session_id FROM captures ORDER BY started_at_ms DESC,rowid DESC LIMIT 1) ORDER BY started_at_ms", null,
+        ).use { c -> buildList { while (c.moveToNext()) add(SensorCapture(c.getString(0), c.getString(1), c.getString(2),
+            c.getString(3), c.getLong(4), c.getString(5), c.getInt(6), c.getInt(7), c.getString(8), c.getInt(9))) } }
+
     @Synchronized fun beginDownload(id: String) { writableDatabase.delete("download_samples", "capture_id=?", arrayOf(id)) }
 
     @Synchronized fun saveDownload(id: String, chunk: FlashChunk) {

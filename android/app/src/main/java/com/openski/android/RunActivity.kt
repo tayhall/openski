@@ -146,7 +146,7 @@ class RunActivity : Activity() {
     /** Rebuilds the screen only when something other than a running clock or counter changed, so taps are never lost. */
     private fun apply(update: RunState) {
         modeLabel = modeSummary()
-        val signature = listOf(update.phase, update.message, update.readiness.reason, update.zeroTimedOut, update.zeroed,
+        val signature = listOf(update.phase, update.message, update.readiness.issues, update.readiness.reason, update.zeroTimedOut, update.zeroed,
             update.banner, modeLabel, update.summary != null, update.demo, update.connected, update.earbuds,
             gpsStatus().state, gpsSettings.enabled).joinToString("|")
         val previous = state
@@ -227,8 +227,9 @@ class RunActivity : Activity() {
             }, top = 8)
         }
         column.add(status, bottom = 12)
-        column.add(Snow.button(this, "Boot mode: $modeLabel · tap to switch", Snow.ButtonKind.SECONDARY) {
-            service?.setOnSnowMode(modeLabel != "On snow")
+        column.add(t("Reported boot mode: $modeLabel", Snow.Type.STRONG), bottom = 8)
+        column.add(Snow.button(this, "Prepare boots and recover recordings", Snow.ButtonKind.SECONDARY) {
+            startActivity(Intent(this, BootSetupActivity::class.java))
         }, bottom = 10)
         column.add(Snow.button(this, "GPS for runs: ${if (gpsSettings.enabled) "On" else "Off"} · tap to switch", Snow.ButtonKind.SECONDARY) {
             gpsSettings.enabled = !gpsSettings.enabled
@@ -239,7 +240,27 @@ class RunActivity : Activity() {
             startActivity(Intent(this, CoachingActivity::class.java))
         }, bottom = 16)
         if (s.message.isNotEmpty()) column.add(t(s.message, Snow.Type.BODY, Snow.INK_SOFT), bottom = 8)
-        s.readiness.reason?.let { column.add(t(it, Snow.Type.STRONG), bottom = 8) }
+        s.readiness.issues.forEach { issue ->
+            column.add(t(issue.message, Snow.Type.STRONG), bottom = 6)
+            val label = when (issue.action) {
+                PreparationAction.CONNECT -> "Connect ${issue.side?.let(::name) ?: "saved"} boot"
+                PreparationAction.RECOVER -> "Open recovery${issue.side?.let { " · ${name(it)} boot" } ?: ""}"
+                PreparationAction.AUDIO -> "Choose audio route and test sounds"
+                PreparationAction.STORAGE -> "Manage phone storage"
+                PreparationAction.RETURN_TO_CAPTURE -> "Return to active capture"
+                PreparationAction.MOUNTING -> "Set mounting${issue.side?.let { " · ${name(it)} boot" } ?: ""}"
+                PreparationAction.ZERO -> "Prepare neutral zero"
+            }
+            column.add(Snow.button(this, label, Snow.ButtonKind.SECONDARY) {
+                startActivity(when (issue.action) {
+                    PreparationAction.AUDIO -> Intent(this, CoachingActivity::class.java)
+                    PreparationAction.STORAGE -> Intent(android.provider.Settings.ACTION_INTERNAL_STORAGE_SETTINGS)
+                    PreparationAction.RETURN_TO_CAPTURE -> activeCaptureIntent()
+                    else -> Intent(this, BootSetupActivity::class.java)
+                })
+            }, bottom = 10)
+        }
+        if (s.readiness.issues.isEmpty()) s.readiness.reason?.let { column.add(t(it, Snow.Type.STRONG), bottom = 8) }
         notice?.let { column.add(t(it, Snow.Type.STRONG), bottom = 8) }
         val start = Snow.button(this, "Start run") { tryStart(false) }.apply {
             minHeight = Snow.dp(this@RunActivity, 64)
@@ -247,6 +268,17 @@ class RunActivity : Activity() {
         }
         column.add(start, bottom = 10)
         column.add(Snow.button(this, "Try with demo boots", Snow.ButtonKind.QUIET) { tryStart(true) })
+    }
+
+    private fun activeCaptureIntent(): Intent {
+        val connected = service ?: return Intent(this, BootSetupActivity::class.java)
+        val drill = connected.drillState()
+        return when {
+            drill.phase !in listOf(DrillPhase.IDLE, DrillPhase.DONE) -> Intent(this, DrillActivity::class.java).putExtra("drill", drill.drill?.id)
+            connected.coachState().running -> Intent(this, CoachingActivity::class.java)
+            connected.sessionId() != null -> Intent(this, MainActivity::class.java)
+            else -> Intent(this, BootSetupActivity::class.java)
+        }
     }
 
     /** Starts a run and shows the reason on this screen if it could not start. Asks for location once, first. */
@@ -300,11 +332,15 @@ class RunActivity : Activity() {
     private fun saving(column: LinearLayout, s: RunState) {
         column.add(t("Run ended", Snow.Type.HERO))
         column.add(t("Saving boot data. Keep the boots on and nearby; you can ride the lift and close the app.", Snow.Type.BODY, Snow.INK_SOFT), top = 4, bottom = 16)
-        val card = Snow.card(this, 18)
-        progressViews = RunController.SIDES.associateWith { side ->
-            t(progressLine(side, s), Snow.Type.STRONG).also { card.add(it, top = if (side == "L") 0 else 10) }
+        if (s.demo) {
+            val card = Snow.card(this, 18)
+            progressViews = RunController.SIDES.associateWith { side ->
+                t(progressLine(side, s), Snow.Type.STRONG).also { card.add(it, top = if (side == "L") 0 else 10) }
+            }
+            column.add(card, bottom = 16)
+        } else {
+            column.add(RecoveryCard(this, service?.lastRunId()), bottom = 16)
         }
-        column.add(card, bottom = 16)
         column.add(Snow.button(this, "Continue saving in background", Snow.ButtonKind.QUIET) { service?.abandonRunSave() })
         column.add(t("Saving carries on in the background; the boots stay in On snow mode until you switch them back.", Snow.Type.CAPTION, Snow.INK_SOFT), top = 8)
     }
@@ -313,6 +349,7 @@ class RunActivity : Activity() {
         val summary = s.summary
         column.add(t(if (s.message.isEmpty()) "Run saved" else "Run finished", Snow.Type.HERO))
         if (s.message.isNotEmpty()) column.add(t(s.message, Snow.Type.BODY), top = 4)
+        if (!s.demo) column.add(RecoveryCard(this, service?.lastRunId()), top = 12, bottom = 12)
         if (summary != null) {
             val card = Snow.card(this, 18)
             card.add(t("${clock(summary.durationMs)} · ${summary.turns.values.sum()} turns", Snow.Type.DISPLAY))

@@ -108,7 +108,7 @@ class DrillActivity : Activity() {
             add(Snow.button(this@DrillActivity, "Try Demo", if (paired) Snow.ButtonKind.SECONDARY else Snow.ButtonKind.PRIMARY) { begin(true) }, bottom = 10)
             add(t("Demo is simulated and separate from My practice. Measured scores describe dry cuff roll, not skiing technique.", Snow.Type.CAPTION))
             add(Snow.button(this@DrillActivity, "Set up boots", Snow.ButtonKind.QUIET) {
-                startActivity(Intent(this@DrillActivity, MainActivity::class.java))
+                startActivity(Intent(this@DrillActivity, BootSetupActivity::class.java))
             }, top = 12)
         }
     }
@@ -277,6 +277,7 @@ class DrillActivity : Activity() {
 
             if (attempt.eligible && result.passed) unlocked?.let { add(t("Next practice: ${it.title}", Snow.Type.TITLE), bottom = 12) }
             if (!run.demo) add(t("The raw session is in your logbook; sensor recovery may still be pending.", Snow.Type.CAPTION, Snow.INK_SOFT), bottom = 12)
+            attempt.sessionId?.let { add(RecoveryCard(this@DrillActivity, it), bottom = 12) }
             add(Snow.button(this@DrillActivity, "Open saved result", Snow.ButtonKind.SECONDARY) {
                 startActivity(Intent(this@DrillActivity, PracticeResultActivity::class.java).putExtra("attempt_id", attempt.id))
             }, bottom = 10)

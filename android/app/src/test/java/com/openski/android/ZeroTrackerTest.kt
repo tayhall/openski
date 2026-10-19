@@ -30,6 +30,20 @@ class ZeroTrackerTest {
         assertFalse(tracker.isZeroed("R"))
     }
 
+    @Test fun reconnectNeedsAFreshReportWithoutWeakeningPendingZeroTiming() {
+        val tracker = ZeroTracker()
+        tracker.requested("L", 1000)
+        tracker.frame("L", true, 2500)
+        tracker.disconnected("L")
+        assertFalse(tracker.isZeroed("L"))
+        tracker.requested("L", 3000)
+        tracker.disconnected("L")
+        tracker.frame("L", true, 3200)
+        assertFalse(tracker.isZeroed("L"))
+        tracker.frame("L", true, 4200)
+        assertTrue(tracker.isZeroed("L"))
+    }
+
     @Test fun eachBootIsTrackedSeparately() {
         val tracker = ZeroTracker()
         tracker.requested("L", 0); tracker.requested("R", 0)

@@ -174,7 +174,7 @@ class HomeActivity : Activity() {
         store.goal = pickedGoal ?: Goal.CARVING
         store.experience = pickedExperience ?: Experience.NEW
         tab = 0; render()
-        if (pair) openBoots()
+        if (pair) startActivity(Intent(this, BootSetupActivity::class.java))
     }
 
     private fun choice(piste: Piste, title: String, blurb: String, selected: Boolean, onPick: () -> Unit) =
@@ -214,6 +214,7 @@ class HomeActivity : Activity() {
         header.addView(t("OpenSki", Snow.Type.TITLE, Snow.ORANGE), LinearLayout.LayoutParams(0, -2, 1f))
         header.addView(t("${NumberFormat.getInstance().format(progress.vert)} practice points", Snow.Type.TITLE))
         add(header, bottom = 20)
+        add(RecoveryCard(this@HomeActivity, pendingOnly = true), bottom = 16)
 
         val runCard = Snow.card(this@HomeActivity, 22, radius = 28)
         runCard.addView(t("Ready to ski?", Snow.Type.DISPLAY))
@@ -435,12 +436,14 @@ class HomeActivity : Activity() {
             if (address != null) {
                 status.add(t("Mounting: ${store.mounting(side)?.label(store.landmarks()) ?: "not set yet"}", Snow.Type.BODY, Snow.INK_SOFT), top = 2)
                 status.add(Snow.button(this@HomeActivity, "Set mounting", Snow.ButtonKind.QUIET) {
-                    MountingPicker.show(this@HomeActivity, store, side) { render() }
+                    startActivity(Intent(this@HomeActivity, BootSetupActivity::class.java))
                 }.apply { gravity = Gravity.START or Gravity.CENTER_VERTICAL; setPadding(0, paddingTop, paddingRight, paddingBottom) })
             }
         }
         add(status, bottom = 12)
-        add(Snow.button(this@HomeActivity, if (paired.isEmpty()) "Pair my boots" else "Manage sensors", if (paired.isEmpty()) Snow.ButtonKind.PRIMARY else Snow.ButtonKind.SECONDARY) { openBoots() }, bottom = 28)
+        add(Snow.button(this@HomeActivity, if (paired.isEmpty()) "Pair my boots" else "Prepare boots and recover recordings", if (paired.isEmpty()) Snow.ButtonKind.PRIMARY else Snow.ButtonKind.SECONDARY) {
+            startActivity(Intent(this@HomeActivity, BootSetupActivity::class.java))
+        }, bottom = 28)
 
         add(t("Coaching", Snow.Type.DISPLAY), bottom = 6)
         val coaching = Snow.card(this@HomeActivity, 18)

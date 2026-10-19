@@ -18,14 +18,22 @@ class RunControllerTest {
         val refuseMode = mutableSetOf<String>()
         var saved = false
         var failed = false
+        var deferTraining = false
+        var deferModes = false
+        val pendingModes = mutableSetOf<String>()
+        var extraIssues = emptyList<ReadinessIssue>()
+        override fun preparationIssues() = extraIssues
         override fun connected(side: String) = side in connectedSides
         override fun productionMode(side: String) = modes[side]
+        override fun modeChangePending(side: String) = side in pendingModes
         override fun zeroed(side: String) = side in zeroedSides
         override fun flashRetained(side: String) = side in retained
         override fun flashFull(side: String) = side in full
         override fun setProduction(side: String, production: Boolean): Boolean {
             calls.add("mode $side $production")
             if (side in refuseMode) return false
+            if (deferModes) { pendingModes.add(side); return true }
+            if (!production && deferTraining) return true
             modes[side] = production
             return true
         }
@@ -84,6 +92,60 @@ class RunControllerTest {
     @Test fun readyWhenEverythingIsInPlace() {
         assertTrue(run.readiness().ok)
         assertNull(run.readiness().reason)
+    }
+
+    @Test fun readinessReportsEveryBlockerWithItsResolution() {
+        boots.connectedSides.clear(); boots.retained.add("R"); boots.earbuds = false; boots.storage = false
+        val ready = run.readiness()
+        assertFalse(ready.ok)
+        assertEquals("Connect your left boot", ready.reason)
+        assertEquals(listOf(PreparationAction.CONNECT, PreparationAction.CONNECT, PreparationAction.RECOVER,
+            PreparationAction.AUDIO, PreparationAction.STORAGE), ready.issues.map { it.action })
+        assertEquals(listOf("L", "R"), ready.issues.filter { it.kind == IssueKind.CONNECTION }.map { it.side })
+    }
+
+    @Test fun mountingGuidanceDoesNotBlockRunsButCaptureConflictBlocksDemoToo() {
+        boots.extraIssues = listOf(ReadinessIssue(IssueKind.MOUNTING, "Set mounting for drills", PreparationAction.MOUNTING, "L", IssueSeverity.GUIDANCE))
+        assertTrue(run.readiness().ok)
+        boots.extraIssues += ReadinessIssue(IssueKind.CAPTURE_CONFLICT, "Finish practice", PreparationAction.RETURN_TO_CAPTURE)
+        assertFalse(run.readiness().ok)
+        assertFalse(run.readiness(true).ok)
+        assertEquals("Finish practice", run.start(0, demoRun = true))
+        assertTrue(boots.calls.isEmpty())
+    }
+
+    @Test fun queuedTrainingRestoreRemainsPendingUntilReportedModeConfirmsIt() {
+        val start = startAndZero()
+        boots.deferTraining = true
+        run.stop(start + 1000); boots.saved = true; run.tick(start + 2000)
+        assertEquals(true, boots.modes["L"])
+        boots.calls.clear(); run.retryRestore()
+        assertEquals(listOf("mode L false", "mode R false"), boots.calls)
+        boots.modes["L"] = false; boots.modes["R"] = false
+        boots.calls.clear(); run.retryRestore(); run.retryRestore()
+        assertTrue(boots.calls.isEmpty())
+    }
+
+    @Test fun immediateCancelQueuesTrainingBehindTheUnacknowledgedOnSnowCommand() {
+        boots.deferModes = true
+        assertNull(run.start(0))
+        assertEquals(false, boots.modes["L"])
+        boots.calls.clear()
+        run.cancel()
+        assertEquals(listOf("mode L false", "mode R false"), boots.calls)
+
+        // The old Training heartbeat is insufficient while mode commands remain pending.
+        boots.calls.clear(); run.retryRestore()
+        assertEquals(listOf("mode L false", "mode R false"), boots.calls)
+        boots.modes["L"] = true; boots.modes["R"] = true
+        boots.calls.clear(); run.retryRestore()
+        assertEquals(listOf("mode L false", "mode R false"), boots.calls)
+
+        // Acknowledgement of the restoring command completes the obligation without more writes.
+        boots.modes["L"] = false; boots.modes["R"] = false
+        boots.pendingModes.clear()
+        boots.calls.clear(); run.retryRestore(); run.retryRestore()
+        assertTrue(boots.calls.isEmpty())
     }
 
     @Test fun eachMissingConditionGivesItsOwnReason() {

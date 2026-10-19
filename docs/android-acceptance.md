@@ -208,3 +208,14 @@ Whole-day tracking (`DayTrackingService`), the day report, the ski day and resor
 - [x] Emulator portrait at 130% font: completed demo chart and saved attempt summary reviewed visually; Open saved result remained reachable by scrolling. Largest font/display size and landscape remain open.
 - [ ] Open a measured result, demo result and imported historical result; confirm source, saved score and target/unknown-target labels. Delete a linked raw session and confirm the practice result remains readable.
 - [ ] Run saving: Continue saving in background does not stop recovery or imply restored Training mode. Open saved run goes directly to that session, even when newer sessions exist.
+
+## Guided preparation and shared recovery (increment 4)
+
+- [x] JVM, 19 October 2026: all readiness blockers include actions; guidance does not block runs, conflicts block demos, queued mode restoration waits for confirmation, and reconnect requires a fresh zero report. Recovery facts distinguish download/validation/checked-copy/erase and retained-error states. Final focused checks also cover duplicate saved assignments and protected same-owner reconnection.
+- [x] Pixel 9a emulator StorageInstrumentation, 19 October 2026: pending records survive store reopen; global recovery includes older pending work and the latest saved session; exact-session queries stay scoped. Guided setup reopens pending/paused recovery and protects assignment, forgetting and mode changes. Existing staged-recovery/export protections and UI regressions pass.
+- [ ] Real boots: discover and assign Left/Right from guided setup, reject duplicate assignment, reconnect saved sensors, set mounting and neutral zero. Confirm a saved address alone is never described as connected.
+- [ ] Real boots: retain a recording, reconnect and recover from setup without Geek mode. Today, Run and saved results agree on waiting/downloading/validating/checked-copy/erase state. Leave/reopen each screen during recovery.
+- [ ] Pause recovery, recreate the service/process, and reopen setup: paused status remains; connect/resume or retry resumes explicitly. Failed download/erase preserves the checked phone copy and sensor protection as applicable.
+- [ ] Mode/zero: lost command acknowledgement, disconnect/reconnect and failed validation never show false restoration. Training is unavailable until protected recovery is complete. Mode commands do not interrupt active run/drill/manual capture.
+- [ ] Audio route loss, denied Bluetooth permission, Bluetooth off, low phone storage and missing sensor copy have usable recovery paths. GPS refusal still permits a run without GPS.
+- [ ] Field checks: phone screen off, bright light, cold/gloves, battery and real flash-download reliability remain unverified by emulator/JVM checks.
