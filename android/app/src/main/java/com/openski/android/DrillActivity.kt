@@ -33,10 +33,17 @@ class DrillActivity : Activity() {
     private var repeatLoading = false
     private val repeatIo = java.util.concurrent.Executors.newSingleThreadExecutor()
     private var pendingStart: Boolean? = null
+    private var practiceFocus = PracticeFocus.RHYTHM
+    private var focusRestored = false
+    private var focusChosen = false
+    private var targetConfirmed = false
+    private var audioGuided = false
+    private var commandNotice: String? = null
     private var counter: TextView? = null
     private var status: TextView? = null
     private var line: CarvedLineView? = null
     private var mountingDialog: android.app.AlertDialog? = null
+    private var preparationDialog: android.app.AlertDialog? = null
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -56,6 +63,10 @@ class DrillActivity : Activity() {
         drill = Programme.drill(intent.getStringExtra("drill") ?: "") ?: run { finish(); return }
         store = ProgressStore(this)
         if (savedInstanceState?.containsKey("pending_start") == true) pendingStart = savedInstanceState.getBoolean("pending_start")
+        practiceFocus = PracticeFocus.decode(savedInstanceState?.getString("practice_focus")) ?: PracticeFocus.RHYTHM
+        focusRestored = savedInstanceState?.containsKey("practice_focus") == true
+        targetConfirmed = savedInstanceState?.getBoolean("target_confirmed") ?: false
+        audioGuided = savedInstanceState?.getBoolean("audio_guided") ?: false
         showIntro = savedInstanceState?.getBoolean("intro") ?: !intent.getBooleanExtra("resume_active", false)
         frame = FrameLayout(this).apply { setBackgroundColor(Snow.SNOW) }
         preparationExpanded = savedInstanceState?.getBoolean("preparation_expanded") ?: false
@@ -72,7 +83,9 @@ class DrillActivity : Activity() {
                 runOnUiThread {
                     if (!isDestroyed) {
                         repeatLoading = false
-                        loaded.onSuccess { repeat = it; drill = PracticeRepeat.drill(it); notice = "Saved target · ${if (it.demo) "Demo" else "My practice"}. Confirm below; preparation and calibration run again." }
+                        loaded.onSuccess { repeat = it; drill = PracticeRepeat.drill(it)
+                            if (!focusRestored && !focusChosen) it.review?.focus?.let { savedFocus -> practiceFocus = savedFocus }
+                            notice = "Saved target · ${if (it.demo) "Demo" else "My practice"}. Confirm below; preparation and calibration run again." }
                             .onFailure { notice = it.message ?: "Could not load saved target." }
                         if (loaded.isSuccess && pendingStart != null) {
                             pendingStart = null; begin(repeat!!.demo)
@@ -91,6 +104,8 @@ class DrillActivity : Activity() {
     }
     override fun onStop() {
         mountingDialog?.dismiss(); mountingDialog = null
+        preparationDialog?.dismiss(); preparationDialog = null
+        service?.stopPracticeSoundPreview()
         service?.removeDrillObserver(this)
         if (bound) unbindService(connection)
         bound = false; service = null
@@ -100,6 +115,9 @@ class DrillActivity : Activity() {
         pendingStart?.let { state.putBoolean("pending_start", it) }
         state.putBoolean("intro", showIntro)
         state.putBoolean("preparation_expanded", preparationExpanded)
+        state.putString("practice_focus", practiceFocus.name)
+        state.putBoolean("target_confirmed", targetConfirmed)
+        state.putBoolean("audio_guided", audioGuided)
         super.onSaveInstanceState(state)
     }
 
@@ -134,6 +152,34 @@ class DrillActivity : Activity() {
             notice?.let { add(t(it), bottom = 12) }
             add(t(drill.summary), bottom = 12)
             add(t("${drill.movements} rolls · ${drill.paceSeconds} s beat · ${drill.depthDegrees.toInt()}° cuff roll", Snow.Type.STRONG), bottom = 16)
+            add(Snow.button(this@DrillActivity, "Practice focus: ${practiceFocus.label}", Snow.ButtonKind.SECONDARY) {
+                if (preparationDialog?.isShowing != true) preparationDialog = android.app.AlertDialog.Builder(this@DrillActivity).setTitle("Choose one practice focus")
+                    .setSingleChoiceItems(PracticeFocus.entries.map { it.label }.toTypedArray(), practiceFocus.ordinal) { dialog, which ->
+                        practiceFocus = PracticeFocus.entries[which]; focusChosen = true; targetConfirmed = false
+                        dialog.dismiss(); intro()
+                    }.setNegativeButton("Cancel", null).show()
+            }, bottom = 8)
+            add(t(practiceFocus.cue), bottom = 8)
+            add(t(PracticeFocus.SCORING_NOTICE, Snow.Type.CAPTION), bottom = 12)
+            add(android.widget.CheckBox(this@DrillActivity).apply {
+                text = "Audio-guided practice (optional)"; textSize = 16f; setTextColor(Snow.INK)
+                minHeight = Snow.dp(this@DrillActivity, 56)
+                isChecked = audioGuided
+                setOnCheckedChangeListener { _, checked -> audioGuided = checked; targetConfirmed = false }
+            }, bottom = 8)
+            add(Snow.button(this@DrillActivity, "Test sounds and volume", Snow.ButtonKind.SECONDARY) {
+                val connected = service
+                if (connected == null) { notice = "Connecting to the audio service. Try the sound test again."; intro() }
+                else {
+                    notice = connected.playPracticeTestSounds(CoachSettingsStore(this@DrillActivity).settings)
+                        ?: "Listen for three count-in ticks, the start chime, two alternating beat ticks, a completed-movement tone, then the end chime. Confirm the volume before starting."
+                    intro()
+                }
+            }, bottom = 8)
+            add(t("Three count-in ticks prepare you to move. Alternating ticks guide the beat; a short single tone marks each completed movement. Start/end chimes mark the active set. Route or audio-focus loss pauses scoring; reconnect and Resume from neutral. These cues do not signal a new focus score.", Snow.Type.CAPTION), bottom = 8)
+            add(Snow.button(this@DrillActivity, "Audio route and speaker permission", Snow.ButtonKind.QUIET) {
+                startActivity(Intent(this@DrillActivity, CoachingActivity::class.java))
+            }, bottom = 12)
             add(t("Coach's cue", Snow.Type.TITLE), bottom = 6)
             add(t(drill.cue), bottom = 16)
             val details = PreparationDetails(this@DrillActivity, "How to practise", preparationExpanded) { preparationExpanded = it }
@@ -155,6 +201,14 @@ class DrillActivity : Activity() {
     private fun begin(demo: Boolean) {
         if (repeatLoading) { pendingStart = demo; return }
         if (intent.hasExtra("repeat_attempt_id") && repeat == null) { notice = "The saved target is unavailable. Return to the result."; intro(); return }
+        if (!targetConfirmed) {
+            if (preparationDialog?.isShowing == true) return
+            preparationDialog = android.app.AlertDialog.Builder(this).setTitle("Confirm practice target")
+                .setMessage("${practiceFocus.label} · ${drill.movements} rolls · ${drill.paceSeconds} s beat · ${drill.depthDegrees}° cuff roll.\n\n${practiceFocus.cue}\n\n${PracticeFocus.SCORING_NOTICE}\n\nAudio guidance: ${if (audioGuided) "on" else "off"}.")
+                .setNegativeButton("Cancel", null)
+                .setPositiveButton("Use this target") { _, _ -> targetConfirmed = true; begin(demo) }.show()
+            return
+        }
         val needed = buildList {
             if (!demo) {
                 if (Build.VERSION.SDK_INT >= 31) { add(Manifest.permission.BLUETOOTH_SCAN); add(Manifest.permission.BLUETOOTH_CONNECT) }
@@ -174,7 +228,7 @@ class DrillActivity : Activity() {
         if (intent.hasExtra("repeat_attempt_id") && repeat == null) { notice = "The saved target is unavailable. Return to the result."; intro(); return }
         val running = service ?: run { pendingStart = demo; notice = "Connecting to practice service…"; intro(); return }
         showIntro = false; signature = ""
-        val problem = running.startDrill(drill.id, demo, repeat)
+        val problem = running.startDrill(drill.id, demo, repeat, practiceFocus, audioGuided)
         if (problem != null) { notice = problem; showIntro = true; intro() } else apply(running.drillState())
     }
     @Deprecated("Platform permission callback")
@@ -211,7 +265,7 @@ class DrillActivity : Activity() {
             signature = structure
             if (state.phase == DrillPhase.DONE) result(state) else active(state)
         }
-        status?.text = state.message
+        status?.text = listOfNotNull(state.message, commandNotice).joinToString("\n")
         counter?.text = "${state.count} of ${drill.movements}"
         line?.let { chart ->
             if (state.attempt?.demo == true) chart.progress = state.animation
@@ -223,6 +277,14 @@ class DrillActivity : Activity() {
         DrillPhase.SAVE_FAILED -> listOf(PhaseLayout.Action("retry-save", "Retry save") { service?.retryDrillSave() },
             PhaseLayout.Action("discard", "Close without saving", Snow.ButtonKind.SECONDARY) { service?.finishDrill(state.attempt?.id) })
         DrillPhase.SAVING -> emptyList()
+        DrillPhase.PAUSED -> listOf(
+            PhaseLayout.Action("resume", "Resume practice") {
+                service?.let { connected -> commandNotice = connected.resumeDrill(); apply(connected.drillState()) }
+            },
+            PhaseLayout.Action("finish", "Finish practice", Snow.ButtonKind.SECONDARY) { service?.finishDrill(state.attempt?.id) })
+        DrillPhase.RUNNING, DrillPhase.RESUMING, DrillPhase.COUNTDOWN -> listOf(
+            PhaseLayout.Action("pause", "Pause practice") { commandNotice = null; service?.pauseDrill() },
+            PhaseLayout.Action("finish", "Finish practice", Snow.ButtonKind.SECONDARY) { service?.finishDrill(state.attempt?.id) })
         else -> listOf(PhaseLayout.Action("finish", "Finish practice", Snow.ButtonKind.SECONDARY) { service?.finishDrill(state.attempt?.id) })
     }, screen = state.phase.name) {
         add(back(), bottom = 8)
@@ -237,13 +299,17 @@ class DrillActivity : Activity() {
                 }
             }, bottom = 12)
         }
-        if (state.phase == DrillPhase.RUNNING) {
+        if (state.phase in listOf(DrillPhase.RUNNING, DrillPhase.PAUSED, DrillPhase.RESUMING)) {
             val chart = CarvedLineView(this@DrillActivity, state.trace, state.ghost,
                 drill.depthDegrees, Snow.pisteColor(drill.piste), if (state.attempt?.demo == true) "Simulated cuff roll" else "Measured cuff roll")
             line = chart; add(chart, bottom = 12)
             counter = t("${state.count} of ${drill.movements}", Snow.Type.HERO).also { add(it, bottom = 12) }
         }
-        add(t("You can leave this screen or lock the phone. Practice continues in the service; Finish ends the set.", Snow.Type.CAPTION), top = 12)
+        if (state.phase == DrillPhase.COUNTDOWN)
+            add(t("Hold neutral through the count-in. Scoring starts after the countdown; Pause or Finish remain available.", Snow.Type.CAPTION), bottom = 8)
+        if (state.phase in listOf(DrillPhase.PAUSED, DrillPhase.RESUMING))
+            add(t("Paused time and unfinished movements do not count. Raw recording stays active; Resume waits for neutral before scoring again.", Snow.Type.CAPTION), bottom = 8)
+        add(t("Locking the phone continues an active set. Pause is explicit; Finish ends the set.", Snow.Type.CAPTION), top = 12)
     }
 
     private fun result(state: DrillState) {
@@ -283,7 +349,7 @@ class DrillActivity : Activity() {
                 startActivity(Intent(this@DrillActivity, SessionDetailActivity::class.java).putExtra("session_id", id))
             }, bottom = 10)
         }
-        add(Snow.button(this@DrillActivity, "Try again") { showIntro = true; notice = null; signature = ""; intro() }, bottom = 10)
+        add(Snow.button(this@DrillActivity, "Try again") { showIntro = true; notice = null; targetConfirmed = false; signature = ""; intro() }, bottom = 10)
         add(Snow.button(this@DrillActivity, "Open saved result", Snow.ButtonKind.SECONDARY) {
             startActivity(Intent(this@DrillActivity, PracticeResultActivity::class.java).putExtra("attempt_id", attempt.id))
         }, bottom = 10)
@@ -293,7 +359,7 @@ class DrillActivity : Activity() {
     private fun showResult(run: DrillRun, result: DrillResult, ghost: RollTrace?, attempt: Attempt, unlocked: Drill?, message: String) {
         val vert = attempt.vert
         val headline = if (attempt.status == PracticeStatus.INTERRUPTED) "Practice interrupted" else if (attempt.status == PracticeStatus.COMPLETED && !attempt.eligible) "Cannot judge this set" else if (!attempt.eligible) "Incomplete set" else when (result.stars) { 3 -> "Clean set"; 2 -> "Good set"; 1 -> "Passed"; else -> "Not quite yet" }
-        val again: () -> Unit = { begin(run.demo) }
+        val again: () -> Unit = { targetConfirmed = false; begin(run.demo) }
         show {
             add(t(if (run.demo) "Demo boots" else "Your boots", Snow.Type.CAPTION, Snow.INK_SOFT), bottom = 4)
             add(t(headline, Snow.Type.HERO), bottom = 14)

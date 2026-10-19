@@ -74,6 +74,15 @@ class SensorSessionService : Service() {
     private var coachState = CoachState()
     private var coachSession: CoachSession? = null
     private var coachAudio: CoachAudio? = null
+    private var previewAudio: CoachAudio? = null
+    private var practiceAudioOwned = false
+    private var practiceAudioGuided = false
+    private var practiceFocus = PracticeFocus.RHYTHM
+    private var practiceTargetSource = "confirmed_preset"
+    private var practiceAudioPhase: DrillPhase? = null
+    private var practiceAudioCount = 0
+    private var practiceMetronome = false
+    private var practiceCountdownSecond: Int? = null
     private var coachSettings = CoachSettings()
     private var coachStartedAt = 0L
     private var coachStartedMonitoring = false
@@ -110,7 +119,8 @@ class SensorSessionService : Service() {
                     val previous = progressStore.attempts() // Imports legacy history before the first new write.
                     if (!attempt.demo && !Progress(previous, progressStore.experience.startsOn).unlocked(Programme.drill(attempt.drillId)!!))
                         error("Complete the preceding measured sets, or explore this drill in Demo.")
-                    PracticeStore(store).record(attempt)
+                    PracticeStore(store).record(attempt.copy(review = PracticeReview.capture(attempt, null, null, null)
+                        .copy(focus = practiceFocus, targetSource = practiceTargetSource)))
                     Triple(previous.count { it.drillId == attempt.drillId && it.demo == attempt.demo }, progressStore.lastTrace(attempt.drillId, attempt.demo),
                         previous.lastOrNull { it.drillId == attempt.drillId && it.demo == attempt.demo && it.id == progressStore.lastTraceAttemptId(attempt.drillId, attempt.demo) })
                 }
@@ -137,9 +147,10 @@ class SensorSessionService : Service() {
             if (!attempt.demo && activeSessionId == attempt.sessionId) stopRecording(endBurst = false)
         }
         override fun save(attempt: Attempt, run: DrillRun?, completed: (Result<Attempt>) -> Unit) {
+            val reviewed = attempt.copy(review = attempt.review?.copy(focus = practiceFocus, targetSource = practiceTargetSource))
             io.execute {
                 val result = runCatching {
-                    val saved = PracticeStore(store).record(attempt, calculateReward = true)
+                    val saved = PracticeStore(store).record(reviewed, calculateReward = true)
                     if (run != null) progressStore.saveTrace(attempt.drillId, attempt.demo, run.trace, attempt.id)
                     attempt.sessionId?.let { id ->
                         store.getSession(id)?.let { session ->
@@ -182,9 +193,11 @@ class SensorSessionService : Service() {
     fun observeDrill(owner: Any, observer: (DrillState) -> Unit) { drillObservers[owner] = observer; observer(drillState()) }
     fun removeDrillObserver(owner: Any) { drillObservers.remove(owner) }
     private fun publishDrill() {
+        updatePracticeAudio()
         if (drillObservers.isNotEmpty()) { val snapshot = drillState(); drillObservers.values.toList().forEach { it(snapshot) } }
     }
-    fun startDrill(id: String, demo: Boolean, repeat: Attempt? = null): String? {
+    fun startDrill(id: String, demo: Boolean, repeat: Attempt? = null, focus: PracticeFocus = PracticeFocus.RHYTHM,
+                   audioGuided: Boolean = false): String? {
         val drill = if (repeat != null) runCatching { PracticeRepeat.drill(repeat) }.getOrElse { return it.message ?: "Cannot repeat target" }
             else Programme.drill(id) ?: return "Unknown drill"
         if (repeat != null && (repeat.drillId != id || repeat.demo != demo)) return "Saved target source does not match."
@@ -193,6 +206,12 @@ class SensorSessionService : Service() {
         if (!demo && (activeSessionId != null || runActive() || coachState.running)) return "Another recording or coaching session is active. Finish it first."
         if (!demo && (transfers.isNotEmpty() || store.hasPendingRecovery())) return "Recover the retained recording before starting practice."
         if (drillController.active) return "A practice set is already active. Return to it or finish it first."
+        stopPracticeAudio()
+        previewAudio?.stop(); previewAudio = null
+        practiceFocus = focus
+        practiceTargetSource = if (repeat != null) "saved_target" else "confirmed_preset"
+        practiceAudioGuided = audioGuided
+        practiceAudioPhase = null; practiceAudioCount = 0
         requestedRepeat = repeat
         val problem = drillController.start(drill, demo, UUID.randomUUID().toString(), if (demo) null else UUID.randomUUID().toString())
         if (problem != null) return problem
@@ -212,6 +231,74 @@ class SensorSessionService : Service() {
     }
     fun finishDrill(id: String? = drillController.id) { if (id == drillController.id) drillController.finishEarly(); publishDrill() }
     fun retryDrillSave() { drillController.retrySave(); publishDrill() }
+
+    fun pauseDrill() {
+        if (drillController.pause("Practice paused. Resume when standing neutral.")) coachAudio?.takeIf { practiceAudioOwned }?.pausePractice()
+        publishDrill()
+    }
+    fun resumeDrill(): String? {
+        if (drillController.phase != DrillPhase.PAUSED) return "Practice is not paused."
+        if (practiceAudioGuided) {
+            val audio = coachAudio?.takeIf { practiceAudioOwned }
+            val error = if (audio == null || audio.practiceAvailability().phase == PracticeAudioPhase.FAILED)
+                startPracticeAudio() else audio.resumePractice()
+            if (error != null) return error
+        }
+        if (!drillController.resume()) return "Practice could not resume."
+        publishDrill()
+        return null
+    }
+    private fun startPracticeAudio(metronome: Boolean = true): String? {
+        stopPracticeAudio()
+        val target = drillController.state().drill ?: return "Practice target is unavailable."
+        val owner = drillController.id
+        val audio = CoachAudio(this, onRoute = {}, onProblem = { problem -> mainHandler.post {
+            if (practiceAudioOwned && drillController.id == owner && drillController.pause(problem)) publishDrill()
+        } })
+        coachAudio = audio; practiceAudioOwned = true
+        practiceMetronome = metronome
+        val settings = CoachSettingsStore(this).settings.copy(metronome = metronome, countIn = false)
+        val error = audio.startPractice(settings, CoachTarget.of(target)) { availability ->
+            mainHandler.post {
+                if (coachAudio === audio && practiceAudioOwned && !availability.usable && availability.phase != PracticeAudioPhase.STOPPED) {
+                    if (drillController.pause(availability.message)) publishDrill()
+                }
+            }
+        }
+        if (error != null) { audio.stop(); if (coachAudio === audio) { coachAudio = null; practiceAudioOwned = false } }
+        return error
+    }
+    private fun stopPracticeAudio() {
+        if (practiceAudioOwned) { val audio = coachAudio; coachAudio = null; practiceAudioOwned = false; audio?.stop() }
+    }
+    private fun updatePracticeAudio() {
+        val state = drillController.state()
+        val previous = practiceAudioPhase
+        practiceAudioPhase = state.phase
+        if (!practiceAudioGuided) return
+        if (state.phase == DrillPhase.COUNTDOWN) {
+            if (!practiceAudioOwned || practiceMetronome) {
+                startPracticeAudio(metronome = false)?.let { problem -> drillController.pause(problem); return }
+            }
+            if (practiceCountdownSecond != state.countdownSeconds && (state.countdownSeconds ?: 0) > 0) {
+                practiceCountdownSecond = state.countdownSeconds
+                coachAudio?.playChime(ToneSynth.tick(false))
+            }
+        } else practiceCountdownSecond = null
+        if (state.phase == DrillPhase.RUNNING && previous != DrillPhase.RUNNING) {
+            if (!practiceAudioOwned || !practiceMetronome) startPracticeAudio()?.let { problem -> drillController.pause(problem); return }
+            coachAudio?.playChime(ToneSynth.startChime())
+        }
+        if (state.phase == DrillPhase.RUNNING && state.count > practiceAudioCount) coachAudio?.playChime(ToneSynth.tone(1000.0, 90))
+        practiceAudioCount = state.count
+        val terminal = setOf(DrillPhase.SAVING, DrillPhase.SAVE_FAILED, DrillPhase.DONE)
+        if (state.phase in terminal && previous !in terminal && practiceAudioOwned) {
+            coachAudio?.playChime(ToneSynth.endChime())
+            val audio = coachAudio
+            mainHandler.postDelayed({ if (practiceAudioOwned && coachAudio === audio) stopPracticeAudio() }, 1200)
+        }
+        if (state.phase == DrillPhase.PAUSED) coachAudio?.takeIf { practiceAudioOwned }?.pausePractice()
+    }
 
     // Runs: the lifecycle lives in RunController; these adapters connect it to the boots, the database and the phone.
     private val zeroTracker = ZeroTracker()
@@ -1015,6 +1102,8 @@ class SensorSessionService : Service() {
     fun startCoaching(settings: CoachSettings, demo: Boolean): String? {
         if (drillController.active) return "A practice set is active. Finish it first."
         if (coachState.running) return null
+        stopPracticeAudio()
+        previewAudio?.stop(); previewAudio = null
         val chosen = settings.normalised()
         val target = chosen.target()
         val audio = CoachAudio(this,
@@ -1065,9 +1154,27 @@ class SensorSessionService : Service() {
     }
 
     fun playCoachTestSounds(settings: CoachSettings) {
-        val audio = coachAudio ?: CoachAudio(this, onRoute = {}, onProblem = { text -> mainHandler.post { coachListener?.invoke(CoachState(message = text)) } })
-        audio.playTestSounds(settings.normalised().gainPercent)
+        if (drillController.active || coachState.running) return
+        previewAudio?.stop()
+        val audio = CoachAudio(this, onRoute = {}, onProblem = { text -> mainHandler.post { coachListener?.invoke(CoachState(message = text)) } })
+        previewAudio = audio
+        audio.playTestSounds(settings.normalised())
+        mainHandler.postDelayed({ if (previewAudio === audio) { audio.stop(); previewAudio = null } }, 6000)
     }
+
+    fun playPracticeTestSounds(settings: CoachSettings): String? {
+        if (drillController.active || coachState.running || runActive()) return "Finish active practice or coaching before testing sounds."
+        stopPracticeAudio()
+        previewAudio?.stop(); previewAudio = null
+        val audio = CoachAudio(this, onRoute = {}, onProblem = {})
+        previewAudio = audio
+        val error = audio.startPractice(settings.normalised().copy(metronome = false), settings.normalised().target()) {}
+        if (error != null) { audio.stop(); previewAudio = null; return error }
+        audio.playPracticeExamples()
+        mainHandler.postDelayed({ if (previewAudio === audio) { audio.stop(); previewAudio = null } }, 8000)
+        return null
+    }
+    fun stopPracticeSoundPreview() { previewAudio?.stop(); previewAudio = null }
 
     private fun onCoachVerdict(verdict: CoachVerdict) {
         val target = coachState.target ?: return
@@ -1555,6 +1662,8 @@ class SensorSessionService : Service() {
         stopPhoneMotion()
         mainHandler.removeCallbacks(runTick)
         clockSync.stop()
+        stopPracticeAudio()
+        previewAudio?.stop(); previewAudio = null
         stopCoaching()
         gps.stop()
         mainHandler.removeCallbacks(tick)

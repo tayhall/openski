@@ -63,7 +63,11 @@ object PhaseLayoutRegression {
                             "READY" to listOf(PhaseLayout.Action("start", "Start run", enabled = false) {}),
                             "ZEROING" to listOf(PhaseLayout.Action("retry-zero", "Try again") {},
                                 PhaseLayout.Action("cancel", "Cancel", Snow.ButtonKind.QUIET) {}),
-                            "SAVING" to listOf(PhaseLayout.Action("background", "Continue saving in background", Snow.ButtonKind.SECONDARY) {})
+                            "SAVING" to listOf(PhaseLayout.Action("background", "Continue saving in background", Snow.ButtonKind.SECONDARY) {}),
+                            "RUNNING" to listOf(PhaseLayout.Action("pause", "Pause practice") {},
+                                PhaseLayout.Action("finish", "Finish practice", Snow.ButtonKind.SECONDARY) {}),
+                            "PAUSED" to listOf(PhaseLayout.Action("resume", "Resume practice") {},
+                                PhaseLayout.Action("finish", "Finish practice", Snow.ButtonKind.SECONDARY) {})
                         )
                         for ((phase, controls) in cases) for (keyboardDp in listOf(120, 160)) {
                             layout.controls(controls, if (phase == "READY") "Connect both saved boots and choose an audio route before starting." else null)

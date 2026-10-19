@@ -99,18 +99,28 @@ object DrillScoring {
         return (100 * (1 - spread / 0.35)).coerceIn(0.0, 100.0)
     }
 
-    fun score(drill: Drill, detection: DryDetection): DrillResult {
+    fun score(drill: Drill, run: DrillRun): DrillResult {
+        val segments = run.segments
+        return if (run.timingPolicy == PracticeTiming.POLICY && segments != null) {
+            val timing = PracticeTiming.summary(segments, drill.movements)
+            score(drill, DryDetection(timing.movements, timing.movements.map { it.endMs }), timing.beatSeconds)
+        } else score(drill, run.detection)
+    }
+
+    fun score(drill: Drill, detection: DryDetection): DrillResult = score(drill, detection, null)
+
+    private fun score(drill: Drill, detection: DryDetection, segmentedBeats: List<Double>?): DrillResult {
         val moves = detection.movements.take(drill.movements)
         if (moves.isEmpty()) return DrillResult(0, 0, 0, 0, 0, 0, 0,
             "No movements were detected. Hold still, calibrate, then roll from neutral.")
         // The beat is the time between the starts of consecutive rolls, which is what "one roll every 3 s" means
         // to a skier. A detected movement only spans the time outside neutral, so its length would understate it.
-        val beats = if (moves.size < 2) moves.map { (it.endMs - it.startMs) / 1000 }
+        val beats = segmentedBeats ?: if (moves.size < 2) moves.map { (it.endMs - it.startMs) / 1000 }
             else moves.zipWithNext { a, b -> (b.startMs - a.startMs) / 1000 }
         val mean = beats.average()
         // 50% either side of the target beat scores zero.
-        val tempo = closeness(mean, drill.paceSeconds, drill.paceSeconds * 0.5)
-        val steadiness = steadiness(beats)
+        val tempo = if (beats.isEmpty()) 0.0 else closeness(mean, drill.paceSeconds, drill.paceSeconds * 0.5)
+        val steadiness = if (beats.isEmpty()) 0.0 else steadiness(beats)
         val balance = DrySkiAnalysis.balance(DryDetection(moves, emptyList()))?.let {
             (it.durationRatioPercent + it.peakRatioPercent) / 2
         } ?: 50.0
@@ -121,7 +131,7 @@ object DrillScoring {
         val stars = when { score >= GREAT -> 3; score >= GOOD -> 2; score >= PASS -> 1; else -> 0 }
         val scored = listOf("tempo" to tempo, "steadiness" to steadiness, "balance" to balance, "depth" to depth)
         return DrillResult(score, stars, tempo.roundToInt(), steadiness.roundToInt(), balance.roundToInt(),
-            depth.roundToInt(), moves.size, cue(drill, scored.minBy { it.second }, mean, moves, coverage))
+            depth.roundToInt(), moves.size, if (beats.isEmpty()) "Not enough movement pairs within active intervals to judge timing." else cue(drill, scored.minBy { it.second }, mean, moves, coverage))
     }
 
     private fun cue(drill: Drill, weakest: Pair<String, Double>, meanSeconds: Double,

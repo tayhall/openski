@@ -41,6 +41,8 @@ class DrillControllerTest {
             clock = 3300; tick()
             calibration!!(Result.success(Unit))
             controller.accept(BootRoll("L", 100_000.0 + clock, 0.0, 0.0))
+            clock += 3000
+            controller.accept(BootRoll("L", 100_000.0 + clock, 0.0, 0.0)); tick()
         }
     }
 
@@ -159,6 +161,70 @@ class DrillControllerTest {
         assertEquals(0, h.opens)
         assertEquals(0, h.saves)
     }
+    @Test fun livePauseRetainsRawOwnerAndRequiresNewNeutralBeforeClockResumes() {
+        val h=Harness(); h.ready(); h.clock+=1000
+        assertTrue(h.controller.pause("Audio route lost")); assertFalse(h.controller.pause())
+        val elapsed=h.controller.state().seconds
+        assertEquals(0,h.stops); assertEquals("session",h.recording)
+        h.clock=1_000_000; h.tick()
+        assertEquals(DrillPhase.PAUSED,h.controller.phase); assertEquals(elapsed,h.controller.state().seconds,0.0)
+        h.controller.accept(BootRoll("L",100_000.0+h.clock,0.0,0.0))
+        assertTrue(h.controller.resume()); assertFalse(h.controller.resume()); h.tick()
+        assertEquals(DrillPhase.RESUMING,h.controller.phase)
+        h.controller.accept(BootRoll("L",100_000.0+h.clock-2000,0.0,0.0))
+        assertEquals(DrillPhase.RESUMING,h.controller.phase)
+        h.clock+=20; h.controller.accept(BootRoll("L",100_000.0+h.clock,20.0,0.0))
+        assertEquals(DrillPhase.RESUMING,h.controller.phase)
+        h.clock+=20; h.controller.accept(BootRoll("L",100_000.0+h.clock,0.0,0.0))
+        assertEquals(DrillPhase.COUNTDOWN,h.controller.phase); assertEquals(elapsed,h.controller.state().seconds,0.0)
+        h.clock+=3000; h.controller.accept(BootRoll("L",100_000.0+h.clock,0.0,0.0)); h.tick()
+        assertEquals(DrillPhase.RUNNING,h.controller.phase); assertEquals(elapsed,h.controller.state().seconds,0.0)
+        h.clock+=1000; h.tick(); assertEquals(elapsed+1,h.controller.state().seconds,0.0)
+        assertEquals(2,h.markers.count { it=="START_TEST" })
+    }
+    @Test fun pausedAndNeutralWaitingStillGuardRecordingOwnership() {
+        for(resume in listOf(false,true)) {
+            val h=Harness(); h.ready(); h.controller.pause(); if(resume) h.controller.resume()
+            h.recording="someone-else"; h.tick()
+            assertEquals(PracticeStatus.INTERRUPTED,h.controller.state().attempt!!.status)
+            assertEquals("someone-else",h.recording); assertEquals(0,h.stops)
+        }
+    }
+    @Test fun finishingWhilePausedIsIncompleteAndStopsOnlyOnce() {
+        val h=Harness(); h.ready(); h.controller.pause(); h.controller.finishEarly(); h.controller.finishEarly()
+        assertEquals(PracticeStatus.INCOMPLETE,h.controller.state().attempt!!.status)
+        assertEquals(1,h.stops); assertEquals(1,h.saves)
+        assertEquals(PracticeTiming.POLICY,h.controller.state().attempt!!.review!!.evidence.timingPolicy)
+    }
+    @Test fun demoPauseFreezesSimulationAndElapsedTimeUntilExplicitResume() {
+        val h=Harness(); h.controller.start(Programme.drills.first(),true,"demo",null)
+        h.clock=2000; assertTrue(h.controller.pause()); val before=h.controller.state()
+        h.clock=200_000; h.tick(emptySet())
+        assertEquals(before.animation,h.controller.state().animation,0.0f)
+        assertEquals(2.0,h.controller.state().seconds,0.0); assertEquals(0,h.saves)
+        assertTrue(h.controller.resume()); h.clock+=4500; h.tick(emptySet())
+        assertEquals(DrillPhase.DONE,h.controller.phase); assertEquals(1,h.saves)
+        assertEquals("continuous_v1",h.controller.state().attempt!!.review!!.evidence.timingPolicy)
+    }
+
+    @Test fun countdownRequiresFreshNeutralAndDoesNotScoreOrAdvanceActiveTime() {
+        val h=Harness(); h.startLive(); h.clock=3300; h.tick(); h.calibration!!(Result.success(Unit))
+        h.controller.accept(BootRoll("L",100_000.0+h.clock,0.0,0.0))
+        assertEquals(DrillPhase.COUNTDOWN,h.controller.phase); assertEquals(3,h.controller.state().countdownSeconds)
+        h.clock+=3000; h.tick()
+        assertEquals(DrillPhase.SETTLING,h.controller.phase); assertEquals(0.0,h.controller.state().seconds,0.0)
+        h.controller.accept(BootRoll("L",100_000.0+h.clock,0.0,0.0)); assertTrue(h.controller.pause())
+        assertEquals(0,h.stops); h.recording="other"; h.tick()
+        assertEquals(PracticeStatus.INTERRUPTED,h.controller.state().attempt!!.status)
+    }
+
+    @Test fun streamLossPausesWithoutStoppingRawAndReconnectNeverAutoResumes() {
+        val h=Harness(); h.ready(); h.clock+=1000; h.tick(emptySet())
+        assertEquals(DrillPhase.PAUSED,h.controller.phase); assertEquals(0,h.stops)
+        val paused=h.controller.state().seconds
+        h.clock+=100_000; h.tick(); assertEquals(DrillPhase.PAUSED,h.controller.phase)
+        assertEquals(paused,h.controller.state().seconds,0.0)
+    }
 
     @Test fun aSaveThatKeepsFailingCanBeAbandonedSoTheServiceIsNotHeldActive() {
         val h = Harness(); h.ready(); h.failSave = true
@@ -211,5 +277,12 @@ class DrillControllerTest {
         assertFalse(PracticeComparisonPolicy.evaluate(subject, evidence, otherSide, otherSide.review!!.evidence).comparable)
         h.controller.finishEarly()
         assertNull(h.controller.prospective())
+    }
+
+    @Test fun aPausedLiveSetIsJudgedForTheGhostOnSegmentedTiming() {
+        val h = Harness(); h.ready()
+        assertEquals("continuous_v1", h.controller.prospective()!!.second.timingPolicy)
+        h.controller.pause()
+        assertEquals(PracticeTiming.POLICY, h.controller.prospective()!!.second.timingPolicy)
     }
 }
