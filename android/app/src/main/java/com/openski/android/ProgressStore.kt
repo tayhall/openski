@@ -21,6 +21,7 @@ class ProgressStore(context: Context) {
     val onboarded get() = goal != null
 
     private fun <T> withPractice(block: (PracticeStore) -> T): T = LocalSessionStore(appContext).use { database ->
+        (appContext as? OpenSkiApplication)?.ensurePracticeRecovered()
         val practice = PracticeStore(database)
         practice.importLegacy(prefs.getString("attempts", "[]") ?: "[]")
         block(practice)

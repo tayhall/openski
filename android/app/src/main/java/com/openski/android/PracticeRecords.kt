@@ -3,7 +3,7 @@ package com.openski.android
 import java.util.UUID
 import org.json.JSONArray
 
-enum class PracticeStatus { COMPLETED, INCOMPLETE, INTERRUPTED }
+enum class PracticeStatus { ACTIVE, COMPLETED, INCOMPLETE, INTERRUPTED }
 
 /** Targets are snapshots, never reconstructed from a historical drill title. */
 data class PracticeTarget(val movements: Int, val beatSeconds: Double, val depthDegrees: Double) {

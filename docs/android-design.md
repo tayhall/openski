@@ -37,7 +37,15 @@ SQLite v14 stores stable attempt IDs, optional raw-session links, completion sta
 
 Verification on 19 October 2026: 650 JVM tests with zero failures (one opt-in release check skipped), debug/instrumentation builds, lint and StorageInstrumentation passed. Emulator UI review covered the source picker, demo result and unchanged measured totals. Physical BLE was not exercised.
 
-The drill lifecycle still belongs to the Activity in this increment; moving it into the service is the next planned branch.
+## Service-owned drills (implementation increment 2)
+
+`DrillController` owns preparation, connection/mounting, calibration, capture, saving and terminal outcomes inside `SensorSessionService`. `DrillActivity` observes immutable snapshots; leaving, rotating or recreating the screen detaches only its subscription. Dedicated observers do not replace Geek mode's telemetry listener. Live orientation feeds the controller directly from the service.
+
+An ACTIVE attempt and reserved raw-session ID are committed before live capture opens. Terminal saves update that identity once; repeated save requests return the committed result. Process startup or service recreation marks unfinished attempts interrupted and atomically closes only their matching open raw sessions, leaving sensor recovery protections intact. Failed recovery remains retryable through history loading. A saved summary can be restored after background completion without another reward. Full scored-set reconstruction after process death is deliberately not claimed.
+
+Live practice uses the connected-device foreground service, wake lock and a return/Finish notification action. A bounded sensor-free demo uses a short started service without requiring Bluetooth permission or pretending to play media; if Android kills it, restart reconciliation marks it interrupted. Manual recordings, runs, coaching, sensor replacement and calibration cannot silently take ownership from an active drill. Mounting opens explicitly and repeated updates do not stack pickers.
+
+Pause/audio practice controls remain planned for increment 8. New run layout and guided setup changes remain separate increments.
 
 ## Verification
 

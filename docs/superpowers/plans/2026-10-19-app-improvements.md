@@ -225,7 +225,9 @@ Full navigation replacement, merged universal activity timeline, Compose migrati
 - Documentation baseline: `docs/project-review-plan`, draft PR #44.
 - Increment 1: `feat/practice-records`, based on the documentation branch. Implements SQLite v14 practice records/import, source-aware progress and UI, incomplete-set eligibility and transactional reward deduplication.
 - Validation: 650 JVM tests, zero failures (one opt-in release check skipped), debug/instrumentation APK builds and lint passed. StorageInstrumentation passed on the Pixel 9a emulator, including the new v13→v14 checks. An existing ski-day test was corrected to find its unknown-accuracy fix by timestamp rather than assuming it sorts last.
-- Remaining branches follow this plan in order; service-owned drill lifecycle has not been implemented in increment 1.
+- Increment 2: `feat/drill-lifecycle`, based on `feat/practice-records`. Moves drill state into the service, checkpoints ACTIVE attempts, guards stale callbacks and competing capture commands, and atomically reconciles interrupted attempts/raw sessions at startup.
+- Increment 2 validation: full JVM suite passed before the final startup-recovery refinement; focused controller/scoring tests, debug/instrumentation builds and lint passed afterward. StorageInstrumentation passed with atomic recovery rollback/retry coverage. Emulator demo rotation/background/completion and force-stop→Home recovery passed. Physical BLE, screen-lock and notification checks remain open in Android acceptance.
+- Remaining branches follow this plan in order.
 
 ## First executable task
 
