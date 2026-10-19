@@ -48,6 +48,7 @@ class StorageInstrumentation : Instrumentation() {
         try {
             if (practiceUiOnly) {
                 PracticeUiRegression(this).run()
+                PreparationUiRegression.run(this)
                 finish(Activity.RESULT_OK, Bundle().apply { putString("stream", "PASS: native controls and selected navigation, chart facts, stable coaching focus/scroll, exact run/practice links and missing-record fallbacks\n") })
                 return
             }
@@ -474,6 +475,7 @@ class StorageInstrumentation : Instrumentation() {
                 check(!store.validateDownload(capture.id,3,0,3))
                 check(store.captures("old").single().recordFormat==2) { "Failed replacement changed record format" }
                 check(store.loadData("old")!!.flash.size==3) { "Failed replacement destroyed verified copy" }
+                check(store.hasCommittedCopy(capture.id)) { "Recovery summary lost the retained validated copy" }
                 store.event("old","Test, \"quoted\" event")
                 val output=ByteArrayOutputStream()
                 SessionExport.write(store.loadData("old")!!,output)
@@ -545,6 +547,7 @@ class StorageInstrumentation : Instrumentation() {
             context.deleteDatabase(name)
             DrillMountingRegression.run(this)
             PracticeUiRegression(this).run()
+            PreparationUiRegression.run(this)
             finish(Activity.RESULT_OK,Bundle().apply { putString("stream","PASS: v1–v6 migration, demo creation, saved review settings, calibration, test labels, health, session edits, staged recovery validation, retained copy, ZIP export and protected deletion, v9->v10 run GPS track, v11->v12 resort maps, fresh-install resort round trip, v12->v13 ski days, v13->v14 practice attempts, atomic legacy import and idempotent completion\n") })
         } catch(error: Throwable) {
             targetContext.deleteDatabase(name)

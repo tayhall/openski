@@ -14,6 +14,9 @@ class ZeroTracker(private val minimumMs: Long = 1000) {
         zeroedAt.remove(side)
     }
 
+    /** A new connection must report its own neutral state; never reuse the last sensor's report. */
+    fun disconnected(side: String) { zeroedAt.remove(side) }
+
     /** Record a state frame from the boot. */
     fun frame(side: String, zeroed: Boolean, nowMs: Long) {
         if (zeroed) zeroedAt[side] = nowMs else zeroedAt.remove(side)
