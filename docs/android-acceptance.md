@@ -219,3 +219,10 @@ Whole-day tracking (`DayTrackingService`), the day report, the ski day and resor
 - [ ] Mode/zero: lost command acknowledgement, disconnect/reconnect and failed validation never show false restoration. Training is unavailable until protected recovery is complete. Mode commands do not interrupt active run/drill/manual capture.
 - [ ] Audio route loss, denied Bluetooth permission, Bluetooth off, low phone storage and missing sensor copy have usable recovery paths. GPS refusal still permits a run without GPS.
 - [ ] Field checks: phone screen off, bright light, cold/gloves, battery and real flash-download reliability remain unverified by emulator/JVM checks.
+
+## Compact layouts and persistent controls (increment 5)
+
+- [ ] `PhaseLayoutRegression`: compact portrait/landscape at 130%/200% fonts, no footer/content overlap, retained focused action and current callback across warnings, and keyboard inset geometry. Run through the instrumentation runner after integration.
+- [ ] Emulator: Run Ready, Zeroing/retry, Running, Saving and Drill intro/active/save failure keep their action reachable after scrolling and long warnings. Verify the current blocker remains understandable and its resolution action is reachable.
+- [ ] Emulator: expand Run preparation, drill instructions and setup options, then rotate/reopen. Check expansion and phase, reading order, TalkBack roles/focus and exact-result links.
+- [ ] Real phone: bright sunlight, cold/gloves and physical-button gestures. Touch targets retain at least the previous 64dp phase action height; field ergonomics remain unverified.

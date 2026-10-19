@@ -138,14 +138,15 @@ object SkiUi {
     }
 
     /** Call once on the root, before adding it to the window. Keeps edge-to-edge content reachable. */
-    fun applyInsets(root: View, bottom: Boolean = true) {
+    fun applyInsets(root: View, bottom: Boolean = true, ime: Boolean = false) {
         val left = root.paddingLeft
         val top = root.paddingTop
         val right = root.paddingRight
         val baseBottom = root.paddingBottom
         root.setOnApplyWindowInsetsListener { view, insets ->
             if (Build.VERSION.SDK_INT >= 30) {
-                val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+                val bars = insets.getInsets(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout() or
+                    if (ime) WindowInsets.Type.ime() else 0)
                 view.setPadding(left + bars.left, top + bars.top, right + bars.right,
                     baseBottom + if (bottom) bars.bottom else 0)
             } else {

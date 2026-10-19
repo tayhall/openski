@@ -6,9 +6,6 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.ServiceConnection
-import android.graphics.Canvas
-import android.graphics.Paint
-import android.graphics.Path
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
@@ -16,36 +13,14 @@ import android.os.Looper
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 
-/** A simple ridge line for the Ready screen. Decoration only. */
-private class SummitView(context: Context) : View(context) {
-    private val far = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Snow.GLACIER }
-    private val near = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Snow.GLACIER_DEEP }
-    init { importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO }
-
-    override fun onMeasure(w: Int, h: Int) = setMeasuredDimension(MeasureSpec.getSize(w), Snow.dp(context, 130))
-
-    override fun onDraw(canvas: Canvas) {
-        val w = width.toFloat(); val h = height.toFloat()
-        fun ridge(points: List<Pair<Float, Float>>): Path = Path().apply {
-            moveTo(0f, h)
-            points.forEach { (x, y) -> lineTo(x * w, y * h) }
-            lineTo(w, h); close()
-        }
-        canvas.drawPath(ridge(listOf(0f to .55f, .18f to .30f, .30f to .48f, .52f to .08f, .70f to .42f, .86f to .25f, 1f to .5f)), far)
-        canvas.drawPath(ridge(listOf(0f to .85f, .22f to .60f, .40f to .78f, .62f to .45f, .80f to .72f, 1f to .62f)), near)
-    }
-}
-
-/**
- * The run flow: Ready, Zeroing, Running, Saving, Done. It only shows what the service's [RunController] reports and
- * sends it commands, so rotating or closing the screen never changes a run. Dry-ski boot roll against a training
- * target; not an on-snow technique score.
- */
+/** Service-owned Ready, Zeroing, Running, Saving and Done flow. Leaving the screen does not stop capture. */
 class RunActivity : Activity() {
     private lateinit var frame: FrameLayout
+    private lateinit var phaseLayout: PhaseLayout
+    private var renderedPhase: RunPhase? = null
+    private var preparationExpanded = false
     private var service: SensorSessionService? = null
     private var bound = false
     private var state: RunState? = null
@@ -106,8 +81,16 @@ class RunActivity : Activity() {
         super.onCreate(savedInstanceState)
         Snow.configureWindow(this)
         frame = FrameLayout(this).apply { setBackgroundColor(Snow.SNOW) }
-        SkiUi.applyInsets(frame)
+        preparationExpanded = savedInstanceState?.getBoolean("preparation_expanded") ?: false
+        phaseLayout = PhaseLayout(this)
+        frame.addView(phaseLayout)
+        SkiUi.applyInsets(frame, ime = true)
         setContentView(frame)
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean("preparation_expanded", preparationExpanded)
+        super.onSaveInstanceState(outState)
     }
 
     override fun onStart() {
@@ -203,13 +186,25 @@ class RunActivity : Activity() {
             RunPhase.DONE -> done(column, s)
         }
         frame.keepScreenOn = s.phase == RunPhase.READY || s.phase == RunPhase.ZEROING   // never while the phone is in a pocket
-        frame.removeAllViews()
-        frame.addView(ScrollView(this).apply { isFillViewport = true; addView(column) })
+        phaseLayout.content(column, renderedPhase != s.phase)
+        renderedPhase = s.phase
+        val controls = when (s.phase) {
+            RunPhase.READY -> listOf(PhaseLayout.Action("start", "Start run", enabled = s.readiness.ok,
+                description = if (s.readiness.ok) null else "Start run, unavailable. ${s.readiness.reason}") { tryStart(false) })
+            RunPhase.ZEROING -> buildList {
+                if (s.zeroTimedOut) add(PhaseLayout.Action("retry-zero", "Try again") { service?.retryZero() })
+                add(PhaseLayout.Action("cancel", "Cancel", Snow.ButtonKind.QUIET) { service?.cancelRun() })
+            }
+            RunPhase.RUNNING -> listOf(PhaseLayout.Action("stop", "Stop run") { service?.stopRun() })
+            RunPhase.SAVING -> listOf(PhaseLayout.Action("background", "Continue saving in background", Snow.ButtonKind.SECONDARY) { service?.abandonRunSave() })
+            RunPhase.DONE -> emptyList()
+        }
+        phaseLayout.controls(controls, if (s.phase == RunPhase.READY && !s.readiness.ok) s.readiness.reason else null)
     }
 
     private fun ready(column: LinearLayout, s: RunState) {
-        column.add(SummitView(this), bottom = 8)
-        column.add(t("Ready?", Snow.Type.HERO))
+        column.add(t("Ready to ski?", Snow.Type.DISPLAY))
+        column.add(t(CoachSettingsStore(this).settings.targetLabel(), Snow.Type.STRONG), top = 4)
         column.add(t("Check your boots and earbuds, then start. Your phone goes in your pocket.", Snow.Type.BODY, Snow.INK_SOFT), top = 4, bottom = 16)
         column.add(t(GestureSyncPrompts.READY, Snow.Type.STRONG), bottom = 12)
         val status = Snow.card(this, 18)
@@ -227,16 +222,18 @@ class RunActivity : Activity() {
             }, top = 8)
         }
         column.add(status, bottom = 12)
-        column.add(t("Reported boot mode: $modeLabel", Snow.Type.STRONG), bottom = 8)
-        column.add(Snow.button(this, "Prepare boots and recover recordings", Snow.ButtonKind.SECONDARY) {
+        val preparation = PreparationDetails(this, "Preparation settings", preparationExpanded) { preparationExpanded = it }
+        val settingsColumn = preparation.body
+        settingsColumn.add(t("Reported boot mode: $modeLabel", Snow.Type.STRONG), bottom = 8)
+        settingsColumn.add(Snow.button(this, "Prepare boots and recover recordings", Snow.ButtonKind.SECONDARY) {
             startActivity(Intent(this, BootSetupActivity::class.java))
         }, bottom = 10)
-        column.add(Snow.button(this, "GPS for runs: ${if (gpsSettings.enabled) "On" else "Off"} · tap to switch", Snow.ButtonKind.SECONDARY) {
+        settingsColumn.add(Snow.button(this, "GPS for runs: ${if (gpsSettings.enabled) "On" else "Off"} · tap to switch", Snow.ButtonKind.SECONDARY) {
             gpsSettings.enabled = !gpsSettings.enabled
             lastFix = null; statusCache = null
             structure = ""; state?.let { apply(it) }
         }, bottom = 10)
-        column.add(Snow.button(this, "Coaching: ${CoachSettingsStore(this).settings.targetLabel()}", Snow.ButtonKind.SECONDARY) {
+        settingsColumn.add(Snow.button(this, "Coaching: ${CoachSettingsStore(this).settings.targetLabel()}", Snow.ButtonKind.SECONDARY) {
             startActivity(Intent(this, CoachingActivity::class.java))
         }, bottom = 16)
         if (s.message.isNotEmpty()) column.add(t(s.message, Snow.Type.BODY, Snow.INK_SOFT), bottom = 8)
@@ -262,11 +259,7 @@ class RunActivity : Activity() {
         }
         if (s.readiness.issues.isEmpty()) s.readiness.reason?.let { column.add(t(it, Snow.Type.STRONG), bottom = 8) }
         notice?.let { column.add(t(it, Snow.Type.STRONG), bottom = 8) }
-        val start = Snow.button(this, "Start run") { tryStart(false) }.apply {
-            minHeight = Snow.dp(this@RunActivity, 64)
-            if (!s.readiness.ok) { isEnabled = false; alpha = 0.4f; contentDescription = "Start run, unavailable. ${s.readiness.reason}" }
-        }
-        column.add(start, bottom = 10)
+        column.add(preparation, bottom = 12)
         column.add(Snow.button(this, "Try with demo boots", Snow.ButtonKind.QUIET) { tryStart(true) })
     }
 
@@ -313,9 +306,7 @@ class RunActivity : Activity() {
         column.add(status, bottom = 12)
         if (s.zeroTimedOut) {
             column.add(t(s.message, Snow.Type.BODY), bottom = 12)
-            column.add(Snow.button(this, "Try again") { service?.retryZero() }, bottom = 10)
         }
-        column.add(Snow.button(this, "Cancel", Snow.ButtonKind.QUIET) { service?.cancelRun() })
     }
 
     private fun running(column: LinearLayout, s: RunState) {
@@ -325,7 +316,6 @@ class RunActivity : Activity() {
         verdictView = t(verdictLine(s), Snow.Type.BODY).also { column.add(it, top = 12, bottom = 16) }
         s.banner?.let { column.add(t(it, Snow.Type.STRONG), bottom = 16) }
         column.add(t(GestureSyncPrompts.RUNNING, Snow.Type.STRONG), bottom = 12)
-        column.add(Snow.button(this, "Stop run") { service?.stopRun() }.apply { minHeight = Snow.dp(this@RunActivity, 64) })
         column.add(t("You can lock the phone and put it in your pocket. The run ends by itself after a quiet spell.", Snow.Type.CAPTION, Snow.INK_SOFT), top = 16)
     }
 
@@ -341,7 +331,6 @@ class RunActivity : Activity() {
         } else {
             column.add(RecoveryCard(this, service?.lastRunId()), bottom = 16)
         }
-        column.add(Snow.button(this, "Continue saving in background", Snow.ButtonKind.QUIET) { service?.abandonRunSave() })
         column.add(t("Saving carries on in the background; the boots stay in On snow mode until you switch them back.", Snow.Type.CAPTION, Snow.INK_SOFT), top = 8)
     }
 

@@ -97,3 +97,7 @@ Hardware acceptance checks still require powered boot sensors: record with the s
 On 6 October 2026, the unit suite, debug APK, instrumentation APK and Android lint passed. The storage runner passed on the Pixel 9a Android emulator. Dashboard launch, sensor-free demo creation and review were also exercised in the emulator. This does not validate physical BLE connections or real boot-angle accuracy.
 
 The sensor recorder's start/stop/download protocol is documented in the firmware protocol. Device-side recording requires the firmware image with the SPIFFS partition layout and a one-time USB flash if the board still has the earlier ESPHome partition table.
+
+### Compact practice controls
+
+Run and drill preparation keep their current Start action below scrolling explanations. Active phases retain Stop/Finish/Cancel/Retry or Continue saving in background in a separate action region; scrolling warnings cannot cover it. Preparation settings and secondary boot-management tools expand on demand. Expansion survives rotation. Controls retain their identity across same-phase updates; capture ownership, recording and recovery commands are unchanged. Insets include the keyboard for these screens.
