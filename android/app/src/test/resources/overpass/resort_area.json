@@ -1,0 +1,136 @@
+{
+  "version": 0.6,
+  "generator": "Overpass API 0.7.62.1 084b4234",
+  "osm3s": {
+    "timestamp_osm_base": "2026-10-19T08:15:42Z",
+    "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL."
+  },
+  "elements": [
+{
+  "type": "way",
+  "id": 200001,
+  "timestamp": "2024-01-02T10:00:00Z",
+  "version": 2,
+  "changeset": 1,
+  "user": "mapper",
+  "uid": 1,
+  "nodes": [
+    700001,
+    700002,
+    700003,
+    700001
+  ],
+  "geometry": [
+    { "lat": 46.0300000, "lon": 7.0300000 },
+    { "lat": 46.0300000, "lon": 7.0320000 },
+    { "lat": 46.0280000, "lon": 7.0310000 },
+    { "lat": 46.0300000, "lon": 7.0300000 }
+  ],
+  "tags": {
+    "area": "yes",
+    "landuse": "winter_sports",
+    "name": "Beginner Meadow",
+    "piste:difficulty": "novice",
+    "piste:type": "downhill"
+  }
+},
+{
+  "type": "way",
+  "id": 200002,
+  "timestamp": "2024-01-02T10:00:00Z",
+  "version": 6,
+  "changeset": 1,
+  "user": "mapper",
+  "uid": 1,
+  "nodes": [
+    700004,
+    700005
+  ],
+  "geometry": [
+    { "lat": 46.0400000, "lon": 7.0400000 },
+    { "lat": 46.0350000, "lon": 7.0350000 }
+  ],
+  "tags": {
+    "piste:type": "downhill"
+  }
+},
+{
+  "type": "relation",
+  "id": 300001,
+  "timestamp": "2024-01-02T10:00:00Z",
+  "version": 3,
+  "changeset": 1,
+  "user": "mapper",
+  "uid": 1,
+  "bounds": {
+    "minlat": 46.0250000,
+    "minlon": 7.0250000,
+    "maxlat": 46.0270000,
+    "maxlon": 7.0280000
+  },
+  "members": [
+    {
+      "type": "way",
+      "ref": 200010,
+      "role": "outer",
+      "geometry": [
+        { "lat": 46.0270000, "lon": 7.0250000 },
+        { "lat": 46.0270000, "lon": 7.0280000 },
+        { "lat": 46.0250000, "lon": 7.0280000 }
+      ]
+    },
+    {
+      "type": "way",
+      "ref": 200011,
+      "role": "outer",
+      "geometry": [
+        { "lat": 46.0250000, "lon": 7.0280000 },
+        { "lat": 46.0250000, "lon": 7.0250000 },
+        { "lat": 46.0270000, "lon": 7.0250000 }
+      ]
+    },
+    {
+      "type": "node",
+      "ref": 700099,
+      "role": "",
+      "lat": 46.0260000,
+      "lon": 7.0260000
+    }
+  ],
+  "tags": {
+    "name": "Big Bowl",
+    "piste:difficulty": "freeride",
+    "piste:type": "downhill",
+    "type": "multipolygon"
+  }
+},
+{
+  "type": "relation",
+  "id": 300002,
+  "timestamp": "2024-01-02T10:00:00Z",
+  "version": 1,
+  "changeset": 1,
+  "user": "mapper",
+  "uid": 1,
+  "members": [
+    {
+      "type": "way",
+      "ref": 200002,
+      "role": "",
+      "geometry": [
+        { "lat": 46.0400000, "lon": 7.0400000 },
+        { "lat": 46.0350000, "lon": 7.0350000 }
+      ]
+    }
+  ],
+  "tags": {
+    "name": "Long Valley Run",
+    "piste:difficulty": "advanced",
+    "piste:type": "downhill",
+    "ref": "7",
+    "route": "piste",
+    "type": "route"
+  }
+}
+  ]
+}

@@ -1,0 +1,204 @@
+{
+  "version": 0.6,
+  "generator": "Overpass API 0.7.62.1 084b4234",
+  "osm3s": {
+    "timestamp_osm_base": "2026-10-19T08:15:42Z",
+    "copyright": "The data included in this document is from www.openstreetmap.org. The data is made available under ODbL."
+  },
+  "elements": [
+{
+  "type": "node",
+  "id": 900001,
+  "lat": 46.0101000,
+  "lon": 7.0102000,
+  "timestamp": "2024-01-02T10:00:00Z",
+  "version": 4,
+  "changeset": 1,
+  "user": "mapper",
+  "uid": 1,
+  "tags": {
+    "aerialway": "station",
+    "name": "Valley station"
+  }
+},
+{
+  "type": "node",
+  "id": 900002,
+  "lat": 46.0201000,
+  "lon": 7.0202000,
+  "timestamp": "2024-01-02T10:00:00Z",
+  "version": 1,
+  "changeset": 1,
+  "user": "mapper",
+  "uid": 1,
+  "tags": {
+    "aerialway": "station"
+  }
+},
+{
+  "type": "way",
+  "id": 100001,
+  "timestamp": "2024-01-02T10:00:00Z",
+  "version": 7,
+  "changeset": 1,
+  "user": "mapper",
+  "uid": 1,
+  "bounds": {
+    "minlat": 46.0101000,
+    "minlon": 7.0102000,
+    "maxlat": 46.0201000,
+    "maxlon": 7.0202000
+  },
+  "nodes": [
+    900001,
+    900002
+  ],
+  "geometry": [
+    { "lat": 46.0101000, "lon": 7.0102000 },
+    { "lat": 46.0201000, "lon": 7.0202000 }
+  ],
+  "tags": {
+    "aerialway": "chair_lift",
+    "aerialway:capacity": "2400",
+    "name": "Sunny Ridge",
+    "operator": "Example Lifts",
+    "ref": "C4"
+  }
+},
+{
+  "type": "way",
+  "id": 100002,
+  "timestamp": "2024-01-02T10:00:00Z",
+  "version": 3,
+  "changeset": 1,
+  "user": "mapper",
+  "uid": 1,
+  "bounds": {
+    "minlat": 46.0102000,
+    "minlon": 7.0110000,
+    "maxlat": 46.0200000,
+    "maxlon": 7.0200000
+  },
+  "nodes": [
+    800001,
+    800002,
+    800003
+  ],
+  "geometry": [
+    { "lat": 46.0200000, "lon": 7.0200000 },
+    { "lat": 46.0150000, "lon": 7.0150000 },
+    { "lat": 46.0102000, "lon": 7.0110000 }
+  ],
+  "tags": {
+    "name": "Blue Fox",
+    "piste:difficulty": "Novice ",
+    "piste:grooming": "classic",
+    "piste:type": "downhill",
+    "ref": "3"
+  }
+},
+{
+  "type": "way",
+  "id": 100003,
+  "timestamp": "2024-01-02T10:00:00Z",
+  "version": 1,
+  "changeset": 1,
+  "user": "mapper",
+  "uid": 1,
+  "nodes": [
+    800004,
+    800005,
+    800006
+  ],
+  "geometry": [
+    { "lat": 46.0190000, "lon": 7.0190000 },
+    null,
+    { "lat": 46.0120000, "lon": 7.0120000 }
+  ],
+  "tags": {
+    "piste:type": "downhill",
+    "piste:difficulty": "very hard"
+  }
+},
+{
+  "type": "way",
+  "id": 100004,
+  "timestamp": "2024-01-02T10:00:00Z",
+  "version": 2,
+  "changeset": 1,
+  "user": "mapper",
+  "uid": 1,
+  "nodes": [
+    800007
+  ],
+  "geometry": [
+    { "lat": 46.0170000, "lon": 7.0170000 }
+  ],
+  "tags": {
+    "piste:type": "downhill",
+    "name": "Stub"
+  }
+},
+{
+  "type": "way",
+  "id": 100005,
+  "timestamp": "2024-01-02T10:00:00Z",
+  "version": 5,
+  "changeset": 1,
+  "user": "mapper",
+  "uid": 1,
+  "nodes": [
+    800008,
+    800009
+  ],
+  "geometry": [
+    { "lat": 46.0110000, "lon": 7.0130000 },
+    { "lat": 46.0130000, "lon": 7.0150000 }
+  ],
+  "tags": {
+    "aerialway": "t-bar",
+    "piste:name": "Lift track name"
+  }
+},
+{
+  "type": "way",
+  "id": 100006,
+  "timestamp": "2024-01-02T10:00:00Z",
+  "version": 1,
+  "changeset": 1,
+  "user": "mapper",
+  "uid": 1,
+  "nodes": [
+    800010,
+    800011
+  ],
+  "geometry": [
+    { "lat": 46.0180000, "lon": 7.0180000 },
+    { "lat": 46.0160000, "lon": 7.0160000 }
+  ],
+  "tags": {
+    "piste:type": "downhill",
+    "piste:name": "Old Road",
+    "piste:ref": "12",
+    "piste:difficulty": "intermediate"
+  }
+},
+{
+  "type": "way",
+  "id": 100007,
+  "timestamp": "2024-01-02T10:00:00Z",
+  "version": 1,
+  "changeset": 1,
+  "user": "mapper",
+  "uid": 1,
+  "nodes": [
+    800012,
+    800013
+  ],
+  "geometry": [
+    { "lat": 46.0180000, "lon": 7.0180000 },
+    { "lat": 46.0160000, "lon": 7.0160000 }
+  ]
+}
+  ]
+}

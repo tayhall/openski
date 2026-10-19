@@ -1,0 +1,101 @@
+package com.openski.android
+
+import android.content.ContentValues
+import android.database.Cursor
+
+/**
+ * Resort maps in the session database (tables resorts, resort_ways and resort_stations, database version 12).
+ * Geometry is stored as a [Polyline] at 1e-6 degrees. Locks on [store] like the store's own methods.
+ */
+class ResortStore(private val store: LocalSessionStore) : ResortCache {
+    /** Replaces [resort] with its ways and stations in one transaction; on any failure the old copy stays. */
+    override fun save(resort: StoredResort, data: ResortData): Unit = synchronized(store) {
+        val db = store.writableDatabase
+        db.beginTransaction()
+        try {
+            removeRows(resort.id)
+            db.insertOrThrow("resorts", null, ContentValues().apply {
+                put("id", resort.id); put("name", resort.name); put("centre_lat", resort.centre.lat); put("centre_lon", resort.centre.lon)
+                put("radius_m", resort.radiusM); put("fetched_at_ms", resort.fetchedAtMs); put("way_count", data.ways.size)
+                put("source_note", resort.sourceNote)
+            })
+            for (info in data.ways) {
+                val w = info.way
+                db.insertOrThrow("resort_ways", null, ContentValues().apply {
+                    put("resort_id", resort.id); put("osm_id", w.osmId); put("kind", w.kind.name); put("name", w.name); put("ref", w.ref)
+                    put("difficulty", w.difficulty); put("difficulty_raw", info.difficultyRaw); put("aerialway", w.aerialway)
+                    put("operator", info.operator); put("osm_version", info.version); put("area", if (info.area) 1 else 0)
+                    put("relation_id", info.relationId); put("geometry", Polyline.encode(w.points))
+                })
+            }
+            for (s in data.stations) {
+                db.insertOrThrow("resort_stations", null, ContentValues().apply {
+                    put("resort_id", resort.id); put("osm_id", s.osmId); put("name", s.name); put("lat", s.point.lat); put("lon", s.point.lon)
+                    put("operator", s.operator); put("osm_version", s.version)
+                })
+            }
+            db.setTransactionSuccessful()
+        } finally { db.endTransaction() }
+    }
+
+    override fun list(): List<StoredResort> = synchronized(store) {
+        store.readableDatabase.rawQuery("SELECT $RESORT_COLUMNS FROM resorts ORDER BY name COLLATE NOCASE, id", null)
+            .use { c -> buildList { while (c.moveToNext()) add(resort(c)) } }
+    }
+
+    override fun resort(id: String): StoredResort? = synchronized(store) {
+        store.readableDatabase.rawQuery("SELECT $RESORT_COLUMNS FROM resorts WHERE id=?", arrayOf(id))
+            .use { c -> if (c.moveToFirst()) resort(c) else null }
+    }
+
+    /** The ways of [id] in OSM id order. A row whose geometry no longer decodes is left out. */
+    override fun ways(id: String): List<ResortWayInfo> = synchronized(store) {
+        store.readableDatabase.rawQuery("""SELECT osm_id,kind,name,ref,difficulty,difficulty_raw,aerialway,operator,osm_version,area,
+            relation_id,geometry FROM resort_ways WHERE resort_id=? ORDER BY osm_id""", arrayOf(id)).use { c ->
+            buildList {
+                while (c.moveToNext()) {
+                    val kind = WayKind.entries.firstOrNull { it.name == c.getString(1) } ?: continue
+                    val points = Polyline.decode(c.getString(11))?.takeIf { it.size >= 2 } ?: continue
+                    add(ResortWayInfo(ResortWay(c.getLong(0), kind, c.text(2), c.text(3), c.text(4), c.text(6), points),
+                        c.text(5), c.text(7), c.intOrNull(8), c.getInt(9) != 0, c.longOrNull(10)))
+                }
+            }
+        }
+    }
+
+    override fun stations(id: String): List<ResortStation> = synchronized(store) {
+        store.readableDatabase.rawQuery("SELECT osm_id,name,lat,lon,operator,osm_version FROM resort_stations WHERE resort_id=? ORDER BY osm_id",
+            arrayOf(id)).use { c -> buildList {
+                while (c.moveToNext()) add(ResortStation(c.getLong(0), c.text(1), LatLon(c.getDouble(2), c.getDouble(3)), c.text(4), c.intOrNull(5)))
+            } }
+    }
+
+    /** Deletes [id] and its ways and stations together. Sessions are never touched. */
+    override fun delete(id: String): Boolean = synchronized(store) {
+        val db = store.writableDatabase
+        db.beginTransaction()
+        try {
+            val removed = removeRows(id)
+            db.setTransactionSuccessful()
+            removed
+        } finally { db.endTransaction() }
+    }
+
+    private fun removeRows(id: String): Boolean {
+        val db = store.writableDatabase
+        db.delete("resort_ways", "resort_id=?", arrayOf(id))
+        db.delete("resort_stations", "resort_id=?", arrayOf(id))
+        return db.delete("resorts", "id=?", arrayOf(id)) > 0
+    }
+
+    private fun resort(c: Cursor) = StoredResort(c.getString(0), c.getString(1), LatLon(c.getDouble(2), c.getDouble(3)),
+        c.getInt(4), c.getLong(5), c.getInt(6), c.getString(7))
+
+    private fun Cursor.text(i: Int): String? = if (isNull(i)) null else getString(i)
+    private fun Cursor.intOrNull(i: Int): Int? = if (isNull(i)) null else getInt(i)
+    private fun Cursor.longOrNull(i: Int): Long? = if (isNull(i)) null else getLong(i)
+
+    private companion object {
+        const val RESORT_COLUMNS = "id,name,centre_lat,centre_lon,radius_m,fetched_at_ms,way_count,source_note"
+    }
+}
