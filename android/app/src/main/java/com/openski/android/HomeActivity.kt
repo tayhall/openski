@@ -2,6 +2,7 @@ package com.openski.android
 
 import android.app.Activity
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
@@ -49,7 +50,16 @@ class HomeActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        practiceLoading = true
+        reload()
+    }
+
+    private var hasLoaded = false
+    private var renderedTab = -1
+
+    /** Only the first load replaces the tab with "Loading"; later refreshes update in place and keep scroll position. */
+    private fun reload() {
+        practiceLoading = !hasLoaded
+        practiceError = null
         render()
         practiceIo.execute {
             val loaded = runCatching {
@@ -61,8 +71,8 @@ class HomeActivity : Activity() {
             }
             runOnUiThread {
                 if (!isDestroyed) {
-                    loaded.onSuccess { practiceAttempts = it.first; lastRun = it.second; practiceError = null }
-                        .onFailure { practiceError = "Could not load practice history. Your saved history has been kept. Reopen this screen to retry." }
+                    loaded.onSuccess { practiceAttempts = it.first; lastRun = it.second; practiceError = null; hasLoaded = true }
+                        .onFailure { practiceError = "Could not load practice history. Your saved history has been kept." }
                     practiceLoading = false
                     render()
                 }
@@ -71,6 +81,30 @@ class HomeActivity : Activity() {
     }
 
     override fun onDestroy() { practiceIo.shutdown(); super.onDestroy() }
+
+    /** Back steps toward Today (or the previous onboarding step) before it leaves the app. */
+    private fun stepBack(): Boolean = when {
+        !store.onboarded && onboardingStep > 0 -> { onboardingStep -= 1; render(); true }
+        store.onboarded && tab != 0 -> { tab = 0; render(); true }
+        else -> false
+    }
+
+    private val backCallback = if (Build.VERSION.SDK_INT >= 33) android.window.OnBackInvokedCallback { stepBack() } else null
+    private var backRegistered = false
+
+    private fun syncBackCallback() {
+        if (Build.VERSION.SDK_INT < 33) return
+        val wanted = if (store.onboarded) tab != 0 else onboardingStep > 0
+        if (wanted == backRegistered) return
+        val cb = backCallback ?: return
+        if (wanted) onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, cb)
+        else onBackInvokedDispatcher.unregisterOnBackInvokedCallback(cb)
+        backRegistered = wanted
+    }
+
+    // Below API 33 there is no back callback, so Back arrives as a key event.
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean =
+        (keyCode == android.view.KeyEvent.KEYCODE_BACK && Build.VERSION.SDK_INT < 33 && stepBack()) || super.onKeyDown(keyCode, event)
 
     private fun practice(demo: Boolean = false) = Progress(practiceAttempts, store.experience.startsOn, demo = demo)
 
@@ -93,12 +127,18 @@ class HomeActivity : Activity() {
     private fun render() {
         val nav = (body.parent as LinearLayout).getChildAt(1)
         nav.visibility = if (store.onboarded) View.VISIBLE else View.GONE
+        val keepY = if (renderedTab == tab) (body.getChildAt(0) as? ScrollView)?.scrollY ?: 0 else 0
         body.removeAllViews()
-        body.addView(if (!store.onboarded) onboarding() else if (tab != 3 && (practiceLoading || practiceError != null)) page {
-            add(t(if (practiceLoading) "Loading practice…" else practiceError!!, Snow.Type.BODY))
+        val content = if (!store.onboarded) onboarding() else if (tab != 3 && (practiceLoading || practiceError != null)) page {
+            add(t(if (practiceLoading) "Loading practice…" else practiceError!!, Snow.Type.BODY), bottom = 12)
+            if (!practiceLoading) add(Snow.button(this@HomeActivity, "Try again", Snow.ButtonKind.SECONDARY) { reload() })
         } else when (tab) {
             0 -> today(); 1 -> path(); 2 -> progress(); else -> boots()
-        })
+        }
+        body.addView(content)
+        renderedTab = tab
+        if (keepY > 0 && content is ScrollView) content.post { content.scrollTo(0, keepY) }
+        syncBackCallback()
         navItems.forEachIndexed { index, item ->
             val selected = index == tab
             item.setTextColor(if (selected) Snow.INK else Snow.INK_SOFT)
@@ -144,7 +184,7 @@ class HomeActivity : Activity() {
     // Onboarding ----------------------------------------------------------------------------------------
 
     private fun onboarding() = page {
-        add(t("OpenSki", Snow.Type.TITLE, Snow.ORANGE), bottom = 24)
+        add(t("OpenSki", Snow.Type.TITLE, Snow.ORANGE_TEXT), bottom = 24)
         when (onboardingStep) {
             0 -> {
                 add(t("What do you want to ski better?", Snow.Type.HERO), bottom = 8)
@@ -154,7 +194,7 @@ class HomeActivity : Activity() {
                 }
                 add(Snow.button(this@HomeActivity, "Continue") {
                     if (pickedGoal != null) { onboardingStep = 1; render() }
-                }.apply { alpha = if (pickedGoal == null) .4f else 1f; isEnabled = pickedGoal != null }, top = 8)
+                }.apply { isEnabled = pickedGoal != null }, top = 8)
             }
             1 -> {
                 add(t("Where are you now?", Snow.Type.HERO), bottom = 8)
@@ -164,7 +204,7 @@ class HomeActivity : Activity() {
                 }
                 add(Snow.button(this@HomeActivity, "Continue") {
                     if (pickedExperience != null) { onboardingStep = 2; render() }
-                }.apply { alpha = if (pickedExperience == null) .4f else 1f; isEnabled = pickedExperience != null }, top = 8)
+                }.apply { isEnabled = pickedExperience != null }, top = 8)
                 add(Snow.button(this@HomeActivity, "Back", Snow.ButtonKind.QUIET) { onboardingStep = 0; render() }, top = 4)
             }
             else -> {
@@ -212,14 +252,25 @@ class HomeActivity : Activity() {
 
     // Today ---------------------------------------------------------------------------------------------
 
-    private fun LinearLayout.historyLinks() {
-        add(Snow.button(this@HomeActivity, "History", Snow.ButtonKind.SECONDARY) {
-            startActivity(Intent(this@HomeActivity, HistoryActivity::class.java).putExtra("demo", demoProgress))
-        }, bottom = 12)
+    private fun historyButton() = Snow.button(this, "History", Snow.ButtonKind.QUIET) {
+        startActivity(Intent(this, HistoryActivity::class.java).putExtra("demo", demoProgress))
+    }.apply { minWidth = 0 }
+
+    /** A tappable summary of the latest saved record, so it reads as content rather than a button. */
+    private fun recentCard(title: String, whenMs: Long, onOpen: () -> Unit) = Snow.card(this, 16, Snow.PAPER, 20).apply {
+        addView(t(title, Snow.Type.STRONG))
+        add(t(java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT).format(java.util.Date(whenMs)),
+            Snow.Type.CAPTION, Snow.INK_SOFT), top = 2)
+        isClickable = true; isFocusable = true
+        contentDescription = "$title, ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(whenMs))}"
+        setOnClickListener { onOpen() }
     }
 
     private fun today() = page {
-        historyLinks()
+        val header = LinearLayout(this@HomeActivity).apply { gravity = Gravity.CENTER_VERTICAL }
+        header.addView(t("OpenSki", Snow.Type.TITLE, Snow.ORANGE_TEXT), LinearLayout.LayoutParams(0, -2, 1f))
+        header.addView(historyButton(), LinearLayout.LayoutParams(-2, -2))
+        add(header, bottom = 4)
         practiceAttempts.filter { it.status == PracticeStatus.ACTIVE }.maxByOrNull { it.timeMs }?.let { active ->
             add(Snow.button(this@HomeActivity, "Return to active practice · ${if (active.demo) "Demo" else "My practice"}") {
                 startActivity(Intent(this@HomeActivity, DrillActivity::class.java).putExtra("drill", active.drillId).putExtra("resume_active", true))
@@ -227,12 +278,12 @@ class HomeActivity : Activity() {
         }
         val latestPractice = practiceAttempts.filter { it.status != PracticeStatus.ACTIVE }.maxByOrNull { it.timeMs }
         lastRun?.takeIf { it.first.time > (latestPractice?.timeMs ?: Long.MIN_VALUE) }?.let { (run, demo) ->
-            add(Snow.button(this@HomeActivity, "Last run · ${if(demo) "Demo" else "My practice"} · ${run.detail} · ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(run.time))}", Snow.ButtonKind.SECONDARY) {
+            add(recentCard("Last run · ${if (demo) "Demo" else "My practice"} · ${run.detail}", run.time) {
                 startActivity(Intent(this@HomeActivity, SessionDetailActivity::class.java).putExtra("session_id", run.id))
             }, bottom = 12)
         }
         latestPractice?.takeIf { it.timeMs >= (lastRun?.first?.time ?: Long.MIN_VALUE) }?.let { recent ->
-            add(Snow.button(this@HomeActivity, "Last practice · ${if(recent.demo) "Demo" else "My practice"} · ${recent.resultLabel} · ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(recent.timeMs))}", Snow.ButtonKind.SECONDARY) {
+            add(recentCard("Last practice · ${if (recent.demo) "Demo" else "My practice"} · ${recent.resultLabel}", recent.timeMs) {
                 startActivity(Intent(this@HomeActivity, PracticeResultActivity::class.java).putExtra("attempt_id", recent.id))
             }, bottom = 12)
         }
@@ -240,10 +291,7 @@ class HomeActivity : Activity() {
         val goal = store.goal ?: Goal.CARVING
         val now = System.currentTimeMillis()
         val streak = progress.streak(now)
-        val header = LinearLayout(this@HomeActivity).apply { gravity = Gravity.CENTER_VERTICAL }
-        header.addView(t("OpenSki", Snow.Type.TITLE, Snow.ORANGE), LinearLayout.LayoutParams(0, -2, 1f))
-        header.addView(t("${NumberFormat.getInstance().format(progress.vert)} practice points", Snow.Type.TITLE))
-        add(header, bottom = 20)
+        add(t("${NumberFormat.getInstance().format(progress.vert)} practice points", Snow.Type.TITLE), bottom = 20)
         add(RecoveryCard(this@HomeActivity, pendingOnly = true), bottom = 16)
 
         val runCard = Snow.card(this@HomeActivity, 22, radius = 28)
@@ -410,7 +458,7 @@ class HomeActivity : Activity() {
     // Progress ------------------------------------------------------------------------------------------
 
     private fun progress() = page {
-        historyLinks()
+        addView(historyButton(), LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.END; bottomMargin = Snow.dp(this@HomeActivity, 4) })
         val progress = practice(demoProgress)
         sourcePicker()
         val now = System.currentTimeMillis()

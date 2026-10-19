@@ -84,8 +84,9 @@ class RunActivity : Activity() {
         preparationExpanded = savedInstanceState?.getBoolean("preparation_expanded") ?: false
         phaseLayout = PhaseLayout(this)
         frame.addView(phaseLayout)
-        SkiUi.applyInsets(frame, ime = true)
-        setContentView(frame)
+        val screen = Snow.screen(this, frame)
+        SkiUi.applyInsets(screen, ime = true)
+        setContentView(screen)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

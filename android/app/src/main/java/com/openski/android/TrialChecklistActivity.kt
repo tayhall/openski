@@ -30,8 +30,9 @@ class TrialChecklistActivity : Activity() {
         GardenTrials.all.forEach { trial -> column.addView(card(trial, trial.id in done), spaced(12)) }
         column.addView(SkiUi.label(this, "Ticks are kept on this phone only. Record each result as a dated entry in docs/bench-results.md.", 12f, SkiUi.MUTED))
         val root = ScrollView(this).apply { setBackgroundColor(SkiUi.CANVAS); isFillViewport = true; addView(column) }
-        SkiUi.applyInsets(root)
-        setContentView(root)
+        val screen = SkiUi.screen(this, root)
+        SkiUi.applyInsets(screen)
+        setContentView(screen)
         renderProgress()
     }
 

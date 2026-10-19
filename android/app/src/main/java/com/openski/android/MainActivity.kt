@@ -363,8 +363,9 @@ class MainActivity : Activity() {
         })
         lab.addView(trialCard, bottomMargin(dp(16)))
         lab.addView(label("Dry ski movements help validate the software. Real edge angles and carving still need snow validation.", 12f, MUTED))
-        SkiUi.applyInsets(root)
-        setContentView(root)
+        val screen = SkiUi.screen(this, root)
+        SkiUi.applyInsets(screen)
+        setContentView(screen)
         selectTab(selectedTab)
     }
 

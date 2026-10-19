@@ -52,8 +52,9 @@ class CoachingActivity : Activity() {
         store = CoachSettingsStore(this)
         settings = store.settings
         frame = FrameLayout(this).apply { setBackgroundColor(Snow.SNOW) }
-        SkiUi.applyInsets(frame)
-        setContentView(frame)
+        val screen = Snow.screen(this, frame)
+        SkiUi.applyInsets(screen)
+        setContentView(screen)
         render()
     }
 

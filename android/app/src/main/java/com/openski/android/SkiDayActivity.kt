@@ -66,8 +66,9 @@ class SkiDayActivity : Activity() {
         dayId = savedInstanceState?.getString("day") ?: intent.getStringExtra(EXTRA_DAY)
         savedInstanceState?.getString("export_day")?.let { id -> savedInstanceState.getString("export_kind")?.let { pendingExport = id to it } }
         frame = FrameLayout(this).apply { setBackgroundColor(Snow.SNOW) }
-        SkiUi.applyInsets(frame)
-        setContentView(frame)
+        val screen = Snow.screen(this, frame)
+        SkiUi.applyInsets(screen)
+        setContentView(screen)
     }
 
     override fun onSaveInstanceState(state: Bundle) {

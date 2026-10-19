@@ -80,6 +80,17 @@ object SkiUi {
         setOnClickListener { onClick() }
     }
 
+    /** The dark screens' way out: a quiet "‹  Back" bar above the content, matching the light [Snow.screen]. */
+    fun screen(activity: android.app.Activity, content: View, up: () -> Unit = { activity.finish() }): LinearLayout =
+        LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(CANVAS)
+            addView(button(activity, "‹  Back", ButtonStyle.QUIET) { up() }.apply {
+                contentDescription = "Back"; minHeight = dp(activity, 56); minWidth = dp(activity, 96)
+            }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(activity, 12) })
+            addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
+        }
+
     fun styleButton(button: Button, style: ButtonStyle = ButtonStyle.SECONDARY) {
         val context = button.context
         val fill = when (style) {

@@ -72,8 +72,9 @@ class DrillActivity : Activity() {
         preparationExpanded = savedInstanceState?.getBoolean("preparation_expanded") ?: false
         phaseLayout = PhaseLayout(this)
         frame.addView(phaseLayout)
-        SkiUi.applyInsets(frame, ime = true)
-        setContentView(frame)
+        val screen = Snow.screen(this, frame)
+        SkiUi.applyInsets(screen, ime = true)
+        setContentView(screen)
         repeatLoading = intent.hasExtra("repeat_attempt_id")
         intro()
         intent.getStringExtra("repeat_attempt_id")?.let { id ->
@@ -135,7 +136,6 @@ class DrillActivity : Activity() {
         phaseLayout.controls(actions)
         renderedScreen = screen
     }
-    private fun back() = Snow.button(this, "‹ Back", Snow.ButtonKind.QUIET) { finish() }.apply { gravity = Gravity.START or Gravity.CENTER_VERTICAL }
 
     private fun intro() {
         val paired = listOf("L", "R").any { store.sensorAddress(it) != null }
@@ -147,7 +147,6 @@ class DrillActivity : Activity() {
             else -> PhaseLayout.Action("start-demo", "Try Demo") { begin(true) }
         }
         show(listOfNotNull(start), "intro") {
-            add(back(), bottom = 8)
             add(t(drill.title, Snow.Type.DISPLAY), bottom = 8)
             notice?.let { add(t(it), bottom = 12) }
             add(t(drill.summary), bottom = 12)
@@ -287,7 +286,6 @@ class DrillActivity : Activity() {
             PhaseLayout.Action("finish", "Finish practice", Snow.ButtonKind.SECONDARY) { service?.finishDrill(state.attempt?.id) })
         else -> listOf(PhaseLayout.Action("finish", "Finish practice", Snow.ButtonKind.SECONDARY) { service?.finishDrill(state.attempt?.id) })
     }, screen = state.phase.name) {
-        add(back(), bottom = 8)
         add(t(drill.title, Snow.Type.DISPLAY), bottom = 10)
         add(t(if (state.attempt?.demo == true) "Demo boots · simulated" else "My practice · ${state.side ?: "connecting"}", Snow.Type.CAPTION), bottom = 12)
         status = t(state.message).also { add(it, bottom = 16) }
@@ -320,7 +318,6 @@ class DrillActivity : Activity() {
 
     private fun interruptedResult(state: DrillState) = show {
         val attempt = state.attempt ?: return@show
-        add(back(), bottom = 8)
         add(t(if (attempt.demo) "Demo boots" else "My practice", Snow.Type.CAPTION), bottom = 8)
         add(t(when (attempt.status) {
             PracticeStatus.COMPLETED -> if (attempt.eligible) "Set completed" else "Cannot judge this set"

@@ -139,7 +139,8 @@ class BootSetupActivity : Activity() {
         val layout = PhaseLayout(this)
         layout.content(column, true)
         layout.controls(listOf(PhaseLayout.Action("done", "Done", Snow.ButtonKind.SECONDARY) { finish() }))
-        SkiUi.applyInsets(layout, ime = true); setContentView(layout)
+        val screen = Snow.screen(this, layout)
+        SkiUi.applyInsets(screen, ime = true); setContentView(screen)
     }
 
     override fun onStart() {
@@ -164,7 +165,6 @@ class BootSetupActivity : Activity() {
         last = snapshot
         recoverButton.isEnabled = !snapshot.captureActive && snapshot.recovery.items.any { it.canRetry }
         recoverButton.visibility = if (snapshot.recovery.items.any { it.canRetry }) View.VISIBLE else View.GONE
-        recoverButton.alpha = if (recoverButton.isEnabled) 1f else .45f
         connectButton.visibility = if (snapshot.boots.any { it.address != null }) View.VISIBLE else View.GONE
         issues.text = if (snapshot.readiness.issues.isEmpty()) "Ready for a run. Neutral zero is captured when you start."
             else snapshot.readiness.issues.joinToString("\n") { it.message }
@@ -181,7 +181,6 @@ class BootSetupActivity : Activity() {
             forgetButtons[b.side]?.isEnabled = b.address != null && !snapshot.captureActive && !snapshot.recovery.pending
             listOf(mountingButtons[b.side], zeroButtons[b.side], modeButtons[b.side], forgetButtons[b.side]).forEach { control ->
                 control?.visibility = if (b.address != null) View.VISIBLE else View.GONE
-                control?.alpha = if (control?.isEnabled == true) 1f else .45f
             }
         }
     }

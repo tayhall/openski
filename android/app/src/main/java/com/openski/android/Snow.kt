@@ -27,6 +27,9 @@ object Snow {
     val INK = 0xFF14232E.toInt()
     val INK_SOFT = 0xFF4A5C69.toInt()
     val ORANGE = 0xFFFF5B2E.toInt()
+    /** Orange for text on SNOW or PAPER: 5:1, where [ORANGE] itself is only 2.9:1. */
+    val ORANGE_TEXT = 0xFFC2410C.toInt()
+    val DISABLED_FILL = 0xFFE3E9ED.toInt()
     val BLUE = 0xFF1E6FD9.toInt()
     val RED = 0xFFD6362F.toInt()
     val GOLD = 0xFFF2B01E.toInt()
@@ -87,10 +90,40 @@ object Snow {
             minHeight = dp(context, 56)
             setPadding(dp(context, 22), dp(context, 16), dp(context, 22), dp(context, 16))
             val fill = when (kind) { ButtonKind.PRIMARY -> ORANGE; ButtonKind.SECONDARY -> PAPER; ButtonKind.QUIET -> 0 }
-            setTextColor(INK)
+            // A disabled button keeps a solid fill, a grey outline and readable text (4.7:1) instead of fading to alpha.
+            setTextColor(ColorStateList(arrayOf(intArrayOf(-android.R.attr.state_enabled), intArrayOf()), intArrayOf(INK_SOFT, INK)))
             val shape = rounded(context, fill, 28, if (kind == ButtonKind.SECONDARY) INK else null, 2)
-            background = RippleDrawable(ColorStateList.valueOf(0x33000000), shape, null)
+            val off = rounded(context, if (kind == ButtonKind.QUIET) 0 else DISABLED_FILL, 28, if (kind == ButtonKind.QUIET) null else INK_SOFT, 2)
+            val states = android.graphics.drawable.StateListDrawable().apply {
+                addState(intArrayOf(-android.R.attr.state_enabled), off)
+                addState(intArrayOf(), shape)
+            }
+            background = RippleDrawable(ColorStateList.valueOf(0x33000000), states, null)
             setOnClickListener { onClick() }
+        }
+
+    /** The way out of a screen: the same "‹ Back" bar above every training screen's content, 56 dp tall for gloves. */
+    fun screen(activity: Activity, content: View, up: () -> Unit = { activity.finish() }): LinearLayout =
+        LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(SNOW)
+            addView(TextView(activity).apply {
+                text = "‹  Back"
+                textSize = 18f
+                setTextColor(INK)
+                typeface = activity.resources.getFont(R.font.barlow_condensed_bold)
+                includeFontPadding = false
+                gravity = Gravity.CENTER_VERTICAL
+                minHeight = dp(activity, 56)
+                minWidth = dp(activity, 96)
+                setPadding(dp(activity, 20), 0, dp(activity, 20), 0)
+                contentDescription = "Back"
+                isClickable = true
+                isFocusable = true
+                background = RippleDrawable(ColorStateList.valueOf(0x33000000), null, rounded(activity, PAPER, 28))
+                setOnClickListener { up() }
+            }, LinearLayout.LayoutParams(-2, -2))
+            addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
         }
 
     fun fullWidth(topDp: Int = 0, context: Context? = null, bottomDp: Int = 0): LinearLayout.LayoutParams =
