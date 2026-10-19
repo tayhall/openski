@@ -22,6 +22,7 @@ class PhaseLayout(context: Context) : LinearLayout(context) {
         maxLines = 2
         ellipsize = TextUtils.TruncateAt.END
         visibility = View.GONE
+        accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
     }
     private val buttonRow = LinearLayout(context).apply { orientation = VERTICAL }
     private var compact = false

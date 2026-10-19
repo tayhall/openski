@@ -177,7 +177,7 @@ class DrillActivity : Activity() {
             }, bottom = 8)
             add(t("Three count-in ticks prepare you to move. Alternating ticks guide the beat; a short single tone marks each completed movement. Start/end chimes mark the active set. Route or audio-focus loss pauses scoring; reconnect and Resume from neutral. These cues do not signal a new focus score.", Snow.Type.CAPTION), bottom = 8)
             add(Snow.button(this@DrillActivity, "Audio route and speaker permission", Snow.ButtonKind.QUIET) {
-                startActivity(Intent(this@DrillActivity, CoachingActivity::class.java))
+                startActivity(Intent(this@DrillActivity, CoachingActivity::class.java).reuseIfOpen())
             }, bottom = 12)
             add(t("Coach's cue", Snow.Type.TITLE), bottom = 6)
             add(t(drill.cue), bottom = 16)
@@ -192,7 +192,7 @@ class DrillActivity : Activity() {
             else if (repeat == null && paired) add(Snow.button(this@DrillActivity, "Try Demo", Snow.ButtonKind.SECONDARY) { begin(true) }, bottom = 10)
             add(t("Demo is simulated and separate from My practice. Measured scores describe dry cuff roll, not skiing technique.", Snow.Type.CAPTION))
             add(Snow.button(this@DrillActivity, "Set up boots", Snow.ButtonKind.QUIET) {
-                startActivity(Intent(this@DrillActivity, BootSetupActivity::class.java))
+                startActivity(Intent(this@DrillActivity, BootSetupActivity::class.java).reuseIfOpen())
             }, top = 12)
         }
     }
@@ -202,10 +202,9 @@ class DrillActivity : Activity() {
         if (intent.hasExtra("repeat_attempt_id") && repeat == null) { notice = "The saved target is unavailable. Return to the result."; intro(); return }
         if (!targetConfirmed) {
             if (preparationDialog?.isShowing == true) return
-            preparationDialog = android.app.AlertDialog.Builder(this).setTitle("Confirm practice target")
-                .setMessage("${practiceFocus.label} · ${drill.movements} rolls · ${drill.paceSeconds} s beat · ${drill.depthDegrees}° cuff roll.\n\n${practiceFocus.cue}\n\n${PracticeFocus.SCORING_NOTICE}\n\nAudio guidance: ${if (audioGuided) "on" else "off"}.")
-                .setNegativeButton("Cancel", null)
-                .setPositiveButton("Use this target") { _, _ -> targetConfirmed = true; begin(demo) }.show()
+            preparationDialog = Snow.confirm(this, "Confirm practice target",
+                "${practiceFocus.label}: ${drill.movements} rolls, ${drill.paceSeconds} s beat, ${drill.depthDegrees}° roll.\n\n${practiceFocus.cue}\n\n${PracticeFocus.SCORING_NOTICE}\n\nAudio guidance: ${if (audioGuided) "on" else "off"}.",
+                "Use this target") { targetConfirmed = true; begin(demo) }
             return
         }
         val needed = buildList {
@@ -288,7 +287,7 @@ class DrillActivity : Activity() {
     }, screen = state.phase.name) {
         add(t(drill.title, Snow.Type.DISPLAY), bottom = 10)
         add(t(if (state.attempt?.demo == true) "Demo boots · simulated" else "My practice · ${state.side ?: "connecting"}", Snow.Type.CAPTION), bottom = 12)
-        status = t(state.message).also { add(it, bottom = 16) }
+        status = t(state.message).also { it.accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE; add(it, bottom = 16) }
         if (state.phase == DrillPhase.MOUNTING) {
             add(Snow.button(this@DrillActivity, "Choose mounting") {
                 state.side?.let { side ->

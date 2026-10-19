@@ -38,4 +38,10 @@ class GpsStatusRuleTest {
         assertEquals("Location is off on this phone", GpsStatus(GpsState.LOCATION_OFF).label())
         assertEquals("GPS · waiting for signal", GpsStatus(GpsState.WAITING).label())
     }
+
+    @Test fun readyRowUsesTheSameGlyphsAsTheBootRows() {
+        assertEquals("✓  GPS ready · accuracy 6 m", GpsStatus(GpsState.READY, 6).row())
+        assertEquals("○  GPS · waiting for signal", GpsStatus(GpsState.WAITING).row())
+        assertEquals("○  GPS off", GpsStatus(GpsState.OFF).row())
+    }
 }

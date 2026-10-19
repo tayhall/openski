@@ -221,7 +221,7 @@ class HomeActivity : Activity() {
         store.goal = pickedGoal ?: Goal.CARVING
         store.experience = pickedExperience ?: Experience.NEW
         tab = 0; render()
-        if (pair) startActivity(Intent(this, BootSetupActivity::class.java))
+        if (pair) startActivity(Intent(this, BootSetupActivity::class.java).reuseIfOpen())
     }
 
     private fun choice(piste: Piste, title: String, blurb: String, selected: Boolean, onPick: () -> Unit) =
@@ -297,7 +297,7 @@ class HomeActivity : Activity() {
         val runCard = Snow.card(this@HomeActivity, 22, radius = 28)
         runCard.addView(t("Ready to ski?", Snow.Type.DISPLAY))
         runCard.add(t("Check your boots and earbuds, then start a run. Coaching plays through your earbuds with the phone in your pocket.", Snow.Type.BODY, Snow.INK_SOFT), top = 6)
-        runCard.add(Snow.button(this@HomeActivity, "Start a run") { startActivity(Intent(this@HomeActivity, RunActivity::class.java)) }, top = 16)
+        runCard.add(Snow.button(this@HomeActivity, "Start a run") { startActivity(Intent(this@HomeActivity, RunActivity::class.java).reuseIfOpen()) }, top = 16)
         add(runCard, bottom = 16)
 
         // Whole-day tracking: a secondary action, so "Start a run" stays the one primary on this screen.
@@ -515,13 +515,13 @@ class HomeActivity : Activity() {
             if (address != null) {
                 status.add(t("Mounting: ${store.mounting(side)?.label(store.landmarks()) ?: "not set yet"}", Snow.Type.BODY, Snow.INK_SOFT), top = 2)
                 status.add(Snow.button(this@HomeActivity, "Set mounting", Snow.ButtonKind.QUIET) {
-                    startActivity(Intent(this@HomeActivity, BootSetupActivity::class.java))
+                    startActivity(Intent(this@HomeActivity, BootSetupActivity::class.java).reuseIfOpen())
                 }.apply { gravity = Gravity.START or Gravity.CENTER_VERTICAL; setPadding(0, paddingTop, paddingRight, paddingBottom) })
             }
         }
         add(status, bottom = 12)
         add(Snow.button(this@HomeActivity, if (paired.isEmpty()) "Pair my boots" else "Prepare boots and recover recordings", if (paired.isEmpty()) Snow.ButtonKind.PRIMARY else Snow.ButtonKind.SECONDARY) {
-            startActivity(Intent(this@HomeActivity, BootSetupActivity::class.java))
+            startActivity(Intent(this@HomeActivity, BootSetupActivity::class.java).reuseIfOpen())
         }, bottom = 28)
 
         add(t("Coaching", Snow.Type.DISPLAY), bottom = 6)
@@ -529,7 +529,7 @@ class HomeActivity : Activity() {
         coaching.add(t("Metronome and turn chirps", Snow.Type.TITLE))
         coaching.add(t("Audio cues for pace and depth, for skiing with the phone in a pocket. Needs earbuds or a helmet speaker.", Snow.Type.BODY, Snow.INK_SOFT), top = 6)
         coaching.add(Snow.button(this@HomeActivity, "Open coaching", Snow.ButtonKind.SECONDARY) {
-            startActivity(Intent(this@HomeActivity, CoachingActivity::class.java))
+            startActivity(Intent(this@HomeActivity, CoachingActivity::class.java).reuseIfOpen())
         }, top = 14)
         add(coaching, bottom = 28)
 

@@ -34,6 +34,7 @@ class BootSetupActivity : Activity() {
     private lateinit var recovery: TextView
     private lateinit var devices: LinearLayout
     private lateinit var recoverButton: View
+    private lateinit var returnButton: View
     private lateinit var connectButton: View
     private val bootLabels = mutableMapOf<String, TextView>()
     private val mountingButtons = mutableMapOf<String, View>()
@@ -128,8 +129,8 @@ class BootSetupActivity : Activity() {
         action("Swap left and right assignments", parent = advanced.body) { notice.text = if (service?.swapSensors() == true) "Assignments swapped. Connect saved boots to reconnect." else "Assignments are protected while capture or recovery is pending." }
         recoverButton = action("Recover saved recordings / retry") { permittedAction("recover") }
         recoverButton.isEnabled = false
-        action("Return to active practice or recording") { returnToCapture() }
-        action("Coaching and test sounds") { startActivity(Intent(this, CoachingActivity::class.java)) }
+        returnButton = action("Return to active practice or recording") { returnToCapture() }
+        action("Coaching and test sounds") { startActivity(Intent(this, CoachingActivity::class.java).reuseIfOpen()) }
         action("Bluetooth and audio devices", parent = advanced.body) { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }
         action("Phone storage", parent = advanced.body) { startActivity(Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS)) }
         action("App permissions", parent = advanced.body) { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:$packageName"))) }
@@ -163,6 +164,7 @@ class BootSetupActivity : Activity() {
 
     private fun update(snapshot: PreparationSnapshot) {
         last = snapshot
+        returnButton.visibility = if (service?.let { activeCapture(it) } != null) View.VISIBLE else View.GONE
         recoverButton.isEnabled = !snapshot.captureActive && snapshot.recovery.items.any { it.canRetry }
         recoverButton.visibility = if (snapshot.recovery.items.any { it.canRetry }) View.VISIBLE else View.GONE
         connectButton.visibility = if (snapshot.boots.any { it.address != null }) View.VISIBLE else View.GONE
@@ -246,15 +248,21 @@ class BootSetupActivity : Activity() {
         } }
         override fun onScanFailed(code: Int) { runOnUiThread { stopScan(); notice.text = "Search failed ($code). Check Bluetooth and permissions, then retry." } }
     }
+    /** The screen the user left an active drill, run, coaching session or recording on, if any. */
+    private fun activeCapture(connected: SensorSessionService): Intent? {
+        val drill = connected.drillState()
+        return when {
+            drill.phase !in listOf(DrillPhase.IDLE, DrillPhase.DONE) -> Intent(this, DrillActivity::class.java).putExtra("drill", drill.drill?.id)
+            connected.runState().phase !in listOf(RunPhase.READY, RunPhase.DONE) -> Intent(this, RunActivity::class.java)
+            connected.coachState().running -> Intent(this, CoachingActivity::class.java)
+            connected.sessionId() != null -> Intent(this, MainActivity::class.java)
+            else -> null
+        }?.reuseIfOpen()
+    }
+
     private fun returnToCapture() {
         val connected = service ?: return
-        val drill = connected.drillState()
-        when {
-            drill.phase !in listOf(DrillPhase.IDLE, DrillPhase.DONE) -> startActivity(Intent(this, DrillActivity::class.java).putExtra("drill", drill.drill?.id))
-            connected.runState().phase !in listOf(RunPhase.READY, RunPhase.DONE) -> startActivity(Intent(this, RunActivity::class.java))
-            connected.coachState().running -> startActivity(Intent(this, CoachingActivity::class.java))
-            connected.sessionId() != null -> startActivity(Intent(this, MainActivity::class.java))
-            else -> notice.text = "No practice or recording is active."
-        }
+        activeCapture(connected)?.let { startActivity(it); return }
+        notice.text = "No practice or recording is active."
     }
 }

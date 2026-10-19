@@ -2,6 +2,7 @@ package com.openski.android
 
 import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
@@ -126,6 +127,22 @@ object Snow {
             addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
         }
 
+    /** A confirm dialog in the Snow look (Barlow type, rounded card, 56 dp buttons) instead of the system one. */
+    fun confirm(activity: Activity, title: String, message: String, yes: String, no: String = "Cancel", onYes: () -> Unit): android.app.AlertDialog {
+        val dialog = android.app.AlertDialog.Builder(activity).create()
+        val body = card(activity, 22, PAPER, 28)
+        body.addView(text(activity, title, Type.DISPLAY))
+        body.addView(text(activity, message, Type.BODY, INK_SOFT), fullWidth(10, activity, 20))
+        body.addView(button(activity, yes) { dialog.dismiss(); onYes() }, fullWidth(0, activity, 8))
+        body.addView(button(activity, no, ButtonKind.QUIET) { dialog.dismiss() }, fullWidth(0, activity, 0))
+        dialog.setView(ScrollViewOf(activity, body))
+        dialog.show()
+        dialog.window?.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(0))
+        return dialog
+    }
+
+    private fun ScrollViewOf(context: Context, child: View) = android.widget.ScrollView(context).apply { addView(child) }
+
     fun fullWidth(topDp: Int = 0, context: Context? = null, bottomDp: Int = 0): LinearLayout.LayoutParams =
         LinearLayout.LayoutParams(-1, -2).apply {
             context?.let { topMargin = dp(it, topDp); bottomMargin = dp(it, bottomDp) }
@@ -151,6 +168,9 @@ object Snow {
         }
     }
 }
+
+/** Opening a screen that is already in the task brings it back instead of stacking a second copy, so Back cannot loop. */
+fun Intent.reuseIfOpen(): Intent = addFlags(Intent.FLAG_ACTIVITY_REORDER_TO_FRONT)
 
 /** Piste sign: circle for blue, square for red, diamond for black, so level never depends on colour alone. */
 class PisteMarker(context: Context, private val piste: Piste, sizeDp: Int = 22, private val dim: Boolean = false) : View(context) {
