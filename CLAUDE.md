@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 OpenSki is a ski-boot motion sensor proof of concept with two halves in one repo:
 
-- **Firmware** (repo root, PlatformIO/Arduino, C++17) for an ESP32 DevKit V1 (default) or ESP32-S3 with an MPU-6050 IMU.
+- **Firmware** (repo root, PlatformIO/Arduino, C++17) for an ESP32 DevKit V1 (default) or ESP32-S3 with an MPU-6050 IMU; XIAO ESP32S3 targets use LSM6DSOX, with LIS3MDL on the left-boot build.
 - **Android app** (`android/`, native Kotlin, no Compose/AndroidX deps beyond the platform) that connects to two boot sensors over BLE, records, recovers flash recordings, and analyses sessions.
 
 Ski turn classification is **not** implemented/validated. Turn candidates and boot roll are experimental; keep that framing in UI text, docs and exports.
@@ -52,8 +52,8 @@ Toolchain: AGP 9.0.1 with built-in Kotlin, compile/target SDK 36, minSdk 26, Jav
 
 `main.cpp` is a cooperative loop: each service exposes `begin()` and `tick()` in namespace `openski::<service>` and `loop()` calls them in order (imu, recorder, wifi, ota, telemetry, bluetooth, diagnostics) with a 2 ms delay, which must stay short enough to catch every 100 Hz IMU sample (a 10 ms delay caught only about 83 per second). Don't block inside a `tick()`. `tools/build_id.py` stamps `OPENSKI_BUILD_ID` (git commit, date) into the build; it is printed at boot and served as `build` in the Wi-Fi JSON. The IMU start-up is retried every 2 s with I2C bus recovery.
 
-- IMU is chip-independent: `lib/Imu` defines the interface and `ImuMonitor` (host-testable, normalised samples); `lib/ImuMpu6050` is the only driver. A new chip (e.g. LSM6DSOX) should plug in behind the interface without touching consumers.
-- IMU samples at 100 Hz. BLE live notifications are throttled to 50 Hz; the **flash recorder** (`RecorderService`) stores the full 100 Hz stream (about 10 minutes, one retained session) in SPIFFS until the app downloads it and issues erase.
+- IMU is chip-independent: `lib/Imu` defines the interface and `ImuMonitor` (host-testable, normalised samples); `lib/ImuMpu6050` and `lib/ImuLsm6dsox` implement the drivers. Keep chip-specific behaviour behind the interface.
+- MPU-6050 samples at 100 Hz and LSM6DSOX at 104 Hz (live BLE 50/52 Hz respectively). BLE live notifications carry every second sample; the **flash recorder** (`RecorderService`) stores the full-rate stream (one retained session; about 10 minutes on the legacy 4 MB layout) in SPIFFS until the app downloads it and issues erase.
 - HTTP telemetry (`/api/v1/imu`, `/api/v1/motion`, `POST /api/v1/motion/zero`) and Arduino OTA run over Wi-Fi alongside BLE (NimBLE-Arduino).
 - Motion recognition (`MotionService`): `lib/Motion` has the portable `GestureTracker` (gyro-burst rules) and `TiltTracker` (`tilt_v1`: gravity+gyro tilt against an auto-captured neutral pose; see `docs/bench-motion-recognition.md`). `include/SensorCalibration.h` holds fixed per-unit accel offset/scale and gyro bias, applied only to recogniser inputs and enabled for the S3 supermini envs. Recogniser output is experimental and in the sensor frame, not ski axes.
 - `HeadingTracker` (`lib/Motion/src/HeadingTracker.h`) is a causal heading-rate turn detector: `SkiTracker` feeds it `gyro . up_` (rotation about the gravity direction) and it emits a lobe for a zero-crossing interval only when its peak reaches max(0.6 x running SD, 15 deg/s) and it lasts at least 0.4 s (start, end, peak rate, heading change; 0.25 s smoothing delay, so lobes arrive slightly late). Lobes go out as additive version 4 frames on the movement characteristic. The coach and run flow do not use them; Android replays the same detector (`HeadingTurnDetector`) and a parity fixture checks the two agree. Experimental and unvalidated on a boot. Host test `tools/test_heading_tracker.cpp`; its `--check <file>` mode checks `android/app/src/test/resources/heading_turns.txt`.
@@ -95,4 +95,4 @@ Toolchain: AGP 9.0.1 with built-in Kotlin, compile/target SDK 36, minSdk 26, Jav
 ## Housekeeping
 
 - Git-ignored build/local artefacts: `.pio/`, `include/wifi_config.h`, `android/local.properties`, `*.bin`.
-- Branch work happens on feature branches (current: `feat/firmware-development`); `main` is the PR target.
+- Branch work happens on feature branches; `main` is the PR target. See `docs/project-status.md` for the current merged baseline and validation gaps.

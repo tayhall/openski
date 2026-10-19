@@ -1,6 +1,6 @@
 # OpenSki Android app
 
-Native Kotlin Android app for the OpenSki ESP32 BLE sensors. It remembers two boot sensors, records the live 50 Hz streams, recovers full-rate sensor flash recordings and provides session review/export tools. The BLE UUIDs and 19-byte decoder follow [`../docs/ble-protocol.md`](../docs/ble-protocol.md).
+Native Kotlin Android app for the OpenSki ESP32 BLE sensors. It remembers two boot sensors, records the live 50 Hz streams, recovers full-rate sensor flash recordings and provides session review/export tools. MPU-6050 live streams are 50 Hz; LSM6DSOX streams are 52 Hz. Current live frames are 20-byte v2, with legacy 19-byte v1 decoding retained. The BLE contract follows [`../docs/ble-protocol.md`](../docs/ble-protocol.md).
 
 ## Open and run
 
@@ -8,7 +8,14 @@ Open `D:\projects\openski\android` in Android Studio. The project uses a Java 21
 
 For a USB phone connection, enable Developer options and USB debugging, connect the phone, then accept its debugging prompt. The phone must be nearby with Bluetooth enabled for sensor discovery. The app uses the advertised OpenSki service UUID so unrelated BLE devices are filtered out.
 
+See [current project status](../docs/project-status.md) for the merged PR review through #43 and verification limits.
+
 ## Current scope
+
+- Rule-based metronome/chirp coaching and a two-boot run flow with zeroing, stored half-turns/verdicts, flash recovery and reconstructed target comparison. Optional run GPS supplies distance, speed and vertical drop; its track is not included in session ZIPs.
+- Whole-day phone GPS/barometer tracking independently of boots, descent/lift/rest reports, cached Overpass resort maps, day/run tags, GPX import and separate `ski-day.gpx`/`ski-day.json` exports. Ended boot sessions can supply per-descent movement statistics. These new Android flows need phone validation.
+- Experimental health, turn/torso metrics, mount-slip checks, ping/stomp alignment, phone-motion and live magnetometer exports where available. SQLite schema is version 13. See [turn metrics](../docs/turn-metrics.md), [clock sync](../docs/clock-sync-design.md) and [garden trials](../docs/garden-trial-protocol.md).
+- Eight bundled technique videos from Path and selected drill introductions.
 
 - The launcher opens a training-first home with Today, Path, Progress and Boots, onboarding and drills using demo or live boots. Geek mode retains Record, Sessions and Test lab; session review separates Replay, Analysis and Details. Bench tools support sensor checks and calibration. See [POC plan](../docs/poc-plan.md) and [Android design](../docs/android-design.md).
 - The Android launcher and round icon use the supplied [logo](../docs/logo.png). The unchanged PNG is packaged in drawable-nodpi with proportional margins equivalent to 66dp within a 108dp adaptive foreground, keeping the artwork inside launcher masks at different icon sizes.
@@ -32,11 +39,11 @@ For a USB phone connection, enable Developer options and USB debugging, connect 
 - Rename sessions, add notes, delete completed sessions and export ZIP files containing raw CSV samples, events and JSON metadata.
 - Label each session with its ski model, length and setup using Set equipment. Previously used labels are suggested and included in ZIP metadata. Equipment metrics comparison is still planned.
 - Review acceleration/gyro graphs beside attached video; adjust left/right time offsets and a video offset in seconds. Original live and flash sources remain separate in storage and exports.
-- Show phone free space, sensor flash capacity and standard BLE battery level when supported. The current firmware does not report battery level.
+- Show phone free space, sensor flash capacity and standard BLE battery level when supported. Configured firmware builds expose divider-based battery voltage diagnostics; accuracy and runtime need hardware checks, and voltage is not a calibrated charge percentage.
 
-Sessions are stored in the app's private storage and remain on the phone. Removing the app clears them. Export important recordings first. Video files remain in their original location; if a file is moved or deleted, its session attachment may no longer open. Live samples are unavailable during BLE gaps; sensor flash can fill gaps while the sensor remains powered and has capacity. Sensor flash holds approximately ten minutes, rather than an entire ski day. Keep sensors powered and nearby after stopping until recovery finishes.
+Sessions are stored in the app's private storage and remain on the phone. Removing the app clears them. Export important recordings first. Video files remain in their original location; if a file is moved or deleted, its session attachment may no longer open. Live samples are unavailable during BLE gaps; sensor flash can fill gaps while the sensor remains powered and has capacity. Sensor flash capacity depends on the partition layout (approximately ten minutes on legacy 4 MB builds); whole-day tracking uses phone storage. Keep sensors powered and nearby after stopping until recovery finishes.
 
-Firmware protocol v2 has no unique recording ID or checksum. Interrupted downloads therefore restart from record zero instead of reusing an offset whose identity cannot be established. A staging copy never replaces previously validated data until the whole download passes validation. Unknown retained recordings get separate history entries with approximate timing. Validation covers frame shape, contiguous indices and committed record count, not an independent firmware checksum. Graphs prefer flash within its covered intervals; exports retain both sources, including overlaps.
+Current recorder control protocol v3 has no unique recording ID or independent checksum. Recover and erase retained pre-v3 recordings before updating sensor firmware; see the BLE compatibility notes. Interrupted downloads therefore restart from record zero instead of reusing an offset whose identity cannot be established. A staging copy never replaces previously validated data until the whole download passes validation. Unknown retained recordings get separate history entries with approximate timing. Validation covers frame shape, contiguous indices and committed record count, not an independent firmware checksum. Graphs prefer flash within its covered intervals; exports retain both sources, including overlaps.
 
 Boot clocks are independent. The app estimates alignment from matching live samples and phone receipt times, or from phone start/recovery time when no live match exists. Coverage and timing remain estimates; use video offsets for review. Experimental turn candidates identify gyro lobes, including motions other than skiing. Real ski runs, mounting calibration and labelled video are needed before treating them as turns or using them for performance metrics.
 
@@ -57,7 +64,9 @@ Java source compatibility is 17; the Gradle daemon configuration requests Java 2
 
 ## Verification
 
-The current 64 unit tests cover the merged training/bench work as well as packet decoding, interrupted/invalid transfer rejection, overlapping sources, coverage, clock rollover, turn candidates, calibration/orientation, streaming/replay equivalence, dry-movement labels, guided sets, synthetic sessions and boot comparisons. `:app:assembleDebugAndroidTest` builds a custom instrumentation runner for SQLite migration, calibration/session metadata, staged transfers, retained validated copies, ZIP export and protected deletion in isolated test databases:
+PR #43 reports 644 JVM tests; PR #39 reports 40 native firmware tests and an xiao-left-mag build. These are historical PR results, not reruns for this documentation review. Earlier demo/run screens and storage checks ran on an emulator, but schema v11–v13 instrumentation and the new ski-day flows still need device/emulator execution. New timing, phone-motion and torso paths need real-hardware validation. Follow [Android acceptance](../docs/android-acceptance.md).
+
+The early 64-test suite covered the training/bench work as well as packet decoding, interrupted/invalid transfer rejection, overlapping sources, coverage, clock rollover, turn candidates, calibration/orientation, streaming/replay equivalence, dry-movement labels, guided sets, synthetic sessions and boot comparisons. `:app:assembleDebugAndroidTest` builds a custom instrumentation runner for SQLite migration, calibration/session metadata, staged transfers, retained validated copies, ZIP export and protected deletion in isolated test databases:
 
 ```powershell
 adb install -r app/build/outputs/apk/debug/app-debug.apk
