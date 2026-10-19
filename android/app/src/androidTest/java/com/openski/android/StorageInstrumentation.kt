@@ -22,6 +22,12 @@ class StorageInstrumentation : Instrumentation() {
         db.execSQL("INSERT INTO run_info SELECT session_id,target_beat,target_depth,target_label,window_size,coach_boot,mode_before,ended_by,first_turn_ms,last_turn_ms,gaps_json FROM run_info_v10")
         db.execSQL("DROP TABLE run_info_v10")
     }
+    /** A small resort map: a lift, a piste split into two parts at a gap, a station node and a station outline. */
+    private fun resortSample(line: List<LatLon>) = ResortData(listOf(
+        ResortWayInfo(ResortWay(11L,WayKind.LIFT,"Sunny Ridge","C4",null,"chair_lift",line),null,"Example Lifts",7,false),
+        ResortWayInfo(ResortWay(12L,WayKind.PISTE,null,null,"novice",null,line.reversed()),PisteDifficulty.EASY,null,null,true,300L,part=0),
+        ResortWayInfo(ResortWay(12L,WayKind.PISTE,null,null,"novice",null,line.take(2)),PisteDifficulty.EASY,null,null,false,300L,part=1)),
+        listOf(ResortStation(21L,"Top",line.last(),null,1), ResortStation(21L,"Top hall",line.first(),"Example Lifts",3,osmType="way")))
     override fun onStart() {
         val name="openski-test-${UUID.randomUUID()}.db"
         try {
@@ -216,6 +222,69 @@ class StorageInstrumentation : Instrumentation() {
                     }
                 }
             } finally { context.deleteDatabase(clockMigration) }
+            // Version 11 -> 12: resort maps. A genuine upgrade: drop the three resort tables, keep a session, set 11, reopen.
+            val resortMigration="openski-migration-11-${UUID.randomUUID()}.db"
+            try {
+                LocalSessionStore(context,resortMigration).use { it.writableDatabase.version }
+                SQLiteDatabase.openDatabase(context.getDatabasePath(resortMigration).path,null,SQLiteDatabase.OPEN_READWRITE).use { db ->
+                    listOf("resorts","resort_ways","resort_stations").forEach { db.execSQL("DROP TABLE $it") }
+                    db.execSQL("INSERT INTO sessions(id,started_at_ms,ended_at_ms) VALUES('before-resorts',100000,160000)")
+                    db.version=11
+                }
+                LocalSessionStore(context,resortMigration).use { store ->
+                    check(store.readableDatabase.version==12) { "Not upgraded to 12" }
+                    check(store.getSession("before-resorts")!!.endedAtMs==160000L) { "Upgrade lost a session" }
+                    listOf("resorts","resort_ways","resort_stations").forEach { table ->
+                        check(store.readableDatabase.rawQuery("SELECT COUNT(*) FROM $table",null).use { it.moveToFirst() && it.getInt(0)==0 }) { "$table missing or not empty" }
+                    }
+                    val resorts=ResortStore(store)
+                    val line=listOf(LatLon(46.010123,7.010456),LatLon(46.020001,7.019999),LatLon(46.025,7.03))
+                    val data=resortSample(line)
+                    val alpha=StoredResort("alpha","Alpha",LatLon(46.0,7.0),25_000,1_000L,3,"test; ${ResortRepository.ATTRIBUTION}",truncated=true)
+                    resorts.save(alpha,data)
+                    resorts.save(alpha.copy(id="beta",name="Beta"),data)
+                    check(resorts.list().map { it.id }==listOf("alpha","beta")) { "resort list" }
+                    check(resorts.resort("alpha")==alpha) { "resort row round trip (truncated flag)" }
+                    check(resorts.resort("beta")!!.truncated) { "truncated flag" }
+                    check(resorts.ways("alpha")==data.ways) { "ways round trip: ${resorts.ways("alpha")}" }
+                    check(resorts.stations("alpha")==data.stations) { "stations round trip" }
+                    check(resorts.age("alpha",4_000L)==3_000L) { "age" }
+                    // A save that fails part-way (a duplicate way id breaks the primary key) must leave the old copy whole.
+                    val broken=data.copy(ways=data.ways+data.ways.first())
+                    check(runCatching { resorts.save(alpha.copy(name="Broken",fetchedAtMs=2_000L),broken) }.isFailure) { "duplicate way accepted" }
+                    check(resorts.resort("alpha")==alpha && resorts.ways("alpha").size==3 && resorts.stations("alpha").size==2) { "failed save was not atomic" }
+                    // Deleting a session never touches resorts.
+                    store.createSession("plain",200000)
+                    store.finishSession("plain",201000)
+                    check(store.deleteSession("plain"))
+                    check(store.deleteSession("before-resorts"))
+                    check(resorts.list().size==2 && resorts.ways("beta").size==3) { "session delete touched resorts" }
+                    // Deleting a resort deletes its ways and stations and nothing else.
+                    check(resorts.delete("alpha") && !resorts.delete("alpha"))
+                    listOf("resort_ways","resort_stations").forEach { table ->
+                        check(store.readableDatabase.rawQuery("SELECT COUNT(*) FROM $table WHERE resort_id='alpha'",null).use { it.moveToFirst() && it.getInt(0)==0 }) { "$table rows left after resort delete" }
+                    }
+                    check(resorts.ways("beta").size==3 && resorts.stations("beta").size==2) { "resort delete touched another resort" }
+                    // The repository over the real store: an empty answer keeps the cached map.
+                    val repo=ResortRepository({ FetchResult.Body("{\"elements\":[]}") },resorts,clock={ 5_000L })
+                    check(repo.download(ResortRequest("beta","Beta",LatLon(46.0,7.0),3000)) is DownloadResult.NoData) { "empty answer not refused" }
+                    check(resorts.ways("beta").size==3 && resorts.resort("beta")!!.fetchedAtMs==1_000L) { "empty answer replaced the cache" }
+                }
+            } finally { context.deleteDatabase(resortMigration) }
+            // Fresh install: onCreate builds the version 12 resort tables directly; a resort map round-trips through them.
+            val freshResorts="openski-fresh-12-${UUID.randomUUID()}.db"
+            try {
+                LocalSessionStore(context,freshResorts).use { store ->
+                    check(store.readableDatabase.version==12) { "Fresh database not at 12" }
+                    val resorts=ResortStore(store)
+                    val data=resortSample(listOf(LatLon(45.5,6.5),LatLon(45.501,6.502),LatLon(45.502,6.503)))
+                    val fresh=StoredResort("fresh","Fresh",LatLon(45.5,6.5),5000,7_000L,3,"fresh; ${ResortRepository.ATTRIBUTION}")
+                    resorts.save(fresh,data)
+                    check(resorts.list()==listOf(fresh)) { "fresh resort list" }
+                    check(resorts.ways("fresh")==data.ways && resorts.stations("fresh")==data.stations) { "fresh round trip" }
+                    check(resorts.delete("fresh") && resorts.list().isEmpty()) { "fresh delete" }
+                }
+            } finally { context.deleteDatabase(freshResorts) }
             val path=context.getDatabasePath(name)
             path.parentFile!!.mkdirs()
             SQLiteDatabase.openOrCreateDatabase(path,null).use { db ->
@@ -324,7 +393,7 @@ class StorageInstrumentation : Instrumentation() {
             }
             context.deleteDatabase(name)
             DrillMountingRegression.run(this)
-            finish(Activity.RESULT_OK,Bundle().apply { putString("stream","PASS: v1–v6 migration, demo creation, saved review settings, calibration, test labels, health, session edits, staged recovery validation, retained copy, ZIP export and protected deletion, v9->v10 run GPS track\n") })
+            finish(Activity.RESULT_OK,Bundle().apply { putString("stream","PASS: v1–v6 migration, demo creation, saved review settings, calibration, test labels, health, session edits, staged recovery validation, retained copy, ZIP export and protected deletion, v9->v10 run GPS track, v11->v12 resort maps, fresh-install resort round trip\n") })
         } catch(error: Throwable) {
             targetContext.deleteDatabase(name)
             finish(Activity.RESULT_CANCELED,Bundle().apply { putString("stream","FAIL: ${android.util.Log.getStackTraceString(error)}\n") })

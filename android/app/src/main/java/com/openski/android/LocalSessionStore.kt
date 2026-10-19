@@ -56,7 +56,7 @@ data class TestMarker(val id: Long, val timeMs: Long, val label: String, val sid
 data class SensorHealth(val side: String, val timeMs: Long, val battery: Int?, val batteryAtMs: Long?,
     val rssi: Int?, val rssiAtMs: Long?)
 
-class LocalSessionStore(context: Context, databaseName: String = "openski-local.db") : SQLiteOpenHelper(context, databaseName, null, 11) {
+class LocalSessionStore(context: Context, databaseName: String = "openski-local.db") : SQLiteOpenHelper(context, databaseName, null, 12) {
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE sessions (
             id TEXT PRIMARY KEY, started_at_ms INTEGER NOT NULL, ended_at_ms INTEGER,
@@ -78,6 +78,7 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
         addQualitySchema(db)
         addTrackSchema(db)
         addClockSchema(db)
+        addResortSchema(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -91,6 +92,24 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
         if (oldVersion < 9) addQualitySchema(db)
         if (oldVersion < 10) addTrackSchema(db)
         if (oldVersion < 11) addClockSchema(db)
+        if (oldVersion < 12) addResortSchema(db)
+    }
+
+    /**
+     * Version 12: cached resort maps from OpenStreetMap (see ResortStore). Independent of sessions: deleting a session
+     * never touches these tables, and deleting a resort removes its ways and stations in the same transaction.
+     * resorts.truncated marks a radius cut to the 25 km maximum; resort_ways.part numbers the pieces of a way split
+     * at a gap in its geometry; resort_stations.osm_type is 'node' or 'way' (a station mapped as an outline).
+     */
+    private fun addResortSchema(db: SQLiteDatabase) {
+        db.execSQL("""CREATE TABLE resorts(id TEXT PRIMARY KEY, name TEXT NOT NULL, centre_lat REAL NOT NULL, centre_lon REAL NOT NULL,
+            radius_m INTEGER NOT NULL, fetched_at_ms INTEGER NOT NULL, way_count INTEGER NOT NULL, source_note TEXT NOT NULL DEFAULT '',
+            truncated INTEGER NOT NULL DEFAULT 0)""")
+        db.execSQL("""CREATE TABLE resort_ways(resort_id TEXT NOT NULL, osm_id INTEGER NOT NULL, part INTEGER NOT NULL DEFAULT 0,
+            kind TEXT NOT NULL, name TEXT, ref TEXT, difficulty TEXT, difficulty_raw TEXT, aerialway TEXT, operator TEXT, osm_version INTEGER,
+            area INTEGER NOT NULL DEFAULT 0, relation_id INTEGER, geometry TEXT NOT NULL, PRIMARY KEY(resort_id, osm_id, part))""")
+        db.execSQL("""CREATE TABLE resort_stations(resort_id TEXT NOT NULL, osm_type TEXT NOT NULL DEFAULT 'node', osm_id INTEGER NOT NULL,
+            name TEXT, lat REAL NOT NULL, lon REAL NOT NULL, operator TEXT, osm_version INTEGER, PRIMARY KEY(resort_id, osm_type, osm_id))""")
     }
 
     /**
