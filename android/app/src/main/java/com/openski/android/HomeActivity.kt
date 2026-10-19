@@ -20,6 +20,11 @@ class HomeActivity : Activity() {
     private val navLabels = listOf("Today", "Path", "Progress", "Boots")
     private val navItems = mutableListOf<TextView>()
     private var tab = 0
+    private var demoProgress = false
+    private var practiceAttempts = emptyList<Attempt>()
+    private var practiceError: String? = null
+    private var practiceLoading = true
+    private val practiceIo = java.util.concurrent.Executors.newSingleThreadExecutor()
     private var onboardingStep = 0
     private var pickedGoal: Goal? = null
     private var pickedExperience: Experience? = null
@@ -29,6 +34,7 @@ class HomeActivity : Activity() {
         Snow.configureWindow(this)
         store = ProgressStore(this)
         tab = savedInstanceState?.getInt("tab") ?: 0
+        demoProgress = savedInstanceState?.getBoolean("demo_progress") ?: false
         onboardingStep = savedInstanceState?.getInt("onboarding") ?: 0
         pickedGoal = savedInstanceState?.getString("goal")?.let { name -> Goal.entries.firstOrNull { it.name == name } }
         pickedExperience = savedInstanceState?.getString("experience")?.let { name -> Experience.entries.firstOrNull { it.name == name } }
@@ -40,9 +46,37 @@ class HomeActivity : Activity() {
         setContentView(root)
     }
 
-    override fun onResume() { super.onResume(); render() }
+    override fun onResume() {
+        super.onResume()
+        practiceLoading = true
+        render()
+        practiceIo.execute {
+            val loaded = runCatching { store.attempts() }
+            runOnUiThread {
+                if (!isDestroyed) {
+                    loaded.onSuccess { practiceAttempts = it; practiceError = null }
+                        .onFailure { practiceError = "Could not load practice history. Your saved history has been kept. Reopen this screen to retry." }
+                    practiceLoading = false
+                    render()
+                }
+            }
+        }
+    }
+
+    override fun onDestroy() { practiceIo.shutdown(); super.onDestroy() }
+
+    private fun practice(demo: Boolean = false) = Progress(practiceAttempts, store.experience.startsOn, demo = demo)
+
+    private fun LinearLayout.sourcePicker() {
+        add(t(if (demoProgress) "Demo · simulated attempts" else "My practice · measured boot exercises", Snow.Type.STRONG), bottom = 8)
+        add(Snow.button(this@HomeActivity, if (demoProgress) "Show My practice" else "Explore Demo", Snow.ButtonKind.SECONDARY) {
+            demoProgress = !demoProgress; render()
+        }, bottom = 12)
+        add(t("Demo results are separate from measured bests, streaks and unlocks. Earlier demo results are still in Demo.", Snow.Type.CAPTION, Snow.INK_SOFT), bottom = 12)
+    }
 
     override fun onSaveInstanceState(state: Bundle) {
+        state.putBoolean("demo_progress", demoProgress)
         state.putInt("tab", tab); state.putInt("onboarding", onboardingStep)
         pickedGoal?.let { state.putString("goal", it.name) }
         pickedExperience?.let { state.putString("experience", it.name) }
@@ -53,7 +87,9 @@ class HomeActivity : Activity() {
         val nav = (body.parent as LinearLayout).getChildAt(1)
         nav.visibility = if (store.onboarded) View.VISIBLE else View.GONE
         body.removeAllViews()
-        body.addView(if (!store.onboarded) onboarding() else when (tab) {
+        body.addView(if (!store.onboarded) onboarding() else if (tab != 3 && (practiceLoading || practiceError != null)) page {
+            add(t(if (practiceLoading) "Loading practice…" else practiceError!!, Snow.Type.BODY))
+        } else when (tab) {
             0 -> today(); 1 -> path(); 2 -> progress(); else -> boots()
         })
         navItems.forEachIndexed { index, item ->
@@ -159,13 +195,13 @@ class HomeActivity : Activity() {
     // Today ---------------------------------------------------------------------------------------------
 
     private fun today() = page {
-        val progress = store.progress()
+        val progress = practice()
         val goal = store.goal ?: Goal.CARVING
         val now = System.currentTimeMillis()
         val streak = progress.streak(now)
         val header = LinearLayout(this@HomeActivity).apply { gravity = Gravity.CENTER_VERTICAL }
         header.addView(t("OpenSki", Snow.Type.TITLE, Snow.ORANGE), LinearLayout.LayoutParams(0, -2, 1f))
-        header.addView(t("${NumberFormat.getInstance().format(progress.vert)} vert", Snow.Type.TITLE))
+        header.addView(t("${NumberFormat.getInstance().format(progress.vert)} practice points", Snow.Type.TITLE))
         add(header, bottom = 20)
 
         val runCard = Snow.card(this@HomeActivity, 22, radius = 28)
@@ -268,9 +304,10 @@ class HomeActivity : Activity() {
     // Path ----------------------------------------------------------------------------------------------
 
     private fun path() = page {
-        val progress = store.progress()
+        val progress = practice(demoProgress)
+        sourcePicker()
         add(t("Your path", Snow.Type.HERO), bottom = 4)
-        add(t("Pass a drill with one star to open the next.", Snow.Type.BODY, Snow.INK_SOFT), bottom = 12)
+        add(t("My practice unlocks with measured completed sets. Demo drills are all open.", Snow.Type.BODY, Snow.INK_SOFT), bottom = 12)
         add(Snow.button(this@HomeActivity, "Technique videos", Snow.ButtonKind.SECONDARY) { TechniqueVideos.open(this@HomeActivity) }, bottom = 20)
         Piste.entries.forEach { piste ->
             val reachable = piste.ordinal >= store.experience.startsOn.ordinal
@@ -322,14 +359,15 @@ class HomeActivity : Activity() {
     // Progress ------------------------------------------------------------------------------------------
 
     private fun progress() = page {
-        val progress = store.progress()
+        val progress = practice(demoProgress)
+        sourcePicker()
         val now = System.currentTimeMillis()
         add(t("Progress", Snow.Type.HERO), bottom = 16)
         val stats = LinearLayout(this@HomeActivity)
         fun stat(value: String, label: String) = Snow.card(this@HomeActivity, 16).apply {
             addView(t(value, Snow.Type.DISPLAY)); addView(t(label, Snow.Type.BODY, Snow.INK_SOFT))
         }
-        stats.addView(stat(NumberFormat.getInstance().format(progress.vert), "vert earned"), LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = Snow.dp(this@HomeActivity, 6) })
+        stats.addView(stat(NumberFormat.getInstance().format(progress.vert), "practice points"), LinearLayout.LayoutParams(0, -2, 1f).apply { marginEnd = Snow.dp(this@HomeActivity, 6) })
         stats.addView(stat("${progress.streak(now)}", "day streak"), LinearLayout.LayoutParams(0, -2, 1f).apply { marginStart = Snow.dp(this@HomeActivity, 6) })
         add(stats, bottom = 12)
         val week = Snow.card(this@HomeActivity, 18)
@@ -337,7 +375,7 @@ class HomeActivity : Activity() {
         week.add(weekStrip(progress, now), top = 12)
         week.add(t("${progress.week(now).count { it.second }} of 3 training days", Snow.Type.BODY, Snow.INK_SOFT), top = 10)
         add(week, bottom = 20)
-        add(t("Best scores", Snow.Type.DISPLAY), bottom = 10)
+        add(t(if (demoProgress) "Demo best scores" else "My practice best scores", Snow.Type.DISPLAY), bottom = 10)
         val scores = Snow.card(this@HomeActivity, 18)
         Programme.drills.forEach { drill ->
             val best = progress.best(drill.id)
@@ -348,13 +386,13 @@ class HomeActivity : Activity() {
             scores.add(line, bottom = 14)
         }
         add(scores, bottom = 20)
-        val recent = progress.attempts.sortedByDescending { it.timeMs }.take(5)
-        add(t("Recent drills", Snow.Type.DISPLAY), bottom = 10)
+        val recent = practiceAttempts.filter { it.demo == demoProgress }.sortedByDescending { it.timeMs }.take(5)
+        add(t(if (demoProgress) "Recent demos" else "Recent practice", Snow.Type.DISPLAY), bottom = 10)
         if (recent.isEmpty()) add(t("Finish a drill and it will show up here.", Snow.Type.BODY, Snow.INK_SOFT))
         recent.forEach { attempt ->
-            val drill = Programme.drill(attempt.drillId) ?: return@forEach
+            val drillTitle = Programme.drill(attempt.drillId)?.title ?: attempt.drillId
             val date = java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date(attempt.timeMs))
-            add(t("${drill.title}  ·  ${attempt.score}  ·  $date" + if (attempt.demo) "  ·  demo boots" else "", Snow.Type.BODY), bottom = 8)
+            add(t("$drillTitle  ·  ${if (attempt.eligible) attempt.score.toString() else attempt.status.name.lowercase()}  ·  $date" + if (attempt.demo) "  ·  Demo" else "  ·  My practice", Snow.Type.BODY), bottom = 8)
         }
     }
 

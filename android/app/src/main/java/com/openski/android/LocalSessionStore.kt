@@ -59,7 +59,7 @@ data class SensorHealth(val side: String, val timeMs: Long, val battery: Int?, v
 class LocalSessionStore(context: Context, databaseName: String = "openski-local.db") : SQLiteOpenHelper(context, databaseName, null, VERSION) {
     companion object {
         /** Current schema version; every step has a migration in [onUpgrade] and a check in StorageInstrumentation. */
-        const val VERSION = 13
+        const val VERSION = 14
         /** Rows per query when a session is read in chunks ([loadDataInChunks]). */
         const val LOAD_CHUNK_ROWS = 5_000
     }
@@ -96,6 +96,7 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
         addClockSchema(db)
         addResortSchema(db)
         addDaySchema(db)
+        addPracticeSchema(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -111,6 +112,17 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
         if (oldVersion < 11) addClockSchema(db)
         if (oldVersion < 12) addResortSchema(db)
         if (oldVersion < 13) addDaySchema(db)
+        if (oldVersion < 14) addPracticeSchema(db)
+    }
+
+    /** Version 14: durable practice history. Session links deliberately have no cascading foreign key. */
+    private fun addPracticeSchema(db: SQLiteDatabase) {
+        db.execSQL("""CREATE TABLE practice_attempts(id TEXT PRIMARY KEY, drill_id TEXT NOT NULL, time_ms INTEGER NOT NULL,
+            score INTEGER NOT NULL, stars INTEGER NOT NULL, points INTEGER NOT NULL, demo INTEGER NOT NULL,
+            session_id TEXT, status TEXT NOT NULL, scoring_version INTEGER NOT NULL,
+            target_movements INTEGER, target_beat REAL, target_depth REAL)""")
+        db.execSQL("CREATE INDEX practice_time_idx ON practice_attempts(time_ms)")
+        db.execSQL("CREATE TABLE practice_imports(id TEXT PRIMARY KEY)")
     }
 
     /**

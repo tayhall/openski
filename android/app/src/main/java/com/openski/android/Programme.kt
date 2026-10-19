@@ -76,7 +76,7 @@ data class DrillResult(
     val cue: String,
 ) {
     val passed get() = stars >= 1
-    /** Vertical metres earned. Replaying a drill still pays, but only a little. */
+    /** Practice points earned. Replaying a drill still pays, but only a little. */
     fun vert(previousBest: Int?): Int = if (previousBest == null) score * 2 else maxOf(score / 10, (score - previousBest) * 2)
 }
 
@@ -147,17 +147,17 @@ object DrillScoring {
     }
 }
 
-data class Attempt(val drillId: String, val timeMs: Long, val score: Int, val stars: Int, val vert: Int, val demo: Boolean)
-
 /** Pure progress rules, so streaks and unlocks are testable without a device. */
-class Progress(val attempts: List<Attempt>, private val startsOn: Piste = Piste.BLUE,
-               private val zone: java.time.ZoneId = java.time.ZoneId.systemDefault()) {
+class Progress(attempts: List<Attempt>, private val startsOn: Piste = Piste.BLUE,
+               private val zone: java.time.ZoneId = java.time.ZoneId.systemDefault(), val demo: Boolean = false) {
+    val attempts = attempts.filter { it.demo == demo && it.eligible }
     val vert: Int get() = attempts.sumOf { it.vert }
     fun best(drillId: String): Attempt? = attempts.filter { it.drillId == drillId }.maxByOrNull { it.score }
     fun stars(drillId: String) = best(drillId)?.stars ?: 0
 
     /** A drill opens once the one before it in the same piste is passed; the first drill of an unlocked piste is open. */
     fun unlocked(drill: Drill): Boolean {
+        if (demo) return true // Explore any demonstration without granting measured achievements.
         if (drill.piste.ordinal < startsOn.ordinal) return true
         val list = Programme.drills(drill.piste)
         val index = list.indexOf(drill)
