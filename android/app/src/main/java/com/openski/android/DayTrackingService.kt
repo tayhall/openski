@@ -18,6 +18,7 @@ import android.os.PowerManager
 import android.os.SystemClock
 import java.util.UUID
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 
 /** What day tracking is doing, for the screens. [error] is shown as is; null means nothing is wrong. */
 data class DayTrackingStatus(
@@ -32,15 +33,20 @@ data class DayTrackingStatus(
     /** True when the phone has a pressure sensor; null before tracking has looked. */
     val barometer: Boolean? = null,
     val gpsOn: Boolean = false,
+    /** True while a stopped day is still trying to save its last fixes. */
+    val closing: Boolean = false,
     val error: String? = null,
 )
 
 /**
  * Records a whole ski day from the phone's location (and barometer where present), independent of the boot sensors
  * and of [SensorSessionService]. A foreground service of type location with its own notification and a Stop action.
- * Fixes are buffered ([FixBatcher]) and written in small transactions on one background thread; the interval follows
- * [CadencePlanner]. A partial wake lock is held while tracking so the barometer keeps reading with the screen off.
- * The open day is resumed when the system restarts the service (START_STICKY) or when the day screen asks.
+ *
+ * Threads: location, barometer and the batcher live on the main thread; every database call runs on one io thread,
+ * which owns the [FixBacklog] of rows not yet stored (capped, with a backoff between failed writes). Stopping writes the
+ * backlog with retries ([DayCloser]) and closes the day only when that worked; otherwise the day stays open, the
+ * service keeps its notification with the error and keeps retrying. The open day is resumed when the system restarts
+ * the service (START_STICKY) or when the day screen asks; a day whose last fix is over 12 h old is closed instead.
  * EXPERIMENTAL: the battery cost of whole-day tracking is unmeasured.
  */
 class DayTrackingService : Service() {
@@ -51,13 +57,19 @@ class DayTrackingService : Service() {
     private val gps by lazy { GpsListener(this, ::onFix) }
     private val cadence = CadencePlanner()
     private val batcher = FixBatcher()
+    /** Only touched on the io thread. */
+    private val backlog = FixBacklog()
     private val baroWindow = BaroWindow()
     private var sensorManager: SensorManager? = null
     private var baroListener: SensorEventListener? = null
     private var wakeLock: PowerManager.WakeLock? = null
     private var dayId: String? = null
+    /** The day being closed after Stop, while its last fixes are still being saved. */
+    private var closingDayId: String? = null
+    private var starting = false
     private var foreground = false
     private var lastNotification: String? = null
+    private var lastFlushAt = 0L
 
     private val tick = object : Runnable {
         override fun run() {
@@ -65,11 +77,13 @@ class DayTrackingService : Service() {
             if (!gps.running) startGps()   // location switched back on, or a refused start
             acquireWakeLock()
             if (batcher.pending > 0 && lastFlushAt + DayTrackingConfig.BATCH_AGE_MS < SystemClock.elapsedRealtime()) write(id, batcher.drain())
+            else write(id, emptyList())   // lets a backlog left by a failed write retry once its backoff has passed
             updateNotification()
             main.postDelayed(this, TICK_MS)
         }
     }
-    private var lastFlushAt = 0L
+
+    private val retryClose = Runnable { closingDayId?.let(::closeDay) }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -81,27 +95,40 @@ class DayTrackingService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_STOP -> { stopDay(); return START_NOT_STICKY }
-            ACTION_START -> beginOrResume(newDay = true)
-            else -> beginOrResume(newDay = false)   // ACTION_RESUME, or a restart by the system after the process died
+            ACTION_STOP -> { stopDay(); return if (closingDayId != null) START_STICKY else START_NOT_STICKY }
+            // START and RESUME come from startForegroundService: go foreground at once, before any check can bail out.
+            ACTION_START -> { if (goForeground()) beginOrResume(newDay = true) }
+            ACTION_RESUME -> { if (goForeground()) beginOrResume(newDay = false) }
+            else -> beginOrResume(newDay = false)   // a restart by the system after the process died
         }
-        return if (dayId != null) START_STICKY else START_NOT_STICKY
+        return if (dayId != null || starting || closingDayId != null) START_STICKY else START_NOT_STICKY
     }
 
-    /** Resumes the open phone day, or (with [newDay]) starts one. Refuses visibly when location is not allowed. */
+    /** Resumes the open phone day, or (with [newDay]) starts one. Database work runs on the io thread. */
     private fun beginOrResume(newDay: Boolean) {
-        if (dayId != null) { goForeground(); return }
+        if (dayId != null || starting) { goForeground(); return }
+        if (closingDayId != null) return   // still saving a stopped day; Start again once it has closed
         if (!gps.permitted) {
             fail("Location permission is missing, so the day is not being tracked. Allow precise location for OpenSki, then start again.")
             return
         }
-        val open = try { days.openPhoneDay() } catch (e: Exception) { fail("Could not read saved days: ${e.message}"); return }
-        val day = open ?: if (newDay) {
-            val now = System.currentTimeMillis()
-            SkiDay(UUID.randomUUID().toString(), DayRules.defaultTitle(now), now, null, DaySource.PHONE, null, "", DayTags(), now)
-                .also { d -> try { days.create(d) } catch (e: Exception) { fail("Could not create the day: ${e.message}"); return } }
-        } else null
-        if (day == null) { status = DayTrackingStatus(); stopSelf(); return }
+        starting = true
+        bg {
+            val day = try {
+                val now = System.currentTimeMillis()
+                days.settleOpenDays(now) ?: if (newDay)
+                    SkiDay(UUID.randomUUID().toString(), DayRules.defaultTitle(now), now, null, DaySource.PHONE, null, "", DayTags(), now).also { days.create(it) }
+                else null
+            } catch (e: Exception) { main.post { starting = false; fail("Could not read or create the day: ${e.message}") }; return@bg }
+            main.post {
+                starting = false
+                if (day == null) { status = DayTrackingStatus(); stopSelf(); return@post }
+                track(day)
+            }
+        }
+    }
+
+    private fun track(day: SkiDay) {
         dayId = day.id
         status = DayTrackingStatus(day.id, true, day.startedAtMs, barometer = null)
         if (!goForeground()) return
@@ -123,7 +150,8 @@ class DayTrackingService : Service() {
             true
         } catch (e: Exception) {
             // SecurityException without location permission (Android 14+), or a start from the background refused.
-            teardown(finishDay = false)
+            stopListening()
+            dayId = null
             fail("Android refused to start day tracking (${e.javaClass.simpleName}: ${e.message}). Open the ski day screen and start again.")
             false
         }
@@ -166,50 +194,66 @@ class DayTrackingService : Service() {
         batcher.add(row, now)?.let { write(id, it) }
     }
 
-    /** Writes [rows] on the io thread; a failed batch goes back to the buffer and is retried with the next one. */
+    /** Hands [rows] to the io thread's backlog and writes what is due; failures wait out a growing backoff. */
     private fun write(id: String, rows: List<DayFix>) {
-        if (rows.isEmpty()) return
-        lastFlushAt = SystemClock.elapsedRealtime()
-        io.execute {
-            try {
-                days.addFixes(id, rows)
-                main.post { if (status.error?.startsWith(SAVE_ERROR) == true) status = status.copy(error = null) }
-            } catch (e: Exception) {
-                main.post {
-                    batcher.requeue(rows, SystemClock.elapsedRealtime())
-                    status = status.copy(error = "$SAVE_ERROR, retrying: ${e.message ?: e.javaClass.simpleName}")
-                }
+        if (rows.isNotEmpty()) lastFlushAt = SystemClock.elapsedRealtime()
+        bg {
+            backlog.add(rows)
+            if (backlog.size == 0) return@bg
+            val ok = backlog.flush(SystemClock.elapsedRealtime(), { days.addFixes(id, it) })
+            val error = if (ok) null else "$SAVE_ERROR (${backlog.size} waiting, next try in ${backlog.backoff / 1000} s): ${backlog.lastError}" +
+                if (backlog.dropped > 0) "; ${backlog.dropped} oldest fixes dropped because the backlog was full" else ""
+            main.post {
+                if (error != null) status = status.copy(error = error)
+                else if (status.error?.startsWith(SAVE_ERROR) == true) status = status.copy(error = null)
             }
         }
     }
 
     private fun stopDay() {
-        val id = dayId
-        teardown(finishDay = true)
-        status = DayTrackingStatus(id, false)
-        stopSelf()
+        val id = dayId ?: closingDayId
+        if (id == null) { status = DayTrackingStatus(); if (!starting) stopSelf(); return }
+        stopListening()
+        dayId = null
+        closingDayId = id
+        val rest = batcher.drain()
+        status = status.copy(tracking = false, gpsOn = false, closing = true)
+        bg { backlog.add(rest) }
+        closeDay(id)
     }
 
-    /** Stops listening and writes what is buffered; with [finishDay] the day is closed at its last fix (or now). */
-    private fun teardown(finishDay: Boolean) {
+    /** Saves the backlog with retries and closes the day; on failure keeps it open, shows why and tries again later. */
+    private fun closeDay(id: String) {
+        bg {
+            val outcome = DayCloser.close(backlog, { days.addFixes(id, it) }, {
+                val end = days.lastFixTime(id) ?: System.currentTimeMillis()
+                days.finish(id, maxOf(end, days.day(id)?.startedAtMs ?: end))
+            }, pause = { attempt -> Thread.sleep(500L * attempt) })
+            main.post {
+                when (outcome) {
+                    is CloseOutcome.Closed -> {
+                        closingDayId = null
+                        status = DayTrackingStatus(id, false)
+                        releaseWakeLock()
+                        if (foreground) { stopForeground(STOP_FOREGROUND_REMOVE); foreground = false }
+                        stopSelf()
+                    }
+                    is CloseOutcome.KeptOpen -> {
+                        status = status.copy(closing = true, error = "Stopping: ${outcome.reason}.")
+                        updateNotification()
+                        main.removeCallbacks(retryClose)
+                        main.postDelayed(retryClose, CLOSE_RETRY_MS)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun stopListening() {
         main.removeCallbacks(tick)
         gps.stop()
         baroListener?.let { l -> sensorManager?.unregisterListener(l) }
         baroListener = null
-        val id = dayId
-        dayId = null
-        if (id != null) {
-            val rest = batcher.drain()
-            io.execute {
-                try { if (rest.isNotEmpty()) days.addFixes(id, rest) } catch (_: Exception) { /* reported below if the finish fails too */ }
-                if (finishDay) try {
-                    val end = days.fixes(id).lastOrNull()?.fix?.timeMs ?: System.currentTimeMillis()
-                    days.finish(id, maxOf(end, days.day(id)?.startedAtMs ?: end))
-                } catch (e: Exception) { main.post { status = status.copy(error = "Could not close the day: ${e.message}") } }
-            }
-        }
-        releaseWakeLock()
-        if (foreground) { stopForeground(STOP_FOREGROUND_REMOVE); foreground = false }
     }
 
     private fun fail(message: String) {
@@ -220,7 +264,14 @@ class DayTrackingService : Service() {
                 .setSmallIcon(android.R.drawable.ic_dialog_alert).setContentTitle("Ski day not tracking").setContentText(message)
                 .setStyle(Notification.BigTextStyle().bigText(message)).setContentIntent(openDay()).setAutoCancel(true).build())
         } catch (_: Exception) { /* notifications not allowed: the day screen shows the error */ }
+        releaseWakeLock()
+        if (foreground) { stopForeground(STOP_FOREGROUND_REMOVE); foreground = false }
         stopSelf()
+    }
+
+    /** Runs [block] on the io thread; after onDestroy the executor is shut and the work is dropped. */
+    private fun bg(block: () -> Unit) {
+        try { io.execute(block) } catch (_: RejectedExecutionException) { }
     }
 
     private fun notificationText(): String {
@@ -228,6 +279,8 @@ class DayTrackingService : Service() {
         val started = s.startedAtMs?.let { java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(it)) }
         return when {
             s.error != null -> s.error
+            s.closing -> "Saving the day's last fixes…"
+            dayId == null -> "Ski day · starting"
             !s.gpsOn -> "Ski day · waiting for location"
             else -> "Ski day since ${started ?: "today"} · ${s.fixes} fixes · " +
                 if (s.intervalMs > DayTrackingConfig.MOVING_INTERVAL_MS) "standing still, slower updates" else "one fix a second"
@@ -264,10 +317,19 @@ class DayTrackingService : Service() {
     private fun releaseWakeLock() { wakeLock?.let { if (it.isHeld) it.release() }; wakeLock = null }
 
     override fun onDestroy() {
-        // Leaves the day open, so a restart resumes it; only Stop closes a day.
-        teardown(finishDay = false)
-        io.execute { store.close() }
+        // Leaves the day open, so a restart resumes it; only Stop closes a day. The buffered fixes get one last write.
+        stopListening()
+        main.removeCallbacks(retryClose)
+        val id = dayId ?: closingDayId
+        val rest = batcher.drain()
+        dayId = null
+        if (id != null) bg {
+            backlog.add(rest)
+            DayCloser.close(backlog, { days.addFixes(id, it) }, finish = {}, pause = { Thread.sleep(200) })
+        }
+        bg { store.close() }
         io.shutdown()
+        releaseWakeLock()
         super.onDestroy()
     }
 
@@ -279,6 +341,8 @@ class DayTrackingService : Service() {
         const val NOTIFICATION_ID = 211
         const val ERROR_NOTIFICATION_ID = 212
         private const val TICK_MS = 10_000L
+        /** After a failed close, the next attempt waits this long. */
+        private const val CLOSE_RETRY_MS = 30_000L
         /** Renewed every tick while tracking; the timeout only bounds a lock leaked by a crash. */
         private const val WAKE_LOCK_MS = 60 * 60 * 1000L
         private const val SAVE_ERROR = "Could not save fixes"

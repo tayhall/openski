@@ -136,6 +136,73 @@ class DayBootStatsTest {
         assertTrue(s.notes.contains("no saved boot calibration, so no boot roll"))
     }
 
+    @Test fun anOpenSessionIsNotReadAndSaysSo() {
+        val sessions = listOf(session("ended", 1000, 1500), session("recording", 1200, null), session("other", 5000, 6000))
+        val (analyse, notes) = DayBootStats.plan(sessions, 1000, 2000, nowMs = 1800)
+        assertEquals(listOf("ended"), analyse.map { it.id })
+        assertEquals(listOf("recording"), notes.map { it.sessionId })
+        val stats = DayBootStats.forRange(notes, 1000, 2000)!!
+        assertEquals(listOf(DayBootStats.NOTE_STILL_RECORDING), stats.notes)
+        assertTrue(!stats.hasNumbers)
+        assertEquals("Boot session overlaps, no boot numbers: session still recording, boot stats not included", SkiDayText.bootLine(stats))
+    }
+
+    @Test fun halfTurnsCarryTheSameUserOffsetAsMovements() {
+        val demo = calibratedDemo()
+        val run = RunData(listOf(RunEventRow("L", 1, 0, 800, 20f, 90f, 0f, 1, START + 5_000), RunEventRow("R", 1, 0, 800, 20f, 90f, 0f, 1, START + 5_000)),
+            emptyList(), null)
+        val shifted = demo.copy(session = demo.session.copy(leftOffsetMs = 2_000, rightOffsetMs = -1_000), run = run)
+        val a = SessionBootAnalysis.build(shifted, detect = DayBootStats::detectWholeSession)
+        val ev = SessionBootEvents.from(a, START + 100_000)
+        assertEquals(listOf(START + 7_000), ev.halfTurns["L"])
+        assertEquals(listOf(START + 4_000), ev.halfTurns["R"])
+        // The movements moved by the same amounts against the unshifted session.
+        val base = SessionBootAnalysis.build(demo, detect = DayBootStats::detectWholeSession)
+        assertEquals(base.detections.getValue("L").movements.first().startMs + 2_000, a.detections.getValue("L").movements.first().startMs, 30.0)
+        assertEquals(base.detections.getValue("R").movements.first().startMs - 1_000, a.detections.getValue("R").movements.first().startMs, 30.0)
+        // A range just after the left half-turn (in phone time) catches it only with the offset applied.
+        assertEquals(mapOf("L" to 1, "R" to 0), DayBootStats.forRange(listOf(ev), START + 6_000, START + 8_000)!!.halfTurns)
+    }
+
+    /**
+     * SHA-256 of every entry of the calibrated demo's export, computed on 19 October 2026 with the export code as it was
+     * on main before the boot analyses moved into SessionBootAnalysis (commit 8d4d6b5), on the JDK 21 the build uses.
+     * The refactored export must reproduce them byte for byte. (A JDK whose Double.toString differs would change them all.)
+     */
+    private val preRefactorExport = linkedMapOf(
+        "session.json" to "f6c828438689f21daadc0de0fd3818b7a6812e14dc37a166ab28da19d5f42a98",
+        "samples.csv" to "f6711c536198e9bfd36a832a7ce1cf9dde28a49a7852d8167829c8adc9d1fbf9",
+        "events.csv" to "25292ab009cfaa77e1625f97fbcb422ae2be238d1ba8908b83b9030be7be14c8",
+        "boot-roll.csv" to "c7aa13c9487e4e90529c0d056cd6de2fe7a4f305692a89f8117077c9d7a288e2",
+        "labels.csv" to "b089a9795a57e18f6f42b86b9867360cd89f1256cbb339e01e216e0614d3c1e3",
+        "sensor-health.csv" to "bc9cac6aa822e3c036c1256df72e21d908ca9e0121967c29a34c47151226e91c",
+        "clock-sync.csv" to "7d0ed7866d787d82ecee408bff62591c2e82b8e451bda7967df29af49a72b0a2",
+        "clock-sync-fit.json" to "8095783321a8120bf78e7403f14f4b1604c7bae40a4b994132a00efbbc28b7d8",
+        "gesture-sync.json" to "ff8d45ebe26cb408810240fe70e6c362339b311128ca2c50aea278ff97e9da70",
+        "magnetometer.csv" to "e1fd8d638814aac3c90d53eb292c8f40ac0d9219c48407dfc43852805ad93933",
+        "phone-motion.csv" to "61eb1111826fa651ace67db85056f9c1babd58d9527ffd1745d865fcb003dbef",
+        "detected-movements.csv" to "a3ee67f5eac51370cf6638d400335686942a013917d64bfefba6fe19bd8fdf5b",
+        "heading-turns.csv" to "448b5d34bf71bef3cc54a0e7d6499f0979091cb88c4bf31ab8949a5a45be1c44",
+        "turn-metrics.csv" to "1595348c95c08065704f4aacee7d93d601d44284f40a2aed8080c56322b7c6f0",
+        "torso-metrics.csv" to "adb085ef7a38fe1a62f4fca82fc7c0c47f15ecd7c9a0455f5e889d603d88c77e",
+        "analysis-summary.json" to "6e256bff6118af282e2b2cea144b35bb6af677404e2a1eedc0a1cc28736fddaf",
+        "session-health.json" to "f448be5af5fac4da1dfac3d3e1f70ffc212642abae767a1c356656d0078e43bc",
+    )
+
+    @Test fun theSessionExportIsByteForByteThePreRefactorExport() {
+        val out = ByteArrayOutputStream()
+        SessionExport.write(calibratedDemo(), out)
+        val hashes = LinkedHashMap<String, String>()
+        ZipInputStream(out.toByteArray().inputStream()).use { zip ->
+            while (true) {
+                val e = zip.nextEntry ?: break
+                hashes[e.name] = java.security.MessageDigest.getInstance("SHA-256").digest(zip.readBytes()).joinToString("") { "%02x".format(it) }
+            }
+        }
+        assertEquals(preRefactorExport, hashes)
+        assertEquals(preRefactorExport.keys.toList(), hashes.keys.toList())   // same entries in the same order
+    }
+
     @Test fun theSessionExportStillReadsTheSharedAnalysis() {
         val data = calibratedDemo()
         val out = ByteArrayOutputStream()

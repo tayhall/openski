@@ -83,8 +83,25 @@ class DayStore(private val store: LocalSessionStore) {
         store.readableDatabase.rawQuery("""SELECT time_ms,lat,lon,alt,speed,accuracy,vertical_accuracy,baro_alt FROM day_fixes
             WHERE day_id=? ORDER BY time_ms,rowid""", arrayOf(dayId)).use { c ->
             buildList { while (c.moveToNext()) add(DayFix(GpsFix(c.getLong(0), c.getDouble(1), c.getDouble(2), c.doubleOrNull(3),
-                c.doubleOrNull(4), c.getFloat(5), if (c.isNull(6)) null else c.getFloat(6)), c.doubleOrNull(7))) }
+                c.doubleOrNull(4), if (c.isNull(5)) RunTrack.UNKNOWN_ACCURACY_M else c.getFloat(5),
+                if (c.isNull(6)) null else c.getFloat(6)), c.doubleOrNull(7))) }
         }
+    }
+
+    /** Time of the day's latest fix (MAX(time_ms)), without reading the fixes; null when it has none. */
+    fun lastFixTime(dayId: String): Long? = synchronized(store) {
+        store.readableDatabase.rawQuery("SELECT MAX(time_ms) FROM day_fixes WHERE day_id=?", arrayOf(dayId))
+            .use { if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) else null }
+    }
+
+    /**
+     * Applies [DayRules.resumePlan]: open phone days that went stale (or are not the latest) are closed at their last
+     * fix, and the open day to resume, if any, is returned.
+     */
+    fun settleOpenDays(nowMs: Long): SkiDay? {
+        val plan = DayRules.resumePlan(list(), { lastFixTime(it.id) }, nowMs)
+        plan.close.forEach { (id, end) -> finish(id, end) }
+        return plan.resume
     }
 
     fun fixCount(dayId: String): Int = synchronized(store) {
@@ -131,7 +148,8 @@ class DayStore(private val store: LocalSessionStore) {
         val f = r.fix
         put("day_id", dayId); put("time_ms", f.timeMs); put("lat", f.lat); put("lon", f.lon)
         putFinite("alt", f.altM); putFinite("speed", f.speedMps)
-        put("accuracy", if (f.accuracyM.isFinite()) f.accuracyM else 999f)
+        // Unknown accuracy (not reported, so RunTrack's sentinel, or not finite) is stored as null, never as a number.
+        if (!f.accuracyM.isFinite() || f.accuracyM == RunTrack.UNKNOWN_ACCURACY_M) putNull("accuracy") else put("accuracy", f.accuracyM)
         putFinite("vertical_accuracy", f.verticalAccuracyM?.toDouble())
         putFinite("baro_alt", r.baroAltM)
     }

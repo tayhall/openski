@@ -60,7 +60,18 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
     companion object {
         /** Current schema version; every step has a migration in [onUpgrade] and a check in StorageInstrumentation. */
         const val VERSION = 13
+        /** Rows per query when a session is read in chunks ([loadDataInChunks]). */
+        const val LOAD_CHUNK_ROWS = 5_000
     }
+
+    /**
+     * Latest sign of life of an open session: its last live sample or run half-turn as received, or its start. Used to
+     * tell a recording from a session left open by a crash.
+     */
+    @Synchronized fun lastActivityMs(sessionId: String): Long? = readableDatabase.rawQuery(
+        """SELECT MAX(COALESCE((SELECT MAX(received_at_ms) FROM samples WHERE session_id=s.id), 0),
+            COALESCE((SELECT MAX(received_ms) FROM run_events WHERE session_id=s.id), 0), s.started_at_ms) FROM sessions s WHERE s.id=?""",
+        arrayOf(sessionId)).use { if (it.moveToFirst() && !it.isNull(0)) it.getLong(0) else null }
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE sessions (
@@ -105,14 +116,15 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
     /**
      * Version 13: whole ski days (see DayStore). Independent of sessions and resorts: deleting a session or a resort
      * never touches these tables; deleting a day removes its fixes and run tags in one transaction. day_fixes keeps
-     * each fix as the phone gave it, with the barometric altitude read alongside (null without a barometer).
+     * each fix as the phone gave it, with the barometric altitude read alongside (null without a barometer); an
+     * accuracy the phone did not report is null (read back as RunTrack.UNKNOWN_ACCURACY_M).
      */
     private fun addDaySchema(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE ski_days(id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '', started_at_ms INTEGER NOT NULL,
             ended_at_ms INTEGER, source TEXT NOT NULL, resort_id TEXT, notes TEXT NOT NULL DEFAULT '',
             tags_json TEXT NOT NULL DEFAULT '{}', created_at_ms INTEGER NOT NULL)""")
         db.execSQL("""CREATE TABLE day_fixes(day_id TEXT NOT NULL, time_ms INTEGER NOT NULL, lat REAL NOT NULL, lon REAL NOT NULL,
-            alt REAL, speed REAL, accuracy REAL NOT NULL, vertical_accuracy REAL, baro_alt REAL)""")
+            alt REAL, speed REAL, accuracy REAL, vertical_accuracy REAL, baro_alt REAL)""")
         db.execSQL("CREATE INDEX day_fixes_day_idx ON day_fixes(day_id, time_ms)")
         db.execSQL("""CREATE TABLE day_run_tags(day_id TEXT NOT NULL, segment_start_ms INTEGER NOT NULL,
             tags_json TEXT NOT NULL DEFAULT '{}', note TEXT NOT NULL DEFAULT '', PRIMARY KEY(day_id, segment_start_ms))""")
@@ -495,6 +507,53 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
         return SessionData(session, live, flash, captures, events,markers,health, if (session.kind == "run") runData(id) else null,
             if (includeSync) clockPairs(id) else emptyList(), if (includeSync) magSamples(id) else emptyList(),
             if (includeSync) phoneSamples(id) else emptyList())
+    }
+
+    /**
+     * The same data as [loadData], read in chunks of [chunkRows] rows: each chunk is its own short query under the lock,
+     * so neither this helper's monitor nor SQLite's read lock is held across a whole session (the ski day reads several
+     * sessions this way while the recorder may be writing). Only for ended sessions; the export keeps [loadData].
+     */
+    fun loadDataInChunks(id: String, chunkRows: Int = LOAD_CHUNK_ROWS, includeSync: Boolean = true): SessionData? {
+        require(chunkRows > 0)
+        val session = getSession(id) ?: return null
+        /** Pages through [sql] (which must select the paging key first and end with "key>? ORDER BY key") by that key. */
+        fun <T> paged(sql: String, args: Array<String>, row: (android.database.Cursor) -> T?): List<T> {
+            val out = ArrayList<T>()
+            var after = Long.MIN_VALUE
+            while (true) {
+                val n = synchronized(this) {
+                    readableDatabase.rawQuery("$sql LIMIT $chunkRows", args + after.toString()).use { c ->
+                        var k = 0
+                        while (c.moveToNext()) { after = c.getLong(0); row(c)?.let(out::add); k++ }
+                        k
+                    }
+                }
+                if (n < chunkRows) return out
+            }
+        }
+        val live = paged("SELECT id,side,received_at_ms,sensor_time_ms,sequence,ax,ay,az,gx,gy,gz,quality FROM samples WHERE session_id=? AND id>? ORDER BY id",
+            arrayOf(id)) { c -> StoredLive(c.getString(1), c.getLong(2), SensorSample(c.getInt(4), c.getLong(3),
+                c.getFloat(5), c.getFloat(6), c.getFloat(7), c.getFloat(8), c.getFloat(9), c.getFloat(10), c.getInt(11))) }
+        val captures = captures(id)
+        val flash = captures.flatMap { capture -> paged("SELECT record_index,raw FROM flash_samples WHERE capture_id=? AND record_index>? ORDER BY record_index",
+            arrayOf(capture.id)) { c -> FlashRecord.decode(c.getBlob(1), capture.recordFormat >= 3)?.let { StoredFlash(capture, c.getInt(0), it) } } }
+        val events = synchronized(this) { readableDatabase.rawQuery("SELECT time_ms,message FROM session_events WHERE session_id=? ORDER BY time_ms", arrayOf(id)).use { c ->
+            buildList { while (c.moveToNext()) add(c.getLong(0) to c.getString(1)) } } }
+        val markers = synchronized(this) { readableDatabase.rawQuery("SELECT id,time_ms,label,side,source,note FROM test_markers WHERE session_id=? ORDER BY time_ms,id", arrayOf(id)).use { c ->
+            buildList { while (c.moveToNext()) add(TestMarker(c.getLong(0), c.getLong(1), c.getString(2), c.getString(3), c.getString(4), c.getString(5))) } } }
+        val health = synchronized(this) { readableDatabase.rawQuery("SELECT side,time_ms,battery,battery_at_ms,rssi,rssi_at_ms FROM sensor_health WHERE session_id=? ORDER BY time_ms", arrayOf(id)).use { c ->
+            buildList { while (c.moveToNext()) add(SensorHealth(c.getString(0), c.getLong(1), if (c.isNull(2)) null else c.getInt(2),
+                if (c.isNull(3)) null else c.getLong(3), if (c.isNull(4)) null else c.getInt(4), if (c.isNull(5)) null else c.getLong(5))) } } }
+        // Phone and magnetometer rows are paged by rowid and come back in rowid order, then sorted as loadData sorts them.
+        val phone = if (!includeSync) emptyList() else paged("SELECT rowid,phone_ns,gx,gy,gz,ax,ay,az,qw,qx,qy,qz FROM phone_samples WHERE session_id=? AND rowid>? ORDER BY rowid",
+            arrayOf(id)) { c -> c.getLong(0) to StoredPhone(c.getLong(1), c.getFloat(2), c.getFloat(3), c.getFloat(4), c.getFloat(5), c.getFloat(6),
+                c.getFloat(7), c.getFloat(8), c.getFloat(9), c.getFloat(10), c.getFloat(11)) }.sortedWith(compareBy({ it.second.phoneNs }, { it.first })).map { it.second }
+        val mag = if (!includeSync) emptyList() else paged("SELECT rowid,side,sensor_ms,phone_receipt_ms,x,y,z,flags FROM mag_samples WHERE session_id=? AND rowid>? ORDER BY rowid",
+            arrayOf(id)) { c -> c.getLong(0) to StoredMag(c.getString(1), c.getLong(2), c.getLong(3), c.getInt(4), c.getInt(5), c.getInt(6), c.getInt(7)) }
+            .sortedWith(compareBy({ it.second.receiptMs }, { it.first })).map { it.second }
+        return SessionData(session, live, flash, captures, events, markers, health, if (session.kind == "run") runData(id) else null,
+            if (includeSync) clockPairs(id) else emptyList(), mag, phone)
     }
 
     @Synchronized fun createSession(id: String, startedAtMs: Long, testSession: Boolean=false, origin: String="sensor", kind: String="session") {

@@ -170,5 +170,8 @@ Whole-day tracking (`DayTrackingService`), the day report, the ski day and resor
 - [ ] Airplane mode: the day screen still names runs from the cached map; a download attempt says the phone is offline and keeps the cached copy.
 - [ ] Tags: edit the day's tags and notes and tag one run; reopen the screen and the tags are there; the JSON carries them.
 - [ ] Export ski-day.gpx and open it in a GPX viewer (another app or a desktop tool): the track and times match the day. Export ski-day.json: it opens as JSON, shows segments, totals, tags, the resort name and the attribution.
-- [ ] With a boot recording during the walk: the runs that overlap it show a boot line; runs outside it show none. The boot numbers come from dry-ski boot roll and say nothing about technique.
+- [ ] With a boot recording during the walk: while it is still recording, the overlapping runs say "session still recording, boot stats not included" and the recording is not disturbed (no storage error, no disconnect) while the day screen is open; after it ends, those runs show a boot line and runs outside it show none. The boot numbers come from dry-ski boot roll and say nothing about technique.
+- [ ] Resort picker "around me" with a last position older than 5 minutes (phone just switched on, location off for a while): it says how old the position is and asks for a fresh fix (Android 11 and later) rather than downloading the old area.
+- [ ] Leave a day open overnight (or set the phone clock 13 h ahead): opening the day screen or resuming closes it at its last fix instead of continuing it.
+- [ ] Rotate the phone while the export save picker is open: the export still writes the file.
 - [ ] Battery: note the battery drop over one hour of tracking with the screen off (unmeasured so far).

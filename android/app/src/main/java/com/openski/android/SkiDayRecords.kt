@@ -87,6 +87,22 @@ object DayRules {
     /** The open phone day to resume: the latest one still open. GPX days are never open for tracking. */
     fun resumable(days: List<SkiDay>): SkiDay? = days.filter { it.open && it.source == DaySource.PHONE }.maxByOrNull { it.startedAtMs }
 
+    /** Which open day to resume and which open days to close, and when each closes. */
+    data class ResumePlan(val resume: SkiDay?, val close: List<Pair<String, Long>>)
+
+    /**
+     * The latest open phone day is resumed unless its last fix (or its start, without fixes) is more than [staleMs]
+     * before [nowMs]; then, like every other open phone day, it is closed at its last fix (or start). A day left open
+     * overnight is therefore never continued the next morning.
+     */
+    fun resumePlan(days: List<SkiDay>, lastFixMs: (SkiDay) -> Long?, nowMs: Long,
+                   staleMs: Long = DayTrackingConfig.STALE_OPEN_DAY_MS): ResumePlan {
+        val open = days.filter { it.open && it.source == DaySource.PHONE }.sortedByDescending { it.startedAtMs }
+        fun end(d: SkiDay) = maxOf(lastFixMs(d) ?: d.startedAtMs, d.startedAtMs)
+        val latest = open.firstOrNull()?.takeIf { nowMs - end(it) <= staleMs }
+        return ResumePlan(latest, open.filter { it != latest }.map { it.id to end(it) })
+    }
+
     fun cleanNote(note: String): String = note.filter { it == '\n' || !it.isISOControl() }.trim().take(MAX_NOTE_LENGTH)
     fun cleanTitle(title: String): String = title.filter { !it.isISOControl() }.trim().take(MAX_TITLE_LENGTH)
 

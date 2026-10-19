@@ -118,6 +118,14 @@ class SkiDayReportTest {
             listOf(MatchedWay(way("G3", null, WayKind.LIFT).copy(aerialway = "gondola"), 1.0, 0.9, 0, 1)), 1.0, 0.9)))
     }
 
+    private fun finiteEverywhere(v: Any?): Boolean = when (v) {
+        is JSONObject -> v.keys().asSequence().all { finiteEverywhere(v.get(it)) }
+        is org.json.JSONArray -> (0 until v.length()).all { finiteEverywhere(v.get(it)) }
+        is Double -> v.isFinite()
+        is Float -> v.isFinite()
+        else -> true
+    }
+
     @Test fun theDayDocumentCarriesTagsBootNumbersResortAndAttribution() {
         val map = SkiDaySplitterTest.mapFrom(day)
         val second = truthDescents[1]
@@ -149,12 +157,13 @@ class SkiDayReportTest {
         assertTrue(firstRun.isNull("boot"))
         val secondRun = segs.getJSONObject(runs[1].index)
         assertEquals(1, secondRun.getJSONObject("boot").getJSONObject("movements").getInt("L"))
-        assertTrue(secondRun.getJSONObject("boot").getJSONArray("notes").getString(0).startsWith("torso metrics: refused"))
+        assertEquals("torso metrics: refused: no phone motion rows", secondRun.getJSONObject("boot").getJSONArray("notes").getString(0))
         assertEquals("orphan", json.getJSONArray("unattached_run_tags").getJSONObject(0).getString("note"))
         assertEquals(3, json.getJSONObject("totals").getInt("runs"))
         assertEquals(3, json.getJSONObject("barometer").getJSONArray("samples").length())
-        assertTrue(json.getString("boot_note").startsWith("EXPERIMENTAL"))
-        assertFalse(json.toString().contains("NaN"))
+        assertEquals(DayBootStats.NOTE, json.getString("boot_note"))
+        assertTrue(Regex("NaN|Infinity").find(json.toString()) == null)
+        assertTrue("every number in the document is finite", finiteEverywhere(json))
         // Without a map or resort: no attribution and no resort block.
         val plain = JSONObject(SkiDayExport.dayJson(skiDay.copy(resortId = null), SkiDayReport.build(day.fixes, emptyList(), null)).toString())
         assertTrue(plain.isNull("attribution")); assertTrue(plain.isNull("resort"))

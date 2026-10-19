@@ -24,6 +24,7 @@ import java.text.DateFormat
 import java.util.Date
 import java.util.UUID
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 
 /**
  * The ski day screen: start and stop whole-day tracking, the day's runs, lifts and rests with names from the resort
@@ -50,8 +51,8 @@ class SkiDayActivity : Activity() {
     private val refresh = object : Runnable {
         override fun run() {
             val s = DayTrackingService.status
-            // Follow a day the service has just started.
-            if (s.tracking && s.dayId != null && s.dayId != dayId) { dayId = s.dayId; load() }
+            // Follow a day the service has just started, once per day (a failing load must not repeat every second).
+            if (s.tracking && s.dayId != null && s.dayId != dayId && s.dayId != followed) { followed = s.dayId; dayId = s.dayId; load() }
             statusView?.text = trackingLine(s)
             val signature = listOf(s.tracking, s.dayId, s.error, s.gpsOn).joinToString("|")
             if (signature != statusSignature) { statusSignature = signature; render() }
@@ -63,27 +64,48 @@ class SkiDayActivity : Activity() {
         super.onCreate(savedInstanceState)
         Snow.configureWindow(this)
         dayId = savedInstanceState?.getString("day") ?: intent.getStringExtra(EXTRA_DAY)
+        savedInstanceState?.getString("export_day")?.let { id -> savedInstanceState.getString("export_kind")?.let { pendingExport = id to it } }
         frame = FrameLayout(this).apply { setBackgroundColor(Snow.SNOW) }
         SkiUi.applyInsets(frame)
         setContentView(frame)
     }
 
-    override fun onSaveInstanceState(state: Bundle) { dayId?.let { state.putString("day", it) }; super.onSaveInstanceState(state) }
+    override fun onSaveInstanceState(state: Bundle) {
+        dayId?.let { state.putString("day", it) }
+        // A save picker may outlive this activity (rotation, or the process being killed behind it).
+        pendingExport?.let { (id, kind) -> state.putString("export_day", id); state.putString("export_kind", kind) }
+        super.onSaveInstanceState(state)
+    }
     override fun onResume() { super.onResume(); load(); handler.post(refresh) }
     override fun onPause() { handler.removeCallbacks(refresh); super.onPause() }
-    override fun onDestroy() { destroyed = true; io.shutdown(); super.onDestroy() }
+    override fun onDestroy() { destroyed = true; handler.removeCallbacksAndMessages(null); io.shutdown(); super.onDestroy() }
 
-    /** Reads the day and builds its report off the main thread. */
+    /** Runs [block] on the io thread; nothing once the screen is gone (the executor is shut then). */
+    private fun bg(block: () -> Unit) {
+        if (destroyed) return
+        try { io.execute(block) } catch (_: RejectedExecutionException) { }
+    }
+
+    /** Runs [block] on the main thread unless the screen is gone. */
+    private fun ui(block: () -> Unit) = runOnUiThread { if (!destroyed) block() }
+
+    private var followed: String? = null
+    private var lastLoadError: String? = null
+
+    /** Reads the day and builds its report off the main thread. A failure is shown once; nothing retries it by itself. */
     private fun load() {
+        if (destroyed) return
         loading = true
         render()
         val wanted = dayId
-        io.execute {
+        val tracking = DayTrackingService.status.tracking
+        bg {
             val result = try {
                 LocalSessionStore(this).use { store ->
                     val days = DayStore(store)
+                    // Days left open overnight are closed at their last fix (unless one is being tracked right now).
+                    val open = if (tracking) DayRules.resumable(days.list()) else days.settleOpenDays(System.currentTimeMillis())
                     val all = days.list()
-                    val open = DayRules.resumable(all)
                     val day = wanted?.let { id -> all.firstOrNull { it.id == id } } ?: open ?: all.firstOrNull()
                     if (day == null) Loaded(null, all, null, 0, emptyList(), null, open) else {
                         val fixes = days.fixes(day.id)
@@ -95,11 +117,14 @@ class SkiDayActivity : Activity() {
                         Loaded(day, all, SkiDayReport.build(fixes, map, boots), fixes.size, days.runTags(day.id), resort, open)
                     }
                 }
-            } catch (e: Exception) { runOnUiThread { message = "Could not load the day: ${e.message}" }; null }
-            runOnUiThread {
-                if (destroyed) return@runOnUiThread
+            } catch (e: Exception) {
+                val text = "Could not load the day: ${e.message ?: e.javaClass.simpleName}. Tap Refresh to try again."
+                ui { if (text != lastLoadError) { lastLoadError = text; message = text } }
+                null
+            }
+            ui {
                 loading = false
-                if (result != null) { loaded = result; dayId = result.day?.id }
+                if (result != null) { loaded = result; dayId = result.day?.id; lastLoadError = null }
                 render()
             }
         }
@@ -329,20 +354,20 @@ class SkiDayActivity : Activity() {
     }
 
     private fun editDay(day: SkiDay) = tagForm(day.tags, day.notes, day.title, { tags, note, title ->
-        io.execute {
+        bg {
             try { LocalSessionStore(this).use { DayStore(it).update(day.id, title?.takeIf { s -> s.isNotBlank() } ?: day.title, note, tags) } }
-            catch (e: Exception) { runOnUiThread { message = "Could not save: ${e.message}" } }
-            runOnUiThread { load() }
+            catch (e: Exception) { ui { message = "Could not save: ${e.message}" } }
+            ui { load() }
         }
     }, "Day tags")
 
     private fun editRun(day: SkiDay, seg: ReportSegment, existing: RunTag?) = tagForm(existing?.tags ?: DayTags(), existing?.note ?: "", null, { tags, note, _ ->
         // Keep the original key so a tag stays put even if the split moves the start a little.
         val key = existing?.segmentStartMs ?: seg.segment.startMs
-        io.execute {
+        bg {
             try { LocalSessionStore(this).use { DayStore(it).setRunTag(day.id, RunTag(key, tags, note)) } }
-            catch (e: Exception) { runOnUiThread { message = "Could not save: ${e.message}" } }
-            runOnUiThread { load() }
+            catch (e: Exception) { ui { message = "Could not save: ${e.message}" } }
+            ui { load() }
         }
     }, "Tag ${seg.title}")
 
@@ -383,10 +408,10 @@ class SkiDayActivity : Activity() {
 
     /** Closes a day left open after the app or phone stopped, at its last fix. */
     private fun closeOpenDay(open: SkiDay) {
-        io.execute {
-            try { LocalSessionStore(this).use { s -> DayStore(s).let { d -> d.finish(open.id, d.fixes(open.id).lastOrNull()?.fix?.timeMs ?: open.startedAtMs) } } }
-            catch (e: Exception) { runOnUiThread { message = "Could not close the day: ${e.message}" } }
-            runOnUiThread { load() }
+        bg {
+            try { LocalSessionStore(this).use { s -> DayStore(s).let { d -> d.finish(open.id, maxOf(d.lastFixTime(open.id) ?: open.startedAtMs, open.startedAtMs)) } } }
+            catch (e: Exception) { ui { message = "Could not close the day: ${e.message}" } }
+            ui { load() }
         }
     }
 
@@ -397,9 +422,9 @@ class SkiDayActivity : Activity() {
         AlertDialog.Builder(this).setTitle("Delete \"${day.title}\"?")
             .setMessage("Its fixes and tags are removed from this phone. Boot sessions and resort maps are not touched.")
             .setPositiveButton("Delete") { _, _ ->
-                io.execute {
-                    try { LocalSessionStore(this).use { DayStore(it).delete(day.id) } } catch (e: Exception) { runOnUiThread { message = "Could not delete: ${e.message}" } }
-                    runOnUiThread { dayId = null; loaded = null; load() }
+                bg {
+                    try { LocalSessionStore(this).use { DayStore(it).delete(day.id) } } catch (e: Exception) { ui { message = "Could not delete: ${e.message}" } }
+                    ui { dayId = null; loaded = null; load() }
                 }
             }.setNegativeButton("Cancel", null).show()
     }
@@ -439,24 +464,24 @@ class SkiDayActivity : Activity() {
 
     private fun importGpx(uri: Uri) {
         message = "Importing…"; render()
-        io.execute {
+        bg {
             val text = try {
                 val read = contentResolver.openInputStream(uri)?.use { GpxCodec.read(it) } ?: error("The file could not be opened")
                 if (read.fixes.isEmpty()) error("The file has no track points with a time")
                 val day = DayRules.gpxDay(UUID.randomUUID().toString(), read, System.currentTimeMillis())
                 val skipped = LocalSessionStore(this).use { DayStore(it).importDay(day, read.fixes.map { f -> DayFix(f) }) }
-                runOnUiThread { dayId = day.id }
+                ui { dayId = day.id }
                 "Imported ${read.fixes.size - skipped} points" + (if (read.skippedPoints + skipped > 0) ", ${read.skippedPoints + skipped} unusable points skipped" else "") +
                     (if (read.assumedUtcPoints > 0) ", ${read.assumedUtcPoints} times without a zone taken as UTC" else "") + "."
             } catch (e: GpxFormatException) { "Could not import: ${e.message}" }
             catch (e: Exception) { "Could not import: ${e.message ?: e.javaClass.simpleName}" }
-            runOnUiThread { message = text; loaded = null; load() }
+            ui { message = text; loaded = null; load() }
         }
     }
 
     private fun writeExport(id: String, kind: String, uri: Uri) {
         message = "Exporting…"; render()
-        io.execute {
+        bg {
             val text = try {
                 LocalSessionStore(this).use { store ->
                     val days = DayStore(store)
@@ -474,7 +499,7 @@ class SkiDayActivity : Activity() {
                 }
                 if (kind == GPX) "Exported ski-day.gpx" else "Exported ski-day.json"
             } catch (e: Exception) { "Export failed: ${e.message ?: e.javaClass.simpleName}" }
-            runOnUiThread { message = text; render() }
+            ui { message = text; render() }
         }
     }
 

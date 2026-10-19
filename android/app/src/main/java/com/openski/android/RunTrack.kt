@@ -40,11 +40,14 @@ object RunTrack {
     private const val SMOOTH_WIDTH = 5
     private const val EARTH_M = 6_371_000.0
 
+    /** Stands for "the phone reported no accuracy": hopeless, so the filter drops the fix. Stored as null in day_fixes. */
+    const val UNKNOWN_ACCURACY_M = 999f
+
     /** A reading whose phone reported no accuracy is given a hopeless one so the filter drops it. */
     fun fixFrom(timeMs: Long, lat: Double, lon: Double, altM: Double?, speedMps: Float?, accuracyM: Float?,
                 verticalAccuracyM: Float?, nowMs: Long) = GpsFix(
         if (timeMs > 0) timeMs else nowMs, lat, lon, altM, speedMps?.toDouble(),
-        accuracyM?.takeIf { it.isFinite() } ?: 999f, verticalAccuracyM)
+        accuracyM?.takeIf { it.isFinite() } ?: UNKNOWN_ACCURACY_M, verticalAccuracyM)
 
     private fun distanceM(a: GpsFix, b: GpsFix): Double {
         val p1 = Math.toRadians(a.lat); val p2 = Math.toRadians(b.lat)

@@ -63,6 +63,25 @@ class SkiDayRecordsTest {
         assertEquals("b", DayRules.resumable(listOf(day("a", 1, null), day("b", 3, null), day("c", 9, 10)))!!.id)
     }
 
+    @Test fun aDayLeftOpenOvernightIsClosedAtItsLastFixInsteadOfResumed() {
+        val h = 3_600_000L
+        val fresh = day("today", 20 * h, null)
+        val stale = day("yesterday", 2 * h, null)
+        val gpx = day("gpx", 21 * h, null, DaySource.GPX)
+        val last = mapOf("today" to 21 * h, "yesterday" to 9 * h)
+        val plan = DayRules.resumePlan(listOf(stale, fresh, gpx, day("closed", 1, 2)), { last[it.id] }, nowMs = 22 * h)
+        assertEquals(fresh, plan.resume)
+        assertEquals(listOf("yesterday" to 9 * h), plan.close)
+        // The latest open day itself goes stale after 12 h without a fix, and closes at that fix.
+        val later = DayRules.resumePlan(listOf(fresh), { last[it.id] }, nowMs = 21 * h + DayTrackingConfig.STALE_OPEN_DAY_MS + 1)
+        assertNull(later.resume)
+        assertEquals(listOf("today" to 21 * h), later.close)
+        // A day without fixes is judged and closed by its start.
+        val empty = DayRules.resumePlan(listOf(fresh), { null }, nowMs = 20 * h + 1000)
+        assertEquals(fresh, empty.resume)
+        assertEquals(listOf("today" to 20 * h), DayRules.resumePlan(listOf(fresh), { null }, nowMs = 40 * h).close)
+    }
+
     @Test fun aRunTagAttachesToTheDescentContainingItsKey() {
         val tags = listOf(RunTag(1_000, DayTags(snow = "icy"), ""), RunTag(1_500, DayTags(crowd = "busy"), ""), RunTag(5_000, DayTags(), "late"))
         assertEquals(1_000L, DayRules.tagFor(900, 2_000, tags)!!.segmentStartMs)     // closest to the start

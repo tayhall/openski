@@ -65,7 +65,9 @@ class SessionBootEvents(
             val withRoll = a.rollBySide.filterValues { it.isNotEmpty() }.keys
             val notes = ArrayList<String>()
             if (withRoll.isEmpty()) notes.add("no saved boot calibration, so no boot roll")
-            val halfTurns = a.data.run?.events.orEmpty().groupBy { it.side }.mapValues { (_, rows) -> rows.map { it.receivedMs } }
+            // The same per-boot user offset the timeline (and so every movement) carries.
+            fun offset(side: String) = if (side == "L") s.leftOffsetMs else s.rightOffsetMs
+            val halfTurns = a.data.run?.events.orEmpty().groupBy { it.side }.mapValues { (side, rows) -> rows.map { it.receivedMs + offset(side) } }
             return SessionBootEvents(s.id, s.startedAtMs, s.endedAtMs ?: nowMs,
                 withRoll.associateWith { side -> a.detections[side]?.movements.orEmpty().map { it.startMs } },
                 withRoll.associateWith { side -> a.headingTurns[side].orEmpty().map { it.startMs } },
@@ -86,9 +88,22 @@ object DayBootStats {
         "this stretch in time (phone clock), not ski turn classification and not a technique score. Movements are counted " +
         "over the whole session, not only inside test-marker windows as the session export does."
 
+    const val NOTE_STILL_RECORDING = "session still recording, boot stats not included"
+
     /** Real sensor sessions (never synthetic demo data) whose time overlaps [startMs, endMs]. An open session runs to [nowMs]. */
     fun overlapping(sessions: List<SkiSession>, startMs: Long, endMs: Long, nowMs: Long): List<SkiSession> =
         sessions.filter { it.origin == "sensor" && it.startedAtMs < endMs && (it.endedAtMs ?: nowMs) > startMs }
+
+    /**
+     * The overlapping sessions to analyse (ended ones only) and, for each one still open, a stand-in that carries only
+     * [NOTE_STILL_RECORDING]: reading a session while the recorder writes to it could stall the recorder, so its boot
+     * numbers wait until it has ended.
+     */
+    fun plan(sessions: List<SkiSession>, startMs: Long, endMs: Long, nowMs: Long): Pair<List<SkiSession>, List<SessionBootEvents>> {
+        val over = overlapping(sessions, startMs, endMs, nowMs)
+        return over.filter { it.endedAtMs != null } to
+            over.filter { it.endedAtMs == null }.map { SessionBootEvents.failed(it.id, it.startedAtMs, nowMs, NOTE_STILL_RECORDING) }
+    }
 
     /** The boot movement detector over a whole session (no test-marker windows); used for ski days. */
     fun detectWholeSession(rolls: List<BootRoll>, @Suppress("UNUSED_PARAMETER") markers: List<TestMarker>): DryDetection =

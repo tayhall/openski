@@ -212,6 +212,9 @@ class StorageInstrumentation : Instrumentation() {
                     check(store.phoneSamples(id).let { it.size==2 && it[0].gx==0.5f && it[1].qw==0.99f && it[1].phoneNs==5_000_010_000_000L }) { "phone rows round trip" }
                     store.finishSession(id,1_100_000L)
                     val loaded=store.loadData(id)!!
+                    // The chunked reader used by the ski day returns exactly what loadData returns, even one row per query.
+                    check(store.loadDataInChunks(id,1)==loaded && store.loadDataInChunks(id)==loaded) { "chunked load differs from loadData" }
+                    check(store.lastActivityMs(id)==1_000_000L) { "last activity of a session without samples is its start" }
                     check(loaded.clockPairs.size==9 && loaded.mag.size==1 && loaded.phone.size==2) { "loadData omitted clock, magnetometer or phone rows" }
                     check(store.loadData(id,includeSync=false)!!.phone.isEmpty()) { "phone rows loaded without includeSync" }
                     val zipped=ByteArrayOutputStream()
@@ -341,7 +344,17 @@ class StorageInstrumentation : Instrumentation() {
                     check(days.openPhoneDay()==null && days.day("d1")!!.endedAtMs==1_450_000L) { "finish" }
                     // An imported day, then deleting a session or a resort never touches days.
                     val gpx=SkiDay("g1","Imported",500_000L,600_000L,DaySource.GPX,null,"",DayTags(),700_000L)
-                    check(days.importDay(gpx,rows.take(3))==0 && days.fixes("g1").size==3) { "import" }
+                    val unknown=DayFix(GpsFix(550_000L,46.0,7.0,null,null,RunTrack.UNKNOWN_ACCURACY_M,null))
+                    check(days.importDay(gpx,rows.take(3)+unknown)==0 && days.fixes("g1").size==4) { "import" }
+                    check(store.readableDatabase.rawQuery("SELECT COUNT(*) FROM day_fixes WHERE day_id='g1' AND accuracy IS NULL",null).use { it.moveToFirst() && it.getInt(0)==1 }) { "unknown accuracy not stored as null" }
+                    check(days.fixes("g1").last()==unknown) { "unknown accuracy round trip" }
+                    check(days.lastFixTime("d1")==1_449_000L && days.lastFixTime("nothing")==null) { "last fix time" }
+                    // A day left open for over 12 h is closed at its last fix instead of being resumed.
+                    days.create(SkiDay("old","Old",1_000L,null,DaySource.PHONE,null,"",DayTags(),1_000L))
+                    days.addFixes("old",listOf(DayFix(GpsFix(5_000L,46.0,7.0,null,null,5f,null))))
+                    check(days.settleOpenDays(DayTrackingConfig.STALE_OPEN_DAY_MS+10_000L)==null) { "stale day resumed" }
+                    check(days.day("old")!!.endedAtMs==5_000L) { "stale day not closed at its last fix" }
+                    check(days.delete("old"))
                     check(store.deleteSession("before-days"))
                     check(ResortStore(store).delete("kept"))
                     check(days.list().map { it.id }==listOf("d1","g1") && days.fixCount("d1")==450 && days.runTags("d1").size==1) { "session or resort delete touched days" }
@@ -350,7 +363,7 @@ class StorageInstrumentation : Instrumentation() {
                     listOf("day_fixes","day_run_tags").forEach { table ->
                         check(store.readableDatabase.rawQuery("SELECT COUNT(*) FROM $table WHERE day_id='d1'",null).use { it.moveToFirst() && it.getInt(0)==0 }) { "$table rows left after day delete" }
                     }
-                    check(days.fixCount("g1")==3 && days.list().single().id=="g1") { "day delete touched another day" }
+                    check(days.fixCount("g1")==4 && days.list().single().id=="g1") { "day delete touched another day" }
                 }
             } finally { context.deleteDatabase(dayMigration) }
             val path=context.getDatabasePath(name)

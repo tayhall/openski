@@ -24,6 +24,7 @@ import android.widget.ProgressBar
 import android.widget.ScrollView
 import java.util.Locale
 import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 
 /**
  * Resort maps: search OpenStreetMap ski areas by name, or download the area around the phone (its position coarsened
@@ -47,13 +48,15 @@ class ResortPickerActivity : Activity() {
     private var bound = false
     /** Mirrors the sensor service's recording state; read by the download guard on the io thread. */
     @Volatile private var sensorRecording = false
+    @Volatile private var serviceBound = false
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             service = (binder as? SensorSessionService.LocalBinder)?.service
             sensorRecording = service?.recordingActive() == true
+            serviceBound = service != null
         }
-        override fun onServiceDisconnected(name: ComponentName?) { service = null; sensorRecording = false }
+        override fun onServiceDisconnected(name: ComponentName?) { service = null; sensorRecording = false; serviceBound = false }
     }
     private val poll = object : Runnable {
         override fun run() { sensorRecording = service?.recordingActive() == true; handler.postDelayed(this, 1000) }
@@ -82,26 +85,41 @@ class ResortPickerActivity : Activity() {
     override fun onStop() {
         handler.removeCallbacks(poll)
         if (bound) { unbindService(connection); bound = false }
-        service = null
+        service = null; serviceBound = false
         super.onStop()
     }
 
     // shutdown, not shutdownNow: a download that has started finishes and saves even if the screen is closed.
-    override fun onDestroy() { destroyed = true; io.shutdown(); super.onDestroy() }
+    override fun onDestroy() { destroyed = true; handler.removeCallbacksAndMessages(null); io.shutdown(); super.onDestroy() }
 
-    /** Runs [block] with a repository on the io thread. The guard also checks the database for an open recording. */
+    /** Runs [block] on the io thread; nothing once the screen is gone (the executor is shut then). */
+    private fun bg(block: () -> Unit) {
+        if (destroyed) return
+        try { io.execute(block) } catch (_: RejectedExecutionException) { }
+    }
+
+    /** Runs [block] on the main thread unless the screen is gone. */
+    private fun ui(block: () -> Unit) = runOnUiThread { if (!destroyed) block() }
+
+    /**
+     * Runs [block] with a repository on the io thread. The guard trusts the sensor service when it is running; otherwise
+     * an open session in the database blocks only while it shows recent activity ([RecordingGuard]), so a session left
+     * open by a crash cannot block downloads for ever.
+     */
     private fun <T> withRepository(store: LocalSessionStore, block: (ResortRepository) -> T): T =
         block(ResortRepository(HttpResortFetcher(), ResortStore(store), downloadBlocker = {
-            if (sensorRecording || store.latestOpenSessionId() != null)
+            val open = if (serviceBound) null else store.latestOpenSessionId()?.let(store::lastActivityMs)
+            if (RecordingGuard.blocks(serviceBound, sensorRecording, open, System.currentTimeMillis()))
                 "a boot recording or run is in progress; download maps before or after it" else null
         }))
 
     private fun reload() {
-        io.execute {
+        if (destroyed) return
+        bg {
             val (list, resortId) = try {
                 LocalSessionStore(this).use { s -> ResortStore(s).list() to dayId?.let { DayStore(s).day(it)?.resortId } }
-            } catch (e: Exception) { runOnUiThread { message = "Could not read cached maps: ${e.message}" }; emptyList<StoredResort>() to null }
-            runOnUiThread { if (!destroyed) { cached = list; dayResortId = resortId; render() } }
+            } catch (e: Exception) { ui { message = "Could not read cached maps: ${e.message}" }; emptyList<StoredResort>() to null }
+            ui { if (!destroyed) { cached = list; dayResortId = resortId; render() } }
         }
     }
 
@@ -109,11 +127,11 @@ class ResortPickerActivity : Activity() {
     private fun job(label: String, work: (ResortRepository) -> String) {
         if (busy != null) return
         busy = label; message = null; render()
-        io.execute {
+        bg {
             val text = try { LocalSessionStore(this).use { withRepository(it, work) } }
             catch (e: Exception) { "Failed: ${e.message ?: e.javaClass.simpleName}" }
-            runOnUiThread {
-                if (destroyed) return@runOnUiThread
+            ui {
+                if (destroyed) return@ui
                 busy = null; message = text; render(); reload()
             }
         }
@@ -125,7 +143,7 @@ class ResortPickerActivity : Activity() {
         job("Searching for \"$name\"…") { repo ->
             val r = repo.search(name)
             val found = (r as? SearchResult.Found)?.candidates.orEmpty()
-            runOnUiThread { results = found }
+            ui { results = found }
             SkiDayText.search(r)
         }
     }
@@ -136,7 +154,11 @@ class ResortPickerActivity : Activity() {
         SkiDayText.download(result) + if (result is DownloadResult.Saved && dayId != null) " Chosen for this day." else ""
     }
 
-    /** Downloads the area around the phone's last known position, coarsened before anything is built from it. */
+    /**
+     * Downloads the area around the phone. The last known position is used only when it is fresh ([PositionAge]);
+     * otherwise a current fix is asked for (Android 11 and later) or the screen says why nothing happened. The position
+     * is coarsened before anything is built from it.
+     */
     @SuppressLint("MissingPermission")
     private fun aroundMe() {
         if (checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
@@ -147,13 +169,30 @@ class ResortPickerActivity : Activity() {
         val manager = getSystemService(LocationManager::class.java)
         val last = try {
             listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER, LocationManager.PASSIVE_PROVIDER)
-                .mapNotNull { p -> runCatching { manager.getLastKnownLocation(p) }.getOrNull() }.maxByOrNull { it.time }
+                .mapNotNull { p -> runCatching { manager.getLastKnownLocation(p) }.getOrNull() }.maxByOrNull { it.elapsedRealtimeNanos }
         } catch (_: Exception) { null }
-        if (last == null) {
-            message = "No recent position on this phone. Start the ski day (or open a map app) for a moment, then try again."
-            render(); return
+        val ageMs = last?.let { (android.os.SystemClock.elapsedRealtimeNanos() - it.elapsedRealtimeNanos) / 1_000_000 }
+        if (last != null && ageMs != null && PositionAge.fresh(ageMs)) { downloadAround(last.latitude, last.longitude); return }
+        val stale = if (ageMs == null) "No recent position on this phone." else "The phone's last position is ${ageMs / 60_000} min old."
+        val provider = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER).firstOrNull {
+            runCatching { manager.isProviderEnabled(it) }.getOrDefault(false) }
+        if (android.os.Build.VERSION.SDK_INT >= 30 && provider != null) {
+            message = "$stale Getting a fresh position…"; render()
+            try {
+                manager.getCurrentLocation(provider, null, mainExecutor) { loc ->
+                    if (destroyed) return@getCurrentLocation
+                    if (loc == null) { message = "$stale No fresh position came; try outdoors, or search by name."; render() }
+                    else downloadAround(loc.latitude, loc.longitude)
+                }
+            } catch (e: Exception) { message = "$stale A fresh position could not be requested (${e.message}); search by name instead."; render() }
+        } else {
+            message = "$stale Turn location on, or start the ski day for a moment so the phone has a fresh fix, then try again."
+            render()
         }
-        val centre = ResortRepository.coarsen(LatLon(last.latitude, last.longitude))
+    }
+
+    private fun downloadAround(lat: Double, lon: Double) {
+        val centre = ResortRepository.coarsen(LatLon(lat, lon))
         val label = String.format(Locale.US, "%.2f, %.2f", centre.lat, centre.lon)
         download(ResortRequest.nearPosition("near-$label".replace(" ", ""), "Area near $label", centre))
     }
@@ -169,10 +208,10 @@ class ResortPickerActivity : Activity() {
 
     private fun choose(r: StoredResort?) {
         val id = dayId ?: return
-        io.execute {
+        bg {
             val text = try { attach(id, r?.id); if (r == null) "No resort map for this day." else "${r.name} chosen for this day." }
             catch (e: Exception) { "Could not save: ${e.message}" }
-            runOnUiThread { message = text; reload() }
+            ui { message = text; reload() }
         }
     }
 
@@ -180,10 +219,10 @@ class ResortPickerActivity : Activity() {
         AlertDialog.Builder(this).setTitle("Delete ${r.name}?")
             .setMessage("The cached map is removed from this phone. Days that used it keep their fixes and lose their names until you download it again.")
             .setPositiveButton("Delete") { _, _ ->
-                io.execute {
+                bg {
                     val text = try { LocalSessionStore(this).use { ResortStore(it).delete(r.id) }; "${r.name} deleted." }
                     catch (e: Exception) { "Could not delete: ${e.message}" }
-                    runOnUiThread { message = text; reload() }
+                    ui { message = text; reload() }
                 }
             }.setNegativeButton("Cancel", null).show()
     }

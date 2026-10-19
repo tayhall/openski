@@ -35,13 +35,20 @@ object SkiDayText {
         }
     }
 
+    /** A signed vertical in words: "412 m down", "35 m up" (a noisy descent can end higher than it began), "0 m". */
+    fun verticalWord(m: Double): String {
+        if (!m.isFinite()) return "–"
+        val r = m.roundToInt()
+        return when { r < 0 -> "${-r} m down"; r > 0 -> "$r m up"; else -> "0 m" }
+    }
+
     /** One line for a segment: duration, vertical, distance and top speed where known. */
     fun segmentLine(r: ReportSegment): String {
         val s = r.segment
         return when (r.kind) {
-            SegmentKind.DESCENT -> listOfNotNull(duration(s.durationS), s.verticalM?.let { "${vertical(-it)} down" },
+            SegmentKind.DESCENT -> listOfNotNull(duration(s.durationS), s.verticalM?.let(::verticalWord),
                 distance(s.distanceM), s.topSpeedMps?.let { "top ${speed(it)}" }).joinToString(" · ")
-            SegmentKind.LIFT -> listOfNotNull(duration(s.durationS), s.verticalM?.let { "${vertical(it)} up" }).joinToString(" · ")
+            SegmentKind.LIFT -> listOfNotNull(duration(s.durationS), s.verticalM?.let(::verticalWord)).joinToString(" · ")
             SegmentKind.REST -> duration(s.durationS)
         }
     }
