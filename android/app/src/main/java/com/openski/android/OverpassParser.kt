@@ -29,8 +29,9 @@ object PisteDifficulty {
 }
 
 /**
- * A parsed way with the details [ResortWay] does not carry. [area] marks a closed outline (an area piste) used as a
- * line; [relationId] is set when the way came in as a member of a piste relation whose tags it took.
+ * A parsed way with the details [ResortWay] does not carry. [area] marks a closed ring (an area piste outline) used as
+ * a line; [relationId] is set when the way came in as a member of a piste relation whose tags it took. A way whose
+ * geometry has a gap (a null or unusable point) is split there into [part] 0, 1, ... rather than bridged.
  */
 data class ResortWayInfo(
     val way: ResortWay,
@@ -39,10 +40,12 @@ data class ResortWayInfo(
     val version: Int?,
     val area: Boolean,
     val relationId: Long? = null,
+    val part: Int = 0,
 )
 
-/** An `aerialway=station` node. */
-data class ResortStation(val osmId: Long, val name: String?, val point: LatLon, val operator: String?, val version: Int?)
+/** An `aerialway=station` node, or a station mapped as a way (an outline), kept as the mean of its vertices. */
+data class ResortStation(val osmId: Long, val name: String?, val point: LatLon, val operator: String?, val version: Int?,
+                         val osmType: String = "node")
 
 /**
  * Everything one resort query returned. [remark] is the server's remark (a timeout or memory error that cut the
@@ -64,6 +67,9 @@ data class ResortCandidate(val osmType: String, val osmId: Long, val name: Strin
     val key: String get() = "$osmType/$osmId"
 }
 
+/** A name search answer: the usable candidates and how many elements the server returned (to spot a capped answer). */
+data class ResortSearch(val candidates: List<ResortCandidate>, val elementCount: Int)
+
 sealed class OverpassParse<out T> {
     data class Parsed<T>(val value: T) : OverpassParse<T>()
     data class Failed(val message: String) : OverpassParse<Nothing>()
@@ -72,13 +78,17 @@ sealed class OverpassParse<out T> {
 /**
  * Overpass JSON to resort data. Tolerates missing tags, unnamed ways, null geometry points and unknown element
  * types; malformed or truncated JSON returns [OverpassParse.Failed] with a message. Never throws.
+ *
+ * Known limits: a relation member way that was not also returned on its own takes the relation's tags; member ways
+ * are kept in the order and direction OSM stores them (not joined into rings, not turned to run downhill); `inner`
+ * members of multipolygons (holes) are left out.
  */
 object OverpassParser {
     fun parseResort(text: String): OverpassParse<ResortData> = guard {
         val root = root(text) ?: return@guard OverpassParse.Failed(notJson(text))
         val elements = root.optJSONArray("elements") ?: return@guard OverpassParse.Failed("No elements array in the response")
-        val ways = LinkedHashMap<Long, ResortWayInfo>()
-        val stations = LinkedHashMap<Long, ResortStation>()
+        val ways = LinkedHashMap<Long, List<ResortWayInfo>>()
+        val stations = LinkedHashMap<String, ResortStation>()
         val relations = mutableListOf<JSONObject>()
         var skipped = 0
         for (i in 0 until elements.length()) {
@@ -86,9 +96,19 @@ object OverpassParser {
             if (element == null) { skipped++; continue }
             val ok = runCatching {
                 when (element.optString("type")) {
-                    "way" -> wayInfo(element.getLong("id"), tags(element), points(element.optJSONArray("geometry")),
-                        version(element), null)?.also { ways.putIfAbsent(it.way.osmId, it) } != null
-                    "node" -> station(element)?.also { stations.putIfAbsent(it.osmId, it) } != null
+                    "way" -> {
+                        val id = element.getLong("id")
+                        val tags = tags(element)
+                        val segments = segments(element.optJSONArray("geometry"))
+                        if (tags["aerialway"] == "station") {
+                            stationFromWay(id, tags, segments, version(element))?.also { stations.putIfAbsent("way/$id", it) } != null
+                        } else {
+                            val parts = wayInfos(id, tags, segments, version(element), null)
+                            if (parts.isNotEmpty()) ways.putIfAbsent(id, parts)
+                            parts.isNotEmpty()
+                        }
+                    }
+                    "node" -> station(element)?.also { stations.putIfAbsent("node/${it.osmId}", it) } != null
                     "relation" -> relations.add(element)
                     else -> false
                 }
@@ -99,20 +119,22 @@ object OverpassParser {
         for (relation in relations) {
             val ok = runCatching {
                 val relTags = tags(relation)
+                val relationId = relation.getLong("id")
                 val multipolygon = relTags["type"] == "multipolygon"
                 val members = relation.optJSONArray("members") ?: JSONArray()
                 var used = 0
                 for (m in 0 until members.length()) {
                     val member = members.optJSONObject(m) ?: continue
                     if (member.optString("type") != "way" || !member.has("ref")) continue
+                    if (multipolygon && member.optString("role") == "inner") continue
                     val id = member.getLong("ref")
                     val existing = ways[id]
                     if (existing != null) {
-                        ways[id] = fill(existing, relTags, relation.getLong("id")); used++; continue
+                        ways[id] = existing.map { fill(it, relTags, relationId) }; used++; continue
                     }
-                    val info = wayInfo(id, relTags, points(member.optJSONArray("geometry")), null, relation.getLong("id"),
-                        forceArea = multipolygon) ?: continue
-                    ways[id] = info; used++
+                    val parts = wayInfos(id, relTags, segments(member.optJSONArray("geometry")), null, relationId, multipolygon)
+                    if (parts.isEmpty()) continue
+                    ways[id] = parts; used++
                 }
                 used > 0
             }.getOrDefault(false)
@@ -120,10 +142,10 @@ object OverpassParser {
         }
         val remark = root.optString("remark", "").trim().takeIf { it.isNotEmpty() }
         val base = root.optJSONObject("osm3s")?.optString("timestamp_osm_base", "")?.takeIf { it.isNotEmpty() }
-        OverpassParse.Parsed(ResortData(ways.values.toList(), stations.values.toList(), base, remark, skipped))
+        OverpassParse.Parsed(ResortData(ways.values.flatten(), stations.values.toList(), base, remark, skipped))
     }
 
-    fun parseSearch(text: String): OverpassParse<List<ResortCandidate>> = guard {
+    fun parseSearch(text: String): OverpassParse<ResortSearch> = guard {
         val root = root(text) ?: return@guard OverpassParse.Failed(notJson(text))
         val elements = root.optJSONArray("elements") ?: return@guard OverpassParse.Failed("No elements array in the response")
         root.optString("remark", "").trim().takeIf { it.isNotEmpty() }?.let { return@guard OverpassParse.Failed("Server remark: $it") }
@@ -140,7 +162,7 @@ object OverpassParser {
                 found.putIfAbsent(candidate.key, candidate)
             }
         }
-        OverpassParse.Parsed(found.values.toList())
+        OverpassParse.Parsed(ResortSearch(found.values.toList(), elements.length()))
     }
 
     private fun <T> guard(block: () -> OverpassParse<T>): OverpassParse<T> = try { block() } catch (e: Exception) {
@@ -157,22 +179,24 @@ object OverpassParser {
     private fun notJson(text: String): String = if (text.isBlank()) "Empty response" else
         "Response is not a JSON object (starts with \"${text.trim().take(40).replace('\n', ' ')}\")"
 
-    private fun wayInfo(id: Long, tags: Map<String, String>, points: List<LatLon>, version: Int?, relationId: Long?,
-                        forceArea: Boolean = false): ResortWayInfo? {
-        if (points.size < 2) return null
+    /** One [ResortWayInfo] per geometry segment of two or more points; empty when the way is not a piste or lift. */
+    private fun wayInfos(id: Long, tags: Map<String, String>, segments: List<List<LatLon>>, version: Int?, relationId: Long?,
+                         multipolygon: Boolean = false): List<ResortWayInfo> {
         val aerialway = text(tags["aerialway"])
         val kind = when {
             aerialway != null && aerialway != "station" && aerialway != "pylon" -> WayKind.LIFT
             tags["piste:type"] == "downhill" -> WayKind.PISTE
-            else -> return null
+            else -> return emptyList()
         }
-        val closed = points.size >= 4 && points.first() == points.last()
-        val area = forceArea || tags["area"] == "yes" || (kind == WayKind.PISTE && closed && tags["area"] != "no")
-        val raw = text(tags["piste:difficulty"])
         val piste = kind == WayKind.PISTE
-        val way = ResortWay(id, kind, if (piste) pisteName(tags) else text(tags["name"]), if (piste) pisteRef(tags) else text(tags["ref"]),
-            if (piste) PisteDifficulty.normalise(raw) else null, if (piste) null else aerialway, points)
-        return ResortWayInfo(way, if (piste) raw else null, text(tags["operator"]), version, area, relationId)
+        val raw = text(tags["piste:difficulty"])
+        return segments.filter { it.size >= 2 }.mapIndexed { part, points ->
+            val closed = points.size >= 4 && points.first() == points.last()
+            val area = closed && (multipolygon || tags["area"] == "yes" || (piste && tags["area"] != "no"))
+            val way = ResortWay(id, kind, if (piste) pisteName(tags) else text(tags["name"]), if (piste) pisteRef(tags) else text(tags["ref"]),
+                if (piste) PisteDifficulty.normalise(raw) else null, if (piste) null else aerialway, points)
+            ResortWayInfo(way, if (piste) raw else null, text(tags["operator"]), version, area, relationId, part)
+        }
     }
 
     /** A piste relation fills only the tags a piste way lacks; it never changes a lift. */
@@ -197,6 +221,14 @@ object OverpassParser {
         return ResortStation(e.getLong("id"), text(tags["name"]), point, text(tags["operator"]), version(e))
     }
 
+    /** A station drawn as an outline: the mean of its distinct vertices (the closing point is not counted twice). */
+    private fun stationFromWay(id: Long, tags: Map<String, String>, segments: List<List<LatLon>>, version: Int?): ResortStation? {
+        val points = segments.flatten().let { p -> if (p.size >= 2 && p.first() == p.last()) p.dropLast(1) else p }
+        if (points.isEmpty()) return null
+        val centre = LatLon(points.sumOf { it.lat } / points.size, points.sumOf { it.lon } / points.size)
+        return ResortStation(id, text(tags["name"]), centre, text(tags["operator"]), version, "way")
+    }
+
     private fun tags(e: JSONObject): Map<String, String> {
         val t = e.optJSONObject("tags") ?: return emptyMap()
         return t.keys().asSequence().mapNotNull { k -> (t.opt(k) as? String)?.let { k to it } }.toMap()
@@ -204,9 +236,19 @@ object OverpassParser {
 
     private fun version(e: JSONObject): Int? = if (e.has("version") && !e.isNull("version")) e.optInt("version", -1).takeIf { it >= 0 } else null
 
-    private fun points(geometry: JSONArray?): List<LatLon> {
+    /** The geometry split at every null or unusable point, so a gap is never bridged by a straight line. */
+    private fun segments(geometry: JSONArray?): List<List<LatLon>> {
         geometry ?: return emptyList()
-        return (0 until geometry.length()).mapNotNull { i -> geometry.optJSONObject(i)?.let(::latLon) }
+        val out = mutableListOf<List<LatLon>>()
+        var current = mutableListOf<LatLon>()
+        for (i in 0 until geometry.length()) {
+            val p = geometry.optJSONObject(i)?.let(::latLon)
+            if (p != null) { current.add(p); continue }
+            if (current.isNotEmpty()) out.add(current)
+            current = mutableListOf()
+        }
+        if (current.isNotEmpty()) out.add(current)
+        return out
     }
 
     private fun latLon(o: JSONObject): LatLon? {

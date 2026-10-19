@@ -45,14 +45,14 @@ class ResortRepositoryTest {
         val fetcher = ScriptedFetcher(FetchResult.Body(fixture("resort_normal.json")))
         val result = repo(fetcher, cache).download(request) as DownloadResult.Saved
         assertEquals(listOf(OverpassQuery.area(request.centre, 3_000)), fetcher.queries)
-        assertEquals(5, result.resort.wayCount)
+        assertEquals(6, result.resort.wayCount)
         assertEquals(now, result.resort.fetchedAtMs)
         assertEquals(3_000, result.resort.radiusM)
         assertTrue(result.resort.sourceNote.startsWith("test fetcher; OSM data as of 2026-10-19T08:15:42Z; 2 unusable elements skipped"))
         assertTrue(result.resort.sourceNote.endsWith(ResortRepository.ATTRIBUTION))
         assertEquals("(c) OpenStreetMap contributors (ODbL)", ResortRepository.ATTRIBUTION)
-        assertEquals(5, cache.ways("example").size)
-        assertEquals(2, cache.stations("example").size)
+        assertEquals(6, cache.ways("example").size)
+        assertEquals(3, cache.stations("example").size)
         assertEquals(listOf(result.resort), repo(fetcher, cache).list())
     }
 
@@ -61,6 +61,69 @@ class ResortRepositoryTest {
         val big = request.copy(radiusM = 100_000)
         val r = repo(ScriptedFetcher(FetchResult.Body(fixture("resort_normal.json"))), cache).download(big) as DownloadResult.Saved
         assertEquals(OverpassQuery.MAX_RADIUS_M, r.resort.radiusM)
+        assertTrue("radius beyond the clamp is flagged", r.truncated)
+        assertTrue(r.resort.sourceNote.contains("radius cut to 25 km"))
+        val exact = repo(ScriptedFetcher(FetchResult.Body(fixture("resort_normal.json"))), cache)
+            .download(request.copy(radiusM = OverpassQuery.MAX_RADIUS_M)) as DownloadResult.Saved
+        assertFalse(exact.truncated)
+    }
+
+    @Test fun invalidCentreIsRefusedBeforeSending() {
+        val fetcher = ScriptedFetcher()
+        val repo = repo(fetcher, MemoryCache())
+        for (bad in listOf(request.copy(centre = LatLon(86.0, 7.0)), request.copy(centre = LatLon(Double.NaN, 7.0)),
+                request.copy(centre = LatLon(46.0, 181.0)), request.copy(radiusM = 0))) {
+            assertTrue("$bad", repo.download(bad) is DownloadResult.InvalidRequest)
+        }
+        assertTrue(repo.searchNear("Example", LatLon(-89.0, 0.0)) is SearchResult.InvalidRequest)
+        assertTrue(fetcher.queries.isEmpty())
+    }
+
+    @Test fun fetcherExceptionsBecomeTypedErrors() {
+        val throwing = ResortFetcher { throw IllegalStateException("socket factory broke") }
+        val r = repo(throwing, MemoryCache()).download(request) as DownloadResult.FetchFailed
+        assertEquals(FetchError.Kind.FAILED, r.error.kind)
+        assertEquals("socket factory broke", r.error.message)
+        val s = repo(throwing, MemoryCache()).search("Example") as SearchResult.FetchFailed
+        assertEquals(FetchError.Kind.FAILED, s.error.kind)
+    }
+
+    @Test fun guardBlocksDownloadsWithoutSending() {
+        val cache = MemoryCache()
+        var recording = true
+        val fetcher = ScriptedFetcher(FetchResult.Body(fixture("resort_normal.json")))
+        val repo = ResortRepository(fetcher, cache, downloadBlocker = { if (recording) "a recording is active" else null }, clock = { now })
+        val blocked = repo.download(request) as DownloadResult.Blocked
+        assertEquals("a recording is active", blocked.reason)
+        assertTrue(fetcher.queries.isEmpty())
+        assertTrue(cache.list().isEmpty())
+        recording = false
+        assertTrue(repo.download(request) is DownloadResult.Saved)
+    }
+
+    @Test fun positionsAreCoarsenedBeforeTheyLeave() {
+        assertEquals(LatLon(46.02, 7.01), ResortRepository.coarsen(LatLon(46.0234567, 7.0149999)))
+        assertEquals(LatLon(-0.01, -120.0), ResortRepository.coarsen(LatLon(-0.0071, -119.9951)))
+        val fix = LatLon(46.0234567, 7.0149999)
+        val fetcher = ScriptedFetcher(FetchResult.Body(fixture("search.json")))
+        repo(fetcher, MemoryCache()).searchNear("Example", fix, 10_000)
+        assertEquals(OverpassQuery.search("Example", GeoBox.around(LatLon(46.02, 7.01), 10_000.0)), fetcher.queries.single())
+        assertFalse(fetcher.queries.single().contains("46.023") || fetcher.queries.single().contains("7.0149"))
+        val near = ResortRequest.nearPosition("here", "Here", fix)
+        assertEquals(LatLon(46.02, 7.01), near.centre)
+        val download = ScriptedFetcher(FetchResult.Body(fixture("resort_normal.json")))
+        repo(download, MemoryCache()).download(near)
+        assertEquals(OverpassQuery.area(LatLon(46.02, 7.01), ResortRequest.DEFAULT_RADIUS_M), download.queries.single())
+    }
+
+    @Test fun searchFlagsACappedAnswer() {
+        val elements = (1..OverpassQuery.SEARCH_LIMIT).joinToString(",") {
+            """{"type":"node","id":$it,"lat":46.0,"lon":7.0,"tags":{"site":"piste","name":"Resort $it"}}"""
+        }
+        val full = repo(ScriptedFetcher(FetchResult.Body("""{"elements":[$elements]}""")), MemoryCache()).search("Resort") as SearchResult.Found
+        assertTrue(full.maybeMore)
+        val few = repo(ScriptedFetcher(FetchResult.Body(fixture("search.json"))), MemoryCache()).search("Example") as SearchResult.Found
+        assertFalse(few.maybeMore)
     }
 
     private fun cachedRepo(vararg next: FetchResult): Triple<ResortRepository, MemoryCache, StoredResort> {
@@ -76,7 +139,7 @@ class ResortRepositoryTest {
         assertEquals(429, r.error.httpCode)
         assertEquals(good, r.kept)
         assertEquals(good, cache.resort("example"))
-        assertEquals(5, cache.ways("example").size)
+        assertEquals(6, cache.ways("example").size)
     }
 
     @Test fun malformedJsonKeepsTheCache() {
@@ -92,7 +155,7 @@ class ResortRepositoryTest {
         val r = repo.download(request) as DownloadResult.NoData
         assertEquals(good, r.kept)
         assertEquals(good, cache.resort("example"))
-        assertEquals(5, cache.ways("example").size)
+        assertEquals(6, cache.ways("example").size)
     }
 
     @Test fun emptyResultWithNoCacheSavesNothing() {
@@ -107,7 +170,7 @@ class ResortRepositoryTest {
         val r = repo.download(request) as DownloadResult.Partial
         assertTrue(r.remark.contains("timed out"))
         assertEquals(good, cache.resort("example"))
-        assertEquals(5, cache.ways("example").size)
+        assertEquals(6, cache.ways("example").size)
     }
 
     @Test fun failedSaveLeavesTheOldCopy() {
@@ -117,13 +180,13 @@ class ResortRepositoryTest {
         assertEquals("disk full", r.message)
         assertEquals(good, r.kept)
         assertEquals(good, cache.resort("example"))
-        assertEquals(5, cache.ways("example").size)
+        assertEquals(6, cache.ways("example").size)
     }
 
     @Test fun refreshReplacesTheWholeMap() {
         val (repo, cache, _) = cachedRepo(FetchResult.Body(fixture("resort_area.json")))
         val r = repo.download(request) as DownloadResult.Saved
-        assertEquals(setOf(200001L, 200002L, 200010L, 200011L), cache.ways("example").map { it.way.osmId }.toSet())
+        assertEquals(setOf(200001L, 200002L, 200010L, 200012L), cache.ways("example").map { it.way.osmId }.toSet())
         assertTrue("old stations are gone with the old copy", cache.stations("example").isEmpty())
         assertEquals(now, r.resort.fetchedAtMs)
         assertEquals(1, cache.list().size)
@@ -153,6 +216,7 @@ class ResortRepositoryTest {
         assertEquals(listOf("other"), repo.list().map { it.id })
         assertTrue(repo.ways("example").isEmpty())
         assertEquals(4, repo.ways("other").size)
+        assertTrue(repo.stations("example").isEmpty())
     }
 
     @Test fun searchUsesOneQueryAndParses() {
@@ -174,7 +238,7 @@ class ResortRepositoryTest {
         assertEquals(SearchResult.FetchFailed(error), repo(ScriptedFetcher(FetchResult.Failed(error)), MemoryCache()).search("Example"))
         assertTrue(repo(ScriptedFetcher(FetchResult.Body("<html/>")), MemoryCache()).search("Example") is SearchResult.ParseFailed)
         val none = ScriptedFetcher()
-        assertTrue(repo(none, MemoryCache()).search(" ") is SearchResult.ParseFailed)
+        assertTrue(repo(none, MemoryCache()).search(" ") is SearchResult.InvalidRequest)
         assertTrue("a bad name sends nothing", none.queries.isEmpty())
     }
 

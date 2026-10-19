@@ -40,7 +40,9 @@ class PolylineTest {
         assertEquals(emptyList<LatLon>(), Polyline.decode(""))
         val good = Polyline.encode(listOf(LatLon(46.0, 7.0), LatLon(46.1, 7.1)))
         assertNull("cut mid-value", Polyline.decode(good.dropLast(1)))
-        assertNull("lat without lon", Polyline.decode(Polyline.encode(listOf(LatLon(46.0, 7.0))).take(5)))
+        // A longitude of 0 encodes as the single character '?', so dropping it leaves one complete latitude value.
+        val latOnly = Polyline.encode(listOf(LatLon(46.0, 0.0))).also { assertEquals('?', it.last()) }.dropLast(1)
+        assertNull("lat without lon", Polyline.decode(latOnly))
         assertNull("character below the alphabet", Polyline.decode(" " + good))
         assertNull("out of range", Polyline.decode(Polyline.encode(listOf(LatLon(89.0, 0.0), LatLon(89.0, 0.0))) + Polyline.encode(listOf(LatLon(89.0, 0.0)))))
     }

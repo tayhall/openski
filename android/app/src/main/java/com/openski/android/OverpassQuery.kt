@@ -16,8 +16,8 @@ data class GeoBox(val south: Double, val west: Double, val north: Double, val ea
     companion object {
         /** The box that encloses a circle of [radiusM] metres around [centre] (spherical earth; good to well under 1% at resort scale). */
         fun around(centre: LatLon, radiusM: Double): GeoBox {
-            require(centre.lat in -85.0..85.0 && centre.lon in -180.0..180.0) { "Centre out of range: $centre" }
-            require(radiusM > 0) { "Radius must be positive" }
+            require(centre.lat in -MAX_CENTRE_LAT..MAX_CENTRE_LAT && centre.lon in -180.0..180.0) { "Centre out of range: $centre" }
+            require(radiusM > 0 && radiusM.isFinite()) { "Radius must be positive" }
             val dLat = radiusM / EARTH_RADIUS_M * 180 / PI
             val dLon = dLat / cos(centre.lat * PI / 180)
             return GeoBox((centre.lat - dLat).coerceAtLeast(-90.0), (centre.lon - dLon).coerceAtLeast(-180.0),
@@ -25,6 +25,8 @@ data class GeoBox(val south: Double, val west: Double, val north: Double, val ea
         }
 
         const val EARTH_RADIUS_M = 6_371_008.8
+        /** Box centres must lie within this latitude (degrees), where the longitude span stays meaningful. */
+        const val MAX_CENTRE_LAT = 85.0
     }
 }
 
@@ -60,6 +62,7 @@ object OverpassQuery {
             append("  relation[\"piste:type\"=\"downhill\"]").append(b).append(";\n")
             append("  way[\"aerialway\"][\"aerialway\"!~\"^(station|pylon)$\"]").append(b).append(";\n")
             append("  node[\"aerialway\"=\"station\"]").append(b).append(";\n")
+            append("  way[\"aerialway\"=\"station\"]").append(b).append(";\n")
             append(");\n")
             append("out meta geom;\n")
         }

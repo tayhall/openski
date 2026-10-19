@@ -134,10 +134,14 @@ Geek mode, Test lab, "Garden trials checklist (T0 to T6)" opens `TrialChecklistA
 
 The resort data layer (Overpass query, parser, database version 12, repository) is JVM-tested against hand-written fixtures and fake fetchers only; the version 12 migration check is compiled into `StorageInstrumentation` but has not been run. Nothing has been fetched from the live Overpass service and there is no resort screen yet, so these checks need a debug hook or the step 3 resort picker.
 
-- [ ] Run `StorageInstrumentation` on an emulator and expect the PASS line to include "v11->v12 resort maps".
+What leaves the phone (see `docs/ski-day-design.md`, "What leaves the device"): the Overpass host receives the query (a bounding box to six decimals, or a typed name and an optional box), the User-Agent `OpenSki/0.1 (...; <contact>)` and, as with any request, the phone's IP address. A box built from the phone's own position is centred on the position rounded to 0.01 degrees (about 1 km); no boot or session data is sent.
+
+- [ ] Run `StorageInstrumentation` on an emulator and expect the PASS line to include "v11->v12 resort maps, fresh-install resort round trip".
+- [ ] With a proxy or the network inspector, confirm a "near me" download or search sends a box whose centre is the position rounded to 0.01 degrees, and nothing besides the query, the User-Agent and the usual HTTP headers.
+- [ ] Start a recording, then try a resort download: it is refused (`Blocked`) once the screen wires the guard; no request is sent.
 - [ ] Over Wi-Fi, fetch one real resort by name search and by current position (radius 5 km): the download finishes in under a minute, `resorts.way_count` is plausible against the OSM map of that area, and lift and piste names and grades look right for a few known runs.
 - [ ] Attribution: the stored `source_note` ends with "(c) OpenStreetMap contributors (ODbL)" and names the OSM data timestamp; the resort screen (step 3) shows the attribution wherever names or geometry appear.
 - [ ] Size: note the response size and the database growth for a large resort at the default radius; it must stay well under the 16 MB cap. Try 25 km once and record what happens (refused as too large, a server timeout remark, or a full answer).
 - [ ] Airplane mode after a download: the cached resort lists and loads its ways and stations, and a refresh attempt fails with a network error that keeps the cached copy (age unchanged).
-- [ ] The User-Agent contact constant (`HttpResortFetcher.CONTACT`) is set to a real contact before any public build.
-- [ ] If a busy answer (HTTP 429 or 504) occurs naturally: exactly one retry after at least 30 s, no further requests.
+- [ ] The User-Agent contact constant (`HttpResortFetcher.CONTACT`) is set to a real contact before any public build: `OPENSKI_RELEASE_CHECK=1` then `.\gradlew.bat :app:testDebugUnitTest --tests "com.openski.android.ReleaseCheckTest" --rerun` must pass (it is skipped without the variable).
+- [ ] If HTTP 429 occurs naturally: exactly one retry after at least 30 s, no further requests. An HTTP 504 is reported at once and not retried.

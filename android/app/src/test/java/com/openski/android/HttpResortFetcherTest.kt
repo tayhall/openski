@@ -34,12 +34,43 @@ class HttpResortFetcherTest {
         override fun getContentLengthLong(): Long = reply.length
     }
 
-    private class Harness(vararg replies: Reply, maxBytes: Long = HttpResortFetcher.MAX_RESPONSE_BYTES) {
+    private class Harness(vararg replies: Reply, maxBytes: Long = HttpResortFetcher.MAX_RESPONSE_BYTES, mainThread: Boolean = false,
+                          sleeper: ((Long) -> Unit)? = null) {
         val queue = ArrayDeque(replies.toList())
         val connections = mutableListOf<FakeConnection>()
         val sleeps = mutableListOf<Long>()
-        val fetcher = HttpResortFetcher(maxBytes = maxBytes, sleep = { sleeps += it },
-            open = { url -> FakeConnection(url, queue.removeFirst()).also { connections += it } })
+        val fetcher = HttpResortFetcher(maxBytes = maxBytes, sleep = sleeper ?: { sleeps += it },
+            open = { url -> FakeConnection(url, queue.removeFirst()).also { connections += it } },
+            isMainThread = { mainThread }, clock = { NOW_MS })
+    }
+
+    private companion object {
+        /** Wed, 21 Oct 2026 07:28:00 GMT. */
+        const val NOW_MS = 1_792_567_680_000L
+    }
+
+    @Test fun refusesOnTheMainThreadWithoutSending() {
+        val h = Harness(Reply(200, "{}"), mainThread = true)
+        val r = h.fetcher.fetch("q") as FetchResult.Failed
+        assertEquals(FetchError.Kind.MAIN_THREAD, r.error.kind)
+        assertTrue(h.connections.isEmpty())
+    }
+
+    @Test fun interruptWhileWaitingIsTypedAndRestored() {
+        val h = Harness(Reply(429, "busy"), Reply(200, "{}"), sleeper = { throw InterruptedException() })
+        try {
+            val r = h.fetcher.fetch("q") as FetchResult.Failed
+            assertEquals(FetchError.Kind.INTERRUPTED, r.error.kind)
+            assertTrue("interrupt flag restored", Thread.currentThread().isInterrupted)
+            assertEquals(1, h.connections.size)
+        } finally { Thread.interrupted() }
+    }
+
+    @Test fun unexpectedRuntimeErrorsAreTyped() {
+        val fetcher = HttpResortFetcher(open = { throw IllegalStateException("boom") }, isMainThread = { false })
+        val r = fetcher.fetch("q") as FetchResult.Failed
+        assertEquals(FetchError.Kind.FAILED, r.error.kind)
+        assertTrue(r.error.message.contains("boom"))
     }
 
     @Test fun successPostsTheQueryWithUserAgent() {
@@ -65,13 +96,22 @@ class HttpResortFetcherTest {
     }
 
     @Test fun secondBusyAnswerIsReturnedNotRetried() {
-        val h = Harness(Reply(504, "Gateway Timeout"), Reply(504, "Gateway Timeout"))
+        val h = Harness(Reply(429, "Too Many Requests"), Reply(429, "Too Many Requests"), Reply(200, "{}"))
         val r = h.fetcher.fetch("q") as FetchResult.Failed
         assertEquals(FetchError.Kind.HTTP, r.error.kind)
-        assertEquals(504, r.error.httpCode)
-        assertEquals("HTTP 504: Gateway Timeout", r.error.message)
+        assertEquals(429, r.error.httpCode)
+        assertEquals("HTTP 429: Too Many Requests", r.error.message)
         assertEquals(listOf(HttpResortFetcher.DEFAULT_RETRY_DELAY_MS), h.sleeps)
         assertEquals(2, h.connections.size)
+    }
+
+    @Test fun gatewayTimeoutIsNotRetried() {
+        val h = Harness(Reply(504, "Gateway Timeout"), Reply(200, "{}"))
+        val r = h.fetcher.fetch("q") as FetchResult.Failed
+        assertEquals(504, r.error.httpCode)
+        assertEquals("HTTP 504: Gateway Timeout", r.error.message)
+        assertTrue(h.sleeps.isEmpty())
+        assertEquals(1, h.connections.size)
     }
 
     @Test fun otherErrorsAreNotRetried() {
@@ -97,11 +137,15 @@ class HttpResortFetcherTest {
     }
 
     @Test fun retryDelay() {
-        assertEquals(HttpResortFetcher.DEFAULT_RETRY_DELAY_MS, HttpResortFetcher.retryDelayMs(null))
-        assertEquals(HttpResortFetcher.DEFAULT_RETRY_DELAY_MS, HttpResortFetcher.retryDelayMs("Wed, 21 Oct 2026 07:28:00 GMT"))
-        assertEquals(45_000L, HttpResortFetcher.retryDelayMs(" 45 "))
-        assertEquals(HttpResortFetcher.MIN_RETRY_DELAY_MS, HttpResortFetcher.retryDelayMs("7"))
-        assertEquals(HttpResortFetcher.MAX_RETRY_DELAY_MS, HttpResortFetcher.retryDelayMs("3600"))
-        assertEquals(HttpResortFetcher.MIN_RETRY_DELAY_MS, HttpResortFetcher.retryDelayMs("0"))
+        assertEquals(HttpResortFetcher.DEFAULT_RETRY_DELAY_MS, HttpResortFetcher.retryDelayMs(null, NOW_MS))
+        assertEquals(HttpResortFetcher.DEFAULT_RETRY_DELAY_MS, HttpResortFetcher.retryDelayMs("soon", NOW_MS))
+        assertEquals(45_000L, HttpResortFetcher.retryDelayMs(" 45 ", NOW_MS))
+        assertEquals(HttpResortFetcher.MIN_RETRY_DELAY_MS, HttpResortFetcher.retryDelayMs("7", NOW_MS))
+        assertEquals(HttpResortFetcher.MAX_RETRY_DELAY_MS, HttpResortFetcher.retryDelayMs("3600", NOW_MS))
+        assertEquals(HttpResortFetcher.MIN_RETRY_DELAY_MS, HttpResortFetcher.retryDelayMs("0", NOW_MS))
+        // HTTP-date form, relative to now.
+        assertEquals(50_000L, HttpResortFetcher.retryDelayMs("Wed, 21 Oct 2026 07:28:50 GMT", NOW_MS))
+        assertEquals(HttpResortFetcher.MIN_RETRY_DELAY_MS, HttpResortFetcher.retryDelayMs("Wed, 21 Oct 2026 07:27:00 GMT", NOW_MS))
+        assertEquals(HttpResortFetcher.MAX_RETRY_DELAY_MS, HttpResortFetcher.retryDelayMs("Thu, 22 Oct 2026 07:28:00 GMT", NOW_MS))
     }
 }

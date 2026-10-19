@@ -16,6 +16,7 @@ class OverpassQueryTest {
   relation["piste:type"="downhill"]$b;
   way["aerialway"]["aerialway"!~"^(station|pylon)${'$'}"]$b;
   node["aerialway"="station"]$b;
+  way["aerialway"="station"]$b;
 );
 out meta geom;
 """, q)
@@ -48,6 +49,8 @@ out meta geom;
         assertThrows(IllegalArgumentException::class.java) { GeoBox(46.1, 7.0, 46.0, 7.2) }
         assertThrows(IllegalArgumentException::class.java) { GeoBox.around(LatLon(89.0, 7.0), 1000.0) }
         assertThrows(IllegalArgumentException::class.java) { GeoBox.around(LatLon(46.0, 7.0), 0.0) }
+        assertThrows(IllegalArgumentException::class.java) { GeoBox.around(LatLon(46.0, 7.0), Double.POSITIVE_INFINITY) }
+        assertThrows(IllegalArgumentException::class.java) { GeoBox.around(LatLon(Double.NaN, 7.0), 1000.0) }
     }
 
     @Test fun searchQueryIsExact() {

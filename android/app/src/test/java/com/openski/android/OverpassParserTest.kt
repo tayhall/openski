@@ -25,7 +25,7 @@ class OverpassParserTest {
         assertEquals("2026-10-19T08:15:42Z", data.osmBase)
         assertNull(data.remark)
         assertFalse(data.partial)
-        assertEquals(listOf(100001L, 100002L, 100003L, 100005L, 100006L), data.ways.map { it.way.osmId })
+        assertEquals(listOf(100001L, 100002L, 100003L, 100003L, 100005L, 100006L), data.ways.map { it.way.osmId })
         assertEquals(2, data.skipped) // the one-point way and the untagged way
 
         val lift = data.ways[0]
@@ -47,26 +47,39 @@ class OverpassParserTest {
         assertFalse(blue.area)
         assertEquals(3, blue.way.points.size)
 
-        val unnamed = data.ways[2]
-        assertNull(unnamed.way.name)
-        assertEquals(PisteDifficulty.OTHER, unnamed.way.difficulty)
-        assertEquals("very hard", unnamed.difficultyRaw)
-        assertEquals("null geometry point skipped", 2, unnamed.way.points.size)
+        // A null geometry point splits the way into two parts instead of bridging the gap.
+        val (before, after) = data.ways[2] to data.ways[3]
+        assertEquals(listOf(0, 1), listOf(before.part, after.part))
+        assertEquals(listOf(LatLon(46.019, 7.019), LatLon(46.018, 7.0185)), before.way.points)
+        assertEquals(listOf(LatLon(46.013, 7.0125), LatLon(46.012, 7.012)), after.way.points)
+        for (unnamed in listOf(before, after)) {
+            assertNull(unnamed.way.name)
+            assertEquals(PisteDifficulty.OTHER, unnamed.way.difficulty)
+            assertEquals("very hard", unnamed.difficultyRaw)
+        }
 
-        val tBar = data.ways[3]
+        val tBar = data.ways[4]
         assertEquals("t-bar", tBar.way.aerialway)
         assertNull("piste:name is not a lift name", tBar.way.name)
 
-        val oldRoad = data.ways[4]
+        val oldRoad = data.ways[5]
         assertEquals("Old Road", oldRoad.way.name)
         assertEquals("12", oldRoad.way.ref)
         assertEquals(PisteDifficulty.INTERMEDIATE, oldRoad.way.difficulty)
 
-        assertEquals(listOf(900001L, 900002L), data.stations.map { it.osmId })
+        assertEquals(listOf(900001L, 900002L, 100008L), data.stations.map { it.osmId })
+        assertEquals(listOf("node", "node", "way"), data.stations.map { it.osmType })
         assertEquals("Valley station", data.stations[0].name)
         assertEquals(LatLon(46.0101, 7.0102), data.stations[0].point)
         assertEquals(4, data.stations[0].version)
         assertNull(data.stations[1].name)
+        // A station mapped as a closed outline becomes a point at the mean of its four corners.
+        val outline = data.stations[2]
+        assertEquals("Ridge top station", outline.name)
+        assertEquals(46.0201, outline.point.lat, 1e-9)
+        assertEquals(7.0202, outline.point.lon, 1e-9)
+        assertEquals(2, outline.version)
+        assertTrue("a station outline is not a lift", data.ways.none { it.way.osmId == 100008L })
     }
 
     @Test fun emptyResponse() {
@@ -86,7 +99,7 @@ class OverpassParserTest {
     @Test fun areasAndRelations() {
         val data = parsed(fixture("resort_area.json"))
         val byId = data.ways.associateBy { it.way.osmId }
-        assertEquals(setOf(200001L, 200002L, 200010L, 200011L), byId.keys)
+        assertEquals("the inner ring is left out", setOf(200001L, 200002L, 200010L, 200012L), byId.keys)
 
         val meadow = byId.getValue(200001)
         assertTrue("closed area=yes outline is marked", meadow.area)
@@ -103,15 +116,16 @@ class OverpassParserTest {
         assertEquals("the way keeps its own version", 6, valley.version)
         assertFalse(valley.area)
 
-        for (id in listOf(200010L, 200011L)) {
-            val outline = byId.getValue(id)
-            assertTrue(outline.area)
-            assertEquals("Big Bowl", outline.way.name)
-            assertEquals(PisteDifficulty.FREERIDE, outline.way.difficulty)
-            assertEquals(300001L, outline.relationId)
-            assertNull(outline.version)
-            assertEquals(3, outline.way.points.size)
+        for (id in listOf(200010L, 200012L)) {
+            val member = byId.getValue(id)
+            assertEquals("Big Bowl", member.way.name)
+            assertEquals(PisteDifficulty.FREERIDE, member.way.difficulty)
+            assertEquals(300001L, member.relationId)
+            assertNull(member.version)
         }
+        assertTrue("closed outer ring is an area", byId.getValue(200010).area)
+        assertEquals(5, byId.getValue(200010).way.points.size)
+        assertFalse("an open outer segment is not marked as an area", byId.getValue(200012).area)
         assertEquals(0, data.skipped)
     }
 
@@ -132,7 +146,7 @@ class OverpassParserTest {
         assertTrue(failed("[1,2,3]").contains("not a JSON object"))
         assertEquals("No elements array in the response", failed("{\"version\":0.6}"))
         assertTrue(failed("{\"elements\":[").startsWith("Unreadable response"))
-        assertTrue(failed("[".repeat(100_000)).isNotEmpty())
+        assertTrue(failed("[".repeat(100_000)).startsWith("Unreadable response"))
     }
 
     @Test fun oddElementsAreSkippedNotFatal() {
@@ -156,12 +170,13 @@ class OverpassParserTest {
     }
 
     @Test fun searchResults() {
-        val r = OverpassParser.parseSearch(fixture("search.json")) as OverpassParse.Parsed
-        assertEquals(listOf("node/400001", "way/400002", "relation/400003"), r.value.map { it.key })
-        val node = r.value[0]
+        val r = (OverpassParser.parseSearch(fixture("search.json")) as OverpassParse.Parsed).value
+        assertEquals("unnamed elements still count as returned", 4, r.elementCount)
+        assertEquals(listOf("node/400001", "way/400002", "relation/400003"), r.candidates.map { it.key })
+        val node = r.candidates[0]
         assertNull(node.box)
         assertEquals(LatLon(46.1, 7.1), node.centre)
-        val way = r.value[1]
+        val way = r.candidates[1]
         assertEquals("Example Valley Ski Area", way.name)
         assertEquals(46.02, way.centre.lat, 1e-9)
         assertEquals(7.03, way.centre.lon, 1e-9)
@@ -171,6 +186,6 @@ class OverpassParserTest {
     @Test fun searchFailures() {
         assertTrue(OverpassParser.parseSearch("{\"elements\":[{") is OverpassParse.Failed)
         assertTrue(OverpassParser.parseSearch("""{"elements":[],"remark":"runtime error: out of memory"}""") is OverpassParse.Failed)
-        assertEquals(OverpassParse.Parsed(emptyList<ResortCandidate>()), OverpassParser.parseSearch(fixture("resort_empty.json")))
+        assertEquals(OverpassParse.Parsed(ResortSearch(emptyList(), 0)), OverpassParser.parseSearch(fixture("resort_empty.json")))
     }
 }
