@@ -93,6 +93,7 @@ class SensorSessionService : Service() {
     // Practice capture belongs to the service; observers never own or stop it.
     private var drillGhost: RollTrace? = null
     private var requestedRepeat: Attempt? = null
+    private var drillGhostAttempt: Attempt? = null
     private var drillNext: Drill? = null
     fun nextPracticeDrill(): Drill? = drillNext
     private val drillObservers = linkedMapOf<Any, (DrillState) -> Unit>()
@@ -110,10 +111,11 @@ class SensorSessionService : Service() {
                     if (!attempt.demo && !Progress(previous, progressStore.experience.startsOn).unlocked(Programme.drill(attempt.drillId)!!))
                         error("Complete the preceding measured sets, or explore this drill in Demo.")
                     PracticeStore(store).record(attempt)
-                    (previous.count { it.drillId == attempt.drillId && it.demo == attempt.demo }) to progressStore.lastTrace(attempt.drillId, attempt.demo)
+                    Triple(previous.count { it.drillId == attempt.drillId && it.demo == attempt.demo }, progressStore.lastTrace(attempt.drillId, attempt.demo),
+                        previous.lastOrNull { it.drillId == attempt.drillId && it.demo == attempt.demo && it.id == progressStore.lastTraceAttemptId(attempt.drillId, attempt.demo) })
                 }
                 mainHandler.post { if (!destroyed) {
-                    if (drillController.id == attempt.id) result.onSuccess { drillGhost = it.second }
+                    if (drillController.id == attempt.id) result.onSuccess { drillGhost = it.second; drillGhostAttempt = it.third }
                     completed(result.map { it.first }); publishDrill()
                 } }
             }
@@ -138,7 +140,7 @@ class SensorSessionService : Service() {
             io.execute {
                 val result = runCatching {
                     val saved = PracticeStore(store).record(attempt, calculateReward = true)
-                    if (run != null) progressStore.saveTrace(attempt.drillId, attempt.demo, run.trace)
+                    if (run != null) progressStore.saveTrace(attempt.drillId, attempt.demo, run.trace, attempt.id)
                     attempt.sessionId?.let { id ->
                         store.getSession(id)?.let { session ->
                             store.editSession(id, session.title.ifBlank { "Drill · ${Programme.drill(attempt.drillId)?.title ?: attempt.drillId}" },
@@ -164,7 +166,14 @@ class SensorSessionService : Service() {
             if (drillController.active) mainHandler.postDelayed(this, 100) else settleForeground()
         }
     }
-    fun drillState(): DrillState = drillController.state().copy(ghost = drillGhost)
+    fun drillState(): DrillState {
+        val state = drillController.state()
+        val current = state.attempt
+        val previous = drillGhostAttempt
+        val compatible = current != null && previous != null && PracticeComparisonPolicy.evaluate(current,
+            current.review?.evidence ?: PracticeEvidence(), previous, previous.review?.evidence ?: PracticeEvidence()).comparable
+        return state.copy(ghost = if (compatible) drillGhost else null)
+    }
     fun observeDrill(owner: Any, observer: (DrillState) -> Unit) { drillObservers[owner] = observer; observer(drillState()) }
     fun removeDrillObserver(owner: Any) { drillObservers.remove(owner) }
     private fun publishDrill() {

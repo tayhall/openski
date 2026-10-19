@@ -28,6 +28,11 @@ object RunComparisonCard {
         card.addView(text("How your turns compared", Snow.Type.TITLE))
         if (comparison.demo) card.add(text("Demo run · simulated turns", Snow.Type.CAPTION, Snow.INK_SOFT), 2)
         card.add(text(comparison.sentence), 6)
+        card.add(text("Live firmware-event verdicts and recovered raw-data quality are separate. A recovered trace does not retrospectively validate the live verdict.", Snow.Type.CAPTION, Snow.INK_SOFT), 6)
+        if (comparison.windows.none { it.verdict != null }) card.add(text(if (comparison.windows.any { it.partial })
+            "No saved verdict: too few consecutive turns in at least one window. This is not a zero-performance score."
+            else "No live verdict was saved. Check the recording and connection before repeating; no off-target judgement is implied."), 6)
+        if (comparison.windows.any { it.verdict == Verdict.NONE }) card.add(text("A neutral window means no clear matched/off-target verdict under the current scoring rules; it does not establish poor recording quality."), 6)
         numberLines(comparison).forEach { card.add(text(it, Snow.Type.CAPTION, Snow.INK_SOFT), 6) }
         if (comparison.windows.isEmpty()) return card
 
@@ -88,9 +93,10 @@ object RunComparisonCard {
                 start()
             }
         }, 12)
-        card.add(text(if (comparison.target != null)
+        val caption = if (comparison.target != null)
             "Reconstructed from your half-turns. The dashed pale line is the target. Dry-ski boot roll against a training target, not on-snow technique."
-        else "Reconstructed from your half-turns. Dry-ski boot roll, not on-snow technique.", Snow.Type.CAPTION, Snow.INK_SOFT), 10)
+        else "Reconstructed from your half-turns. Dry-ski boot roll, not on-snow technique."
+        card.add(text(caption, Snow.Type.CAPTION, Snow.INK_SOFT), 10)
         return card
     }
 
@@ -105,8 +111,8 @@ object RunComparisonCard {
         val outcome = when (window.verdict) {
             Verdict.POSITIVE -> "matched the target"
             Verdict.NEGATIVE -> "off target"
-            Verdict.NONE -> "close"
-            null -> if (window.partial) "too few turns for a verdict" else "no verdict"
+            Verdict.NONE -> "no clear target verdict"
+            null -> if (window.partial) "too few turns for a verdict" else "no saved live verdict"
         }
         return "Window ${index + 1}, $outcome"
     }

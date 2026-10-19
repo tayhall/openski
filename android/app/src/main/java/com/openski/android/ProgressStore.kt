@@ -58,12 +58,15 @@ class ProgressStore(context: Context) {
     fun correctionForSide(side: String): AccelCorrection? = sensorAddress(side)?.let(::correction)
 
     /** Last roll trace per drill, thinned for storage, drawn as the ghost line next time. */
-    fun saveTrace(drillId: String, demo: Boolean, trace: RollTrace) {
+    fun saveTrace(drillId: String, demo: Boolean, trace: RollTrace, attemptId: String? = null) {
         val step = (trace.seconds.size / 300).coerceAtLeast(1)
         val seconds = JSONArray(); val degrees = JSONArray()
         for (i in trace.seconds.indices step step) { seconds.put(trace.seconds[i].toDouble()); degrees.put(trace.degrees[i].toDouble()) }
-        prefs.edit().putString("trace_${drillId}_$demo", JSONObject().put("s", seconds).put("d", degrees).toString()).apply()
+        prefs.edit().putString("trace_${drillId}_$demo", JSONObject().put("s", seconds).put("d", degrees).toString())
+            .putString("trace_id_${drillId}_$demo", attemptId).apply()
     }
+
+    fun lastTraceAttemptId(drillId: String, demo: Boolean): String? = prefs.getString("trace_id_${drillId}_$demo", null)
 
     fun lastTrace(drillId: String, demo: Boolean): RollTrace? = runCatching {
         val json = JSONObject(prefs.getString("trace_${drillId}_$demo", null) ?: return null)

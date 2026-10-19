@@ -13,6 +13,8 @@ class LiveDrillRecorder(val drill: Drill, val side: String) {
     private var lastRollMs = 0.0
     private var lastDegrees = 0.0
     private var latestDegrees: Double? = null
+    private val evidenceIssues = linkedSetOf<String>()
+    private var previousScoredRoll: BootRoll? = null
 
     /** Latest roll for the boot, running or not. Used to wait for a neutral stance before the set starts. */
     @Synchronized fun neutral(nowMs: Double, maxAgeMs: Double = 1000.0): Boolean =
@@ -31,6 +33,15 @@ class LiveDrillRecorder(val drill: Drill, val side: String) {
         latestDegrees = roll.degrees; lastRollMs = roll.timeMs; lastDegrees = roll.degrees
         val start = startMs ?: return false
         if (roll.timeMs < start) return false
+        previousScoredRoll?.let { previous ->
+            if (roll.segment != previous.segment) evidenceIssues.add("Orientation reference changed during scoring")
+            if (roll.timeMs - previous.timeMs > 100 || roll.timeMs <= previous.timeMs)
+                evidenceIssues.add("A detector timing gap interrupted the scoring stream")
+        }
+        if (roll.quality and (SensorSample.QUALITY_RAIL_MASK or SensorSample.QUALITY_DROPPED_BEFORE or 4) != 0)
+            evidenceIssues.add("Sensor rail, dropped-sample or timestamp-gap flags occurred during scoring")
+        if (roll.gated) evidenceIssues.add("The sensor motion gate rejected evidence during scoring")
+        previousScoredRoll = roll
         seconds.add(((roll.timeMs - start) / 1000).toFloat()); degrees.add(roll.degrees.toFloat())
         val movement = detector.accept(roll) ?: return false
         if (movements.size >= drill.movements) return false
@@ -39,7 +50,7 @@ class LiveDrillRecorder(val drill: Drill, val side: String) {
     }
 
     @Synchronized fun trace() = RollTrace(seconds.toFloatArray(), degrees.toFloatArray())
-    @Synchronized fun run() = DrillRun(DryDetection(movements.toList(), movements.map { it.endMs }), trace(), demo = false)
+    @Synchronized fun run() = DrillRun(DryDetection(movements.toList(), movements.map { it.endMs }), trace(), demo = false, evidenceIssues = evidenceIssues.toSet())
 }
 
 /** Which signed sensor axes point at the board's visible landmarks, learned on the bench. */

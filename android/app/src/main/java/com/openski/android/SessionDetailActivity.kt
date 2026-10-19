@@ -138,6 +138,7 @@ class SessionDetailActivity : Activity() {
         val runPage=if(loaded.run!=null) reviewPage() else null
         runPage?.let { page ->
             if (session.origin != "synthetic") page.addView(RecoveryCard(this, session.id), LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(14) })
+            healthLines.firstOrNull()?.let { page.addView(text("Raw replay screening · $it. Starting screening rules, not validated technique limits.")) }
             loaded.run?.let { page.addView(RunComparisonCard.build(this,RunComparisons.build(it,session.origin=="synthetic")),LinearLayout.LayoutParams(-1,-2).apply { bottomMargin=dp(14) }) }
             loaded.run?.let { run ->
                 val report=RunTrack.report(session.origin=="synthetic",run.info?.gps==true,RunTrack.summarize(run.track))

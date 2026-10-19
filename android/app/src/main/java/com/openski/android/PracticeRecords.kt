@@ -20,8 +20,9 @@ data class Attempt(
     val id: String = UUID.randomUUID().toString(), val sessionId: String? = null,
     val status: PracticeStatus = PracticeStatus.COMPLETED, val target: PracticeTarget? = null,
     val scoringVersion: Int = 1,
+    val review: PracticeReview? = null,
 ) {
-    val eligible get() = status == PracticeStatus.COMPLETED
+    val eligible get() = status == PracticeStatus.COMPLETED && review?.scoreEligible != false
 }
 
 /** Strict import: malformed history must fail without marking the import complete or dropping rows. */

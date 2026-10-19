@@ -77,3 +77,4 @@ The compact-layout branch keeps phase commands outside scrolling explanations. D
 ## Practice history and repeat
 
 Increment 6 on feat/practice-history adds bounded discoverable history and stored-target repeat confirmation. Validation: 12 focused JVM controller/repeat tests pass, debug and instrumentation APKs build, and lint passes. HistoryStorageRegression is compiled for integration into the shared emulator runner; it has not been executed on this branch. Physical repeat and accessibility validation remain acceptance tasks.
+Increment 7 implementation branch `feat/explained-practice-results` adds explicit scoring evidence, compatible comparisons, factual observations, independent optional notes and additive v15 review metadata/export. Legacy rewards remain unchanged; no validated skiing-technique claim or new focus scoring is introduced. Automated focused validation is recorded in the implementation report; emulator and physical acceptance remain separate.

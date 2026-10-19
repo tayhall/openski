@@ -234,3 +234,11 @@ Whole-day tracking (`DayTrackingService`), the day report, the ski day and resor
 - [ ] Repeat a stored target differing from the current preset: source/count/beat/depth survive confirmation, rotation and completion; measured readiness still applies.
 - [ ] Historical unknown-target and unsupported-version results explain exact-repeat limits; current preset is explicitly labelled.
 - [ ] Large text and TalkBack: category selection, record source/status and repeat confirmation remain understandable.
+## Increment 7: results evidence and reflection
+
+- [ ] Run PracticeReviewStorageRegression from the shared emulator instrumentation runner: fresh/v14 upgrade, rollback/retry, idempotent reward, reflection/reopen, export, raw deletion and insufficient-evidence exclusion.
+- [ ] Complete a new demo and measured set; verify factual peak difference, source/evidence state and no anatomical strength claim.
+- [ ] Open legacy, incomplete/interrupted and insufficient-data examples: preserve stored legacy rewards and avoid zero-performance/off-target labels for missing evidence.
+- [ ] Compare matching and mismatched targets/versions/mounting/timing; inspect explicit exclusions and hidden incompatible ghost.
+- [ ] Add/edit optional intention/reflection, rotate/reopen, export raw ZIP and delete raw session; retained saved practice/notes remain.
+- [ ] Inspect TalkBack/large text and physical BLE recovery; raw screening must not upgrade an old live score.

@@ -38,7 +38,7 @@ class PracticeStore(private val store: LocalSessionStore) {
             }
             val saved = if (existing != null && (existing.status != PracticeStatus.ACTIVE || attempt.status == PracticeStatus.ACTIVE)) existing else run {
                 val reward = if (!attempt.eligible) 0 else if (calculateReward) {
-                    val best = db.rawQuery("SELECT MAX(score) FROM practice_attempts WHERE drill_id=? AND demo=? AND status='COMPLETED'",
+                    val best = db.rawQuery("SELECT MAX(score) FROM practice_attempts WHERE drill_id=? AND demo=? AND status='COMPLETED' AND (score_eligible IS NULL OR score_eligible=1)",
                         arrayOf(attempt.drillId, if (attempt.demo) "1" else "0")).use { c ->
                         if (c.moveToFirst() && !c.isNull(0)) c.getInt(0) else null
                     }
@@ -78,15 +78,36 @@ class PracticeStore(private val store: LocalSessionStore) {
         put("session_id", a.sessionId); put("status", a.status.name); put("scoring_version", a.scoringVersion)
         put("target_movements", a.target?.movements); put("target_beat", a.target?.beatSeconds)
         put("target_depth", a.target?.depthDegrees)
+        put("review_json", a.review?.json()?.toString())
+        put("score_eligible", a.review?.scoreEligible?.let { if (it) 1 else 0 })
     }
 
     private fun read(c: Cursor) = Attempt(c.getString(1), c.getLong(2), c.getInt(3), c.getInt(4), c.getInt(5), c.getInt(6) != 0,
         id = c.getString(0), sessionId = if (c.isNull(7)) null else c.getString(7),
         status = PracticeStatus.valueOf(c.getString(8)),
         target = if (c.isNull(10)) null else PracticeTarget(c.getInt(10), c.getDouble(11), c.getDouble(12)),
-        scoringVersion = c.getInt(9))
+        scoringVersion = c.getInt(9), review = if (c.isNull(13)) null else PracticeReview.decode(c.getString(13)))
+
+    fun reflection(id: String): PracticeReflection = synchronized(store) {
+        store.readableDatabase.rawQuery("SELECT intention,reflection FROM practice_reflections WHERE attempt_id=?", arrayOf(id)).use {
+            if (it.moveToFirst()) PracticeReflection(it.getString(0), it.getString(1)) else PracticeReflection()
+        }
+    }
+
+    fun saveReflection(id: String, value: PracticeReflection) = synchronized(store) {
+        require(getLocked(id) != null) { "Practice no longer exists" }
+        require(value.intention.length <= 2000 && value.reflection.length <= 2000) { "Keep each note within 2000 characters" }
+        store.writableDatabase.insertWithOnConflict("practice_reflections", null, ContentValues().apply {
+            put("attempt_id", id); put("intention", value.intention); put("reflection", value.reflection)
+        }, android.database.sqlite.SQLiteDatabase.CONFLICT_REPLACE)
+    }
+
+    fun forSession(id: String): List<Attempt> = synchronized(store) {
+        store.readableDatabase.rawQuery("SELECT $COLUMNS FROM practice_attempts WHERE session_id=? ORDER BY time_ms", arrayOf(id))
+            .use { c -> buildList { while (c.moveToNext()) add(read(c)) } }
+    }
 
     companion object {
-        private const val COLUMNS = "id,drill_id,time_ms,score,stars,points,demo,session_id,status,scoring_version,target_movements,target_beat,target_depth"
+        private const val COLUMNS = "id,drill_id,time_ms,score,stars,points,demo,session_id,status,scoring_version,target_movements,target_beat,target_depth,review_json"
     }
 }

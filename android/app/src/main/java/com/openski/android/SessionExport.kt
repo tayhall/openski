@@ -16,6 +16,7 @@ object SessionExport {
         val calibrations = boot.calibrations
         val metadata = JSONObject().put("format_version", 1).put("session_id", session.id)
             .put("test_session",session.testSession)
+            .put("practice_reviews", JSONArray().apply { data.practiceReviews.forEach { put(it.json()) } })
             .put("data_origin",session.origin).put("analysis_settings",settings)
             .put("title", session.title).put("notes", session.notes).put("started_at_ms", session.startedAtMs)
             .put("equipment", session.equipment)

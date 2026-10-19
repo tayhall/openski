@@ -43,7 +43,7 @@ data class SessionData(val session: SkiSession, val live: List<StoredLive>, val 
     val markers: List<TestMarker> = emptyList(), val health: List<SensorHealth> = emptyList(),
     val run: RunData? = null,
     val clockPairs: List<StoredClockPair> = emptyList(), val mag: List<StoredMag> = emptyList(),
-    val phone: List<StoredPhone> = emptyList())
+    val phone: List<StoredPhone> = emptyList(), val practiceReviews: List<PracticeExportReview> = emptyList())
 
 /** One time-sync exchange as stored (phone times are elapsedRealtimeNanos; [accepted] means it passed the sanity checks). */
 data class StoredClockPair(val side: String, val token: Int, val sendNs: Long, val recvNs: Long, val sensorUs: Long,
@@ -59,7 +59,7 @@ data class SensorHealth(val side: String, val timeMs: Long, val battery: Int?, v
 class LocalSessionStore(context: Context, databaseName: String = "openski-local.db") : SQLiteOpenHelper(context, databaseName, null, VERSION) {
     companion object {
         /** Current schema version; every step has a migration in [onUpgrade] and a check in StorageInstrumentation. */
-        const val VERSION = 14
+        const val VERSION = 15
         /** Rows per query when a session is read in chunks ([loadDataInChunks]). */
         const val LOAD_CHUNK_ROWS = 5_000
     }
@@ -97,6 +97,7 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
         addResortSchema(db)
         addDaySchema(db)
         addPracticeSchema(db)
+        addPracticeReviewSchema(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -113,6 +114,14 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
         if (oldVersion < 12) addResortSchema(db)
         if (oldVersion < 13) addDaySchema(db)
         if (oldVersion < 14) addPracticeSchema(db)
+        if (oldVersion < 15) addPracticeReviewSchema(db)
+    }
+
+    private fun addPracticeReviewSchema(db: SQLiteDatabase) {
+        db.execSQL("ALTER TABLE practice_attempts ADD COLUMN review_json TEXT")
+        db.execSQL("ALTER TABLE practice_attempts ADD COLUMN score_eligible INTEGER")
+        // No raw-session foreign key: deleting samples never deletes practice or reflection.
+        db.execSQL("CREATE TABLE practice_reflections(attempt_id TEXT PRIMARY KEY, intention TEXT NOT NULL, reflection TEXT NOT NULL)")
     }
 
     /** Version 14: durable practice history. Session links deliberately have no cascading foreign key. */
@@ -535,7 +544,7 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
         }
         return SessionData(session, live, flash, captures, events,markers,health, if (session.kind == "run") runData(id) else null,
             if (includeSync) clockPairs(id) else emptyList(), if (includeSync) magSamples(id) else emptyList(),
-            if (includeSync) phoneSamples(id) else emptyList())
+            if (includeSync) phoneSamples(id) else emptyList(), practiceExportReviews(id))
     }
 
     /**
@@ -582,7 +591,12 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
             arrayOf(id)) { c -> c.getLong(0) to StoredMag(c.getString(1), c.getLong(2), c.getLong(3), c.getInt(4), c.getInt(5), c.getInt(6), c.getInt(7)) }
             .sortedWith(compareBy({ it.second.receiptMs }, { it.first })).map { it.second }
         return SessionData(session, live, flash, captures, events, markers, health, if (session.kind == "run") runData(id) else null,
-            if (includeSync) clockPairs(id) else emptyList(), mag, phone)
+            if (includeSync) clockPairs(id) else emptyList(), mag, phone, practiceExportReviews(id))
+    }
+
+    private fun practiceExportReviews(id: String): List<PracticeExportReview> {
+        val practices = PracticeStore(this)
+        return practices.forSession(id).map { PracticeExportReview(it, practices.reflection(it.id)) }
     }
 
     @Synchronized fun createSession(id: String, startedAtMs: Long, testSession: Boolean=false, origin: String="sensor", kind: String="session") {

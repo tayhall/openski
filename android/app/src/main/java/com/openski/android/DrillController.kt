@@ -142,6 +142,7 @@ class DrillController(private val effects: DrillEffects, private val now: () -> 
         val result = run?.let { DrillScoring.score(drill!!, it.detection) }
         pendingResult = a.copy(status = if (status == PracticeStatus.COMPLETED && (result?.completed ?: 0) < drill!!.movements)
             PracticeStatus.INCOMPLETE else status, score = result?.score ?: 0, stars = result?.stars ?: 0)
+        pendingResult = pendingResult!!.let { it.copy(review = PracticeReview.capture(it, run, side, mounting)) }
         effects.mark(a, "PAUSE")
         effects.stopSession(a)
         persist()
