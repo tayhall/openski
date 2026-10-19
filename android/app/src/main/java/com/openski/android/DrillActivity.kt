@@ -29,6 +29,9 @@ class DrillActivity : Activity() {
     private var showIntro = false
     private var signature = ""
     private var notice: String? = null
+    private var repeat: Attempt? = null
+    private var repeatLoading = false
+    private val repeatIo = java.util.concurrent.Executors.newSingleThreadExecutor()
     private var pendingStart: Boolean? = null
     private var counter: TextView? = null
     private var status: TextView? = null
@@ -53,15 +56,34 @@ class DrillActivity : Activity() {
         drill = Programme.drill(intent.getStringExtra("drill") ?: "") ?: run { finish(); return }
         store = ProgressStore(this)
         if (savedInstanceState?.containsKey("pending_start") == true) pendingStart = savedInstanceState.getBoolean("pending_start")
-        showIntro = savedInstanceState?.getBoolean("intro") ?: true
+        showIntro = savedInstanceState?.getBoolean("intro") ?: !intent.getBooleanExtra("resume_active", false)
         frame = FrameLayout(this).apply { setBackgroundColor(Snow.SNOW) }
         preparationExpanded = savedInstanceState?.getBoolean("preparation_expanded") ?: false
         phaseLayout = PhaseLayout(this)
         frame.addView(phaseLayout)
         SkiUi.applyInsets(frame, ime = true)
         setContentView(frame)
+        repeatLoading = intent.hasExtra("repeat_attempt_id")
         intro()
+        intent.getStringExtra("repeat_attempt_id")?.let { id ->
+            repeatLoading = true
+            repeatIo.execute {
+                val loaded = runCatching { requireNotNull(store.attempt(id)) { "Saved practice is unavailable." }.also { PracticeRepeat.drill(it) } }
+                runOnUiThread {
+                    if (!isDestroyed) {
+                        repeatLoading = false
+                        loaded.onSuccess { repeat = it; drill = PracticeRepeat.drill(it); notice = "Saved target · ${if (it.demo) "Demo" else "My practice"}. Confirm below; preparation and calibration run again." }
+                            .onFailure { notice = it.message ?: "Could not load saved target." }
+                        if (loaded.isSuccess && pendingStart != null) {
+                            pendingStart = null; begin(repeat!!.demo)
+                        } else if (snapshot?.phase !in listOf(null, DrillPhase.IDLE, DrillPhase.DONE)) apply(snapshot!!)
+                        else intro()
+                    }
+                }
+            }
+        }
     }
+    override fun onDestroy() { repeatIo.shutdown(); super.onDestroy() }
 
     override fun onStart() {
         super.onStart()
@@ -99,9 +121,14 @@ class DrillActivity : Activity() {
 
     private fun intro() {
         val paired = listOf("L", "R").any { store.sensorAddress(it) != null }
-        val start = if (paired) PhaseLayout.Action("start-real", "Start with my boots") { begin(false) }
-            else PhaseLayout.Action("start-demo", "Try Demo") { begin(true) }
-        show(listOf(start), "intro") {
+        val start = when {
+            repeatLoading -> null
+            repeat != null -> PhaseLayout.Action("repeat-saved", "Repeat saved target · ${if (repeat!!.demo) "Demo" else "My practice"}") { begin(repeat!!.demo) }
+            intent.hasExtra("repeat_attempt_id") -> null
+            paired -> PhaseLayout.Action("start-real", "Start with my boots") { begin(false) }
+            else -> PhaseLayout.Action("start-demo", "Try Demo") { begin(true) }
+        }
+        show(listOfNotNull(start), "intro") {
             add(back(), bottom = 8)
             add(t(drill.title, Snow.Type.DISPLAY), bottom = 8)
             notice?.let { add(t(it), bottom = 12) }
@@ -115,7 +142,9 @@ class DrillActivity : Activity() {
                 details.body.add(Snow.button(this@DrillActivity, "Watch: ${video.title}", Snow.ButtonKind.QUIET) { TechniqueVideos.open(this@DrillActivity, video.id) }, bottom = 12)
             }
             add(details, bottom = 12)
-            if (paired) add(Snow.button(this@DrillActivity, "Try Demo", Snow.ButtonKind.SECONDARY) { begin(true) }, bottom = 10)
+            if (repeatLoading) add(t("Loading saved target…"))
+            else if (intent.hasExtra("repeat_attempt_id") && repeat == null) add(t("Exact repeat is unavailable. Return to the saved result to choose a current preset."))
+            else if (repeat == null && paired) add(Snow.button(this@DrillActivity, "Try Demo", Snow.ButtonKind.SECONDARY) { begin(true) }, bottom = 10)
             add(t("Demo is simulated and separate from My practice. Measured scores describe dry cuff roll, not skiing technique.", Snow.Type.CAPTION))
             add(Snow.button(this@DrillActivity, "Set up boots", Snow.ButtonKind.QUIET) {
                 startActivity(Intent(this@DrillActivity, BootSetupActivity::class.java))
@@ -124,6 +153,8 @@ class DrillActivity : Activity() {
     }
 
     private fun begin(demo: Boolean) {
+        if (repeatLoading) { pendingStart = demo; return }
+        if (intent.hasExtra("repeat_attempt_id") && repeat == null) { notice = "The saved target is unavailable. Return to the result."; intro(); return }
         val needed = buildList {
             if (!demo) {
                 if (Build.VERSION.SDK_INT >= 31) { add(Manifest.permission.BLUETOOTH_SCAN); add(Manifest.permission.BLUETOOTH_CONNECT) }
@@ -139,9 +170,11 @@ class DrillActivity : Activity() {
         launch(demo)
     }
     private fun launch(demo: Boolean) {
+        if (repeatLoading) { pendingStart = demo; return }
+        if (intent.hasExtra("repeat_attempt_id") && repeat == null) { notice = "The saved target is unavailable. Return to the result."; intro(); return }
         val running = service ?: run { pendingStart = demo; notice = "Connecting to practice service…"; intro(); return }
         showIntro = false; signature = ""
-        val problem = running.startDrill(drill.id, demo)
+        val problem = running.startDrill(drill.id, demo, repeat)
         if (problem != null) { notice = problem; showIntro = true; intro() } else apply(running.drillState())
     }
     @Deprecated("Platform permission callback")

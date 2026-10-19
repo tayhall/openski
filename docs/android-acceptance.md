@@ -226,3 +226,11 @@ Whole-day tracking (`DayTrackingService`), the day report, the ski day and resor
 - [ ] Emulator: Run Ready, Zeroing/retry, Running, Saving and Drill intro/active/save failure keep their action reachable after scrolling and long warnings. Verify the current blocker remains understandable and its resolution action is reachable.
 - [ ] Emulator: expand Run preparation, drill instructions and setup options, then rotate/reopen. Check expansion and phase, reading order, TalkBack roles/focus and exact-result links.
 - [ ] Real phone: bright sunlight, cold/gloves and physical-button gestures. Touch targets retain at least the previous 64dp phase action height; field ergonomics remain unverified.
+
+
+## Practice history and repeat
+
+- [ ] History: find exact run/drill/day from Today and Progress; switch My practice/Demo and load older equal-timestamp records without duplication.
+- [ ] Repeat a stored target differing from the current preset: source/count/beat/depth survive confirmation, rotation and completion; measured readiness still applies.
+- [ ] Historical unknown-target and unsupported-version results explain exact-repeat limits; current preset is explicitly labelled.
+- [ ] Large text and TalkBack: category selection, record source/status and repeat confirmation remain understandable.

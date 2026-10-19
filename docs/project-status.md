@@ -72,3 +72,8 @@ Recorder protocol has no recording ID or independent checksum. Recover and erase
 ## Compact practice layout validation
 
 The compact-layout branch keeps phase commands outside scrolling explanations. Debug/instrumentation builds and lint pass. Emulator UI regressions pass, including READY, ZEROING Retry/Cancel and SAVING at 130%/200% font, portrait/landscape, and 120/160dp keyboard insets. These synthetic geometry checks do not replace real-device TalkBack or glove testing.
+
+
+## Practice history and repeat
+
+Increment 6 on feat/practice-history adds bounded discoverable history and stored-target repeat confirmation. Validation: 12 focused JVM controller/repeat tests pass, debug and instrumentation APKs build, and lint passes. HistoryStorageRegression is compiled for integration into the shared emulator runner; it has not been executed on this branch. Physical repeat and accessibility validation remain acceptance tasks.
