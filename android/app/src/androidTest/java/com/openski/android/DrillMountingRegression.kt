@@ -4,65 +4,75 @@ import android.app.AlertDialog
 import android.app.Instrumentation
 import android.content.Context
 import android.content.Intent
-import android.os.SystemClock
+import android.view.View
+import android.view.ViewGroup
+import android.widget.TextView
 
-/** Exercises the real UI ticker with one streaming boot, without needing Bluetooth hardware. */
+/** The mounting chooser is explicit; repeated service snapshots must not stack or dismiss it. */
 object DrillMountingRegression {
     fun run(instrumentation: Instrumentation) {
+        fun main(block: () -> Unit) {
+            var result: Result<Unit>? = null
+            instrumentation.runOnMainSync { result = runCatching(block) }
+            result!!.getOrThrow()
+        }
         val context = instrumentation.targetContext
         val prefs = context.getSharedPreferences("openski-training", Context.MODE_PRIVATE)
         for (side in listOf("L", "R")) {
             val key = "mount_$side"
             val original = if (prefs.contains(key)) prefs.getInt(key, -1) else null
             prefs.edit().remove(key).commit()
-            val activity = instrumentation.startActivitySync(
-                Intent(context, DrillActivity::class.java)
-                    .putExtra("drill", "slow-rolls")
-                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            ) as DrillActivity
-            val phase = DrillActivity::class.java.getDeclaredField("phase").apply { isAccessible = true }
+            val activity = instrumentation.startActivitySync(Intent(context, DrillActivity::class.java)
+                .putExtra("drill", "slow-rolls").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) as DrillActivity
+            val apply = DrillActivity::class.java.getDeclaredMethod("apply", DrillState::class.java).apply { isAccessible = true }
             val picker = DrillActivity::class.java.getDeclaredField("mountingDialog").apply { isAccessible = true }
-            fun connect() = instrumentation.runOnMainSync {
-                phase.set(activity, phase.type.enumConstants!!.first { it.toString() == "CONNECTING" })
-                activity.onSensorSample(side, SensorSample(1, 0, 0f, 0f, 9.81f, 0f, 0f, 0f))
-            }
-            fun dialog(): AlertDialog {
-                var result: AlertDialog? = null
-                instrumentation.runOnMainSync { result = picker.get(activity) as? AlertDialog }
-                return checkNotNull(result) { "Missing mounting picker for $side" }
+            val attempt = Attempt("slow-rolls", 1, 0, 0, 0, false, status = PracticeStatus.ACTIVE)
+            val state = DrillState(DrillPhase.MOUNTING, Programme.drills.first(), attempt, side, "Choose mounting", 0, 0.0,
+                RollTrace(floatArrayOf(), floatArrayOf()), 1f, null, null)
+            fun find(view: View): TextView? {
+                if (view is TextView && view.isClickable && view.text.toString() == "Choose mounting") return view
+                if (view is ViewGroup) for (index in 0 until view.childCount) find(view.getChildAt(index))?.let { return it }
+                return null
             }
             try {
-                connect()
-                SystemClock.sleep(300)
-                val first = dialog()
-                SystemClock.sleep(500) // Several connection ticks used to stack new dialogs here.
-                instrumentation.runOnMainSync {
-                    check(phase.get(activity)?.toString() == "MOUNTING")
-                    check(picker.get(activity) === first && first.isShowing)
-                    first.getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
+                val serviceField = DrillActivity::class.java.getDeclaredField("service").apply { isAccessible = true }
+                val deadline = android.os.SystemClock.elapsedRealtime() + 3000
+                var connected = false
+                while (!connected && android.os.SystemClock.elapsedRealtime() < deadline) {
+                    main { connected = serviceField.get(activity) != null }
+                    if (!connected) android.os.SystemClock.sleep(25)
                 }
-                SystemClock.sleep(300)
-                instrumentation.runOnMainSync {
-                    check(phase.get(activity)?.toString() == "INTRO")
-                    check(picker.get(activity) == null && !first.isShowing)
+                check(connected) { "Drill screen did not bind to service" }
+                var first: AlertDialog? = null
+                main {
+                    apply.invoke(activity, state)
+                    checkNotNull(find(activity.window.decorView)).performClick()
+                    first = picker.get(activity) as AlertDialog
+                    repeat(5) { apply.invoke(activity, state) }
+                    check(picker.get(activity) === first && first!!.isShowing)
+                    checkNotNull(find(activity.window.decorView)).performClick()
+                    check(picker.get(activity) === first) { "Stacked mounting dialogs" }
+                    first!!.getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
                 }
-                connect()
-                SystemClock.sleep(300)
-                val second = dialog()
-                instrumentation.runOnMainSync { second.cancel() } // Android Back/outside dismissal.
-                SystemClock.sleep(300)
-                instrumentation.runOnMainSync { check(phase.get(activity)?.toString() == "INTRO") }
-                connect()
-                SystemClock.sleep(300)
-                val third = dialog()
-                instrumentation.runOnMainSync {
+                instrumentation.waitForIdleSync() // Dialog buttons dispatch their listeners through the main handler.
+                var second: AlertDialog? = null
+                main {
+                    check(picker.get(activity) == null && !first!!.isShowing)
+                    checkNotNull(find(activity.window.decorView)).performClick()
+                    second = picker.get(activity) as AlertDialog
+                    second!!.cancel()
+                }
+                instrumentation.waitForIdleSync()
+                main {
+                    check(picker.get(activity) == null && !second!!.isShowing)
+                    checkNotNull(find(activity.window.decorView)).performClick()
+                    val third = picker.get(activity) as AlertDialog
                     third.listView.performItemClick(third.listView.getChildAt(0), 0, 0)
-                    check(phase.get(activity)?.toString() == "CALIBRATE")
                     check(ProgressStore(context).mounting(side) == Mounting.options.first())
-                    check(!third.isShowing)
+                    check(!third.isShowing && picker.get(activity) == null)
                 }
             } finally {
-                instrumentation.runOnMainSync { activity.finish() }
+                main { activity.finish() }
                 instrumentation.waitForIdleSync()
                 prefs.edit().apply { if (original == null) remove(key) else putInt(key, original) }.commit()
             }

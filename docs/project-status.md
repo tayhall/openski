@@ -34,6 +34,8 @@ Each grouped link opens the final PR in that range; the full history is in [merg
 
 ## Evidence and validation gaps
 
+Implementation branches now include durable source-separated practice records (draft PR #45) and service-owned drill lifecycle (`feat/drill-lifecycle`). The latter preserves capture across screen detachment and reconciles abandoned attempts on process startup without granting completion rewards. Debug/instrumentation builds, lint, focused JVM checks and emulator storage/demo lifecycle checks pass; real BLE and screen-lock evidence remains outstanding. See the [implementation plan](superpowers/plans/2026-10-19-app-improvements.md) for branch tracking.
+
 Historical MPU-6050 evidence includes roughly 9.5 hours of USB-powered Wi-Fi acquisition at 100 samples/s with zero I²C failures, cold-start bias measurements and handheld/tilt trials. See dated [bench results](bench-results.md) and [bench data](../data/bench/README.md). These do not validate XIAO behaviour, battery life or snow recognition.
 
 Earlier PRs exercised demo/training/run screens and storage instrumentation on a Pixel 9a emulator; PR #16 reports instrumentation passing. PR #43 reports **644 JVM tests**; PR #39 reports **40 native tests** and an xiao-left-mag build. These historical results were not rerun as part of this documentation review. New schema v11–v13 migration checks and ski-day Android flows still need device/emulator execution. Timing/torso metrics and the ski-day engine have synthetic coverage, without real boot/day validation.

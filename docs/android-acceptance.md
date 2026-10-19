@@ -186,3 +186,16 @@ Whole-day tracking (`DayTrackingService`), the day report, the ski day and resor
 - [ ] Open a locked measured drill through Demo and try My boots: measured progression is still enforced.
 - [ ] Failure paths: malformed legacy JSON leaves source preferences untouched; a storage failure shows an error rather than empty successful history; Retry save uses the same attempt identity.
 - [ ] Path/Progress source choice survives rotation. No device-BLE validation is claimed for this increment; drill lifecycle preservation is scheduled separately.
+
+
+## Service-owned drill lifecycle (increment 2)
+
+- [ ] Real boots: rotate during connection, mounting, hold, calibration, running and saving; phase/count/session identity survive and the result is stored once.
+- [ ] Real boots: leave the screen and lock the phone during capture, then return through the notification. Samples continue; Finish stops only that drill's recording.
+- [ ] Start another drill/run/manual recording/coaching session while a drill is active. The app returns to the active drill or refuses the competing command; capture/calibration is not stolen.
+- [ ] Disconnect during hold/calibration and reconnect. Calibration does not accept an old callback or stale stream; data gaps are not invented movements.
+- [ ] Process/service death during a live set produces an interrupted attempt with no completion reward, and the retained raw recording is recoverable on reconnect.
+- [ ] Save failure remains visible and retry uses the same identity; no second reward or replacement of validated raw data.
+- [x] Pixel 9a emulator, 19 October 2026 — mounting chooser opens on demand, repeated updates/clicks do not stack it, and cancel/dismiss retains practice state.
+- [x] Pixel 9a emulator, 19 October 2026 — demo rotation/background/return produces one committed result. Force-stop during a demo and reopen Home: interrupted, zero stars/points, no duplicate attempt.
+- [x] StorageInstrumentation — ACTIVE→terminal updates preserve identity; failed orphan raw-session closure rolls back interruption, retry closes only the linked raw session, and repeated recovery is idempotent.

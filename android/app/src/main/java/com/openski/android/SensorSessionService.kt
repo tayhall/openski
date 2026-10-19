@@ -88,6 +88,103 @@ class SensorSessionService : Service() {
     }
     private var lastNotificationMessage: String? = null
 
+    // Practice capture belongs to the service; observers never own or stop it.
+    private var drillGhost: RollTrace? = null
+    private var drillNext: Drill? = null
+    fun nextPracticeDrill(): Drill? = drillNext
+    private val drillObservers = linkedMapOf<Any, (DrillState) -> Unit>()
+    private val drillEffects: DrillEffects = object : DrillEffects {
+        override fun prepare(attempt: Attempt, completed: (Result<Int>) -> Unit) {
+            io.execute {
+                val result = runCatching {
+                    val previous = progressStore.attempts() // Imports legacy history before the first new write.
+                    if (!attempt.demo && !Progress(previous, progressStore.experience.startsOn).unlocked(Programme.drill(attempt.drillId)!!))
+                        error("Complete the preceding measured sets, or explore this drill in Demo.")
+                    PracticeStore(store).record(attempt)
+                    (previous.count { it.drillId == attempt.drillId && it.demo == attempt.demo }) to progressStore.lastTrace(attempt.drillId, attempt.demo)
+                }
+                mainHandler.post { if (!destroyed) {
+                    if (drillController.id == attempt.id) result.onSuccess { drillGhost = it.second }
+                    completed(result.map { it.first }); publishDrill()
+                } }
+            }
+        }
+        override fun openSession(attempt: Attempt, completed: (Result<Unit>) -> Unit) {
+            if (activeSessionId != null || runActive()) { completed(Result.failure(IllegalStateException("Another recording is active"))); return }
+            startRecording(true, drill = true, drillOwner = attempt.id, requestedId = attempt.sessionId)
+            completed(if (activeSessionId == attempt.sessionId) Result.success(Unit)
+                else Result.failure(IllegalStateException("Could not start recording. Check live samples, mode and storage.")))
+        }
+        override fun calibrate(attempt: Attempt, side: String, mounting: Mounting, completed: (Result<Unit>) -> Unit) {
+            if (activeSessionId != attempt.sessionId) { completed(Result.failure(IllegalStateException("Practice session changed"))); return }
+            calibrateTestResult(side, mounting.axis, mounting.sign) { result -> completed(result); publishDrill() }
+        }
+        override fun mark(attempt: Attempt, label: String) {
+            if (!attempt.demo && activeSessionId == attempt.sessionId) markTest(label, note = "Drill: ${attempt.drillId}")
+        }
+        override fun stopSession(attempt: Attempt) {
+            if (!attempt.demo && activeSessionId == attempt.sessionId) stopRecording(endBurst = false)
+        }
+        override fun save(attempt: Attempt, run: DrillRun?, completed: (Result<Attempt>) -> Unit) {
+            io.execute {
+                val result = runCatching {
+                    val saved = PracticeStore(store).record(attempt, calculateReward = true)
+                    if (run != null) progressStore.saveTrace(attempt.drillId, attempt.demo, run.trace)
+                    attempt.sessionId?.let { id ->
+                        store.getSession(id)?.let { session ->
+                            store.editSession(id, session.title.ifBlank { "Drill · ${Programme.drill(attempt.drillId)?.title ?: attempt.drillId}" },
+                                session.notes.ifBlank { "Dry-ski practice · ${saved.status.name.lowercase()}" },
+                                session.leftOffsetMs, session.rightOffsetMs, session.videoOffsetMs)
+                        }
+                    }
+                    saved to progressStore.progress(saved.demo).next(progressStore.goal ?: Goal.CARVING)
+                }
+                mainHandler.post { if (!destroyed) { result.onSuccess { if (drillController.id == attempt.id) drillNext = it.second?.takeIf { d -> d.id != attempt.drillId } }
+                    completed(result.map { it.first }); publishDrill(); settleForeground() } }
+            }
+        }
+    }
+    private val drillController: DrillController by lazy { DrillController(drillEffects, SystemClock::elapsedRealtime, System::currentTimeMillis) }
+    private val drillTick = object : Runnable {
+        override fun run() {
+            if (destroyed) return
+            val live = clients.keys.filter { clients[it]?.isReady == true &&
+                SystemClock.elapsedRealtime() - (lastSampleTime[it] ?: 0L) < 2000 }.toSet()
+            drillController.tick(live, listOf("L", "R").associateWith(progressStore::mounting), activeSessionId)
+            publishDrill()
+            if (drillController.active) mainHandler.postDelayed(this, 100) else settleForeground()
+        }
+    }
+    fun drillState(): DrillState = drillController.state().copy(ghost = drillGhost)
+    fun observeDrill(owner: Any, observer: (DrillState) -> Unit) { drillObservers[owner] = observer; observer(drillState()) }
+    fun removeDrillObserver(owner: Any) { drillObservers.remove(owner) }
+    private fun publishDrill() {
+        if (drillObservers.isNotEmpty()) { val snapshot = drillState(); drillObservers.values.toList().forEach { it(snapshot) } }
+    }
+    fun startDrill(id: String, demo: Boolean): String? {
+        val drill = Programme.drill(id) ?: return "Unknown drill"
+        if (!demo && listOf("L", "R").none { progressStore.sensorAddress(it) != null }) return "Pair a boot sensor before starting measured practice."
+        if (activeSessionId != null || runActive() || coachState.running) return "Another recording or coaching session is active. Finish it first."
+        if (transfers.isNotEmpty() || store.hasPendingRecovery()) return "Recover the retained recording before starting practice."
+        val problem = drillController.start(drill, demo, UUID.randomUUID().toString(), if (demo) null else UUID.randomUUID().toString())
+        if (problem != null) return problem
+        try {
+            val keep = Intent(this, SensorSessionService::class.java).setAction(ACTION_RESUME_DRILL)
+            // The bounded 6.5 s sensor-free preview needs no connected-device or pretend audio foreground type.
+            if (demo) startService(keep) else {
+                startForegroundService(keep)
+                ensureForeground(); acquireWakeLock()
+                monitoring = true; restoreConnections()
+            }
+        } catch (error: Exception) {
+            drillController.interrupt("Could not keep practice running in the background.")
+        }
+        mainHandler.removeCallbacks(drillTick); mainHandler.post(drillTick); publishDrill()
+        return null
+    }
+    fun finishDrill(id: String? = drillController.id) { if (id == drillController.id) drillController.finishEarly(); publishDrill() }
+    fun retryDrillSave() { drillController.retrySave(); publishDrill() }
+
     // Runs: the lifecycle lives in RunController; these adapters connect it to the boots, the database and the phone.
     private val zeroTracker = ZeroTracker()
     private val modeSeen = mutableSetOf<String>()
@@ -247,6 +344,11 @@ class SensorSessionService : Service() {
         super.onCreate()
         createNotificationChannel()
         activeSessionId = store.latestOpenSessionId()
+        val interrupted = PracticeStore(store).interruptActive(System.currentTimeMillis())
+        PracticeStore(store).list().lastOrNull()?.let(drillController::restoreSaved)
+        if (interrupted.any { !it.demo && it.sessionId == activeSessionId }) {
+            activeSessionId = null
+        }
         testRecording=activeSessionId?.let { store.getSession(it)?.testSession } ?: false
         activeSessionId?.let { id ->
             // Reuse the decision made when the session started, not the switch as it is now.
@@ -266,6 +368,7 @@ class SensorSessionService : Service() {
             when (intent?.action) {
                 ACTION_MONITOR -> { monitoring = true; ensureForeground() }
                 ACTION_STOP_MONITORING -> {
+                    if (drillController.active) { finishDrill(); return START_STICKY }
                     monitoring = false
                     recoveryPaused = true
                     reconnectTasks.values.forEach(mainHandler::removeCallbacks)
@@ -278,19 +381,20 @@ class SensorSessionService : Service() {
                     settleForeground()
                 }
                 ACTION_START_RECORDING -> startRecording(intent.getBooleanExtra("test_session",false), drill = intent.getBooleanExtra(EXTRA_DRILL, false))
-                ACTION_STOP_RECORDING -> if (runController.phase() == RunPhase.RUNNING) stopRun() else stopRecording()
+                ACTION_STOP_RECORDING -> if (drillController.active) finishDrill() else if (runController.phase() == RunPhase.RUNNING) stopRun() else stopRecording()
+                ACTION_RESUME_DRILL -> if (drillController.active && !drillController.demo) { ensureForeground(); acquireWakeLock() } else if (!drillController.active) settleForeground()
                 ACTION_RECOVER -> recoverFlash()
                 ACTION_PAUSE_RECOVERY -> if (activeSessionId == null) pauseRecovery()
                 ACTION_RESUME_RECORDING -> if (activeSessionId != null) { ensureForeground(); acquireWakeLock() } else settleForeground()
             }
-            if (!recoveryPaused) restoreConnections()
+            if (!recoveryPaused && !(drillController.active && drillController.demo)) restoreConnections()
         } catch (error: Exception) { storageError(error) }
-        return if (monitoring || activeSessionId != null || store.hasPendingRecovery()) START_STICKY else START_NOT_STICKY
+        return if (drillController.active || monitoring || activeSessionId != null || store.hasPendingRecovery()) START_STICKY else START_NOT_STICKY
     }
 
     fun sessionId(): String? = activeSessionId
     /** True while a sensor recording or a run is in progress (resort downloads are refused then). Main thread. */
-    fun recordingActive(): Boolean = activeSessionId != null || runActive()
+    fun recordingActive(): Boolean = activeSessionId != null || runActive() || drillController.active
     fun setUiVisible(visible: Boolean) {
         uiVisible = visible
         if (visible && !recoveryPaused) clients.keys.toList().forEach {
@@ -322,7 +426,7 @@ class SensorSessionService : Service() {
 
     fun canAssign(side: String, address: String): Boolean = side in listOf("L","R") &&
         addresses[if(side=="L") "R" else "L"]!=address &&
-        (addresses[side] == address || (activeSessionId == null && !store.hasPendingRecovery()))
+        (addresses[side] == address || (!recordingActive() && !store.hasPendingRecovery()))
 
     fun restoreConnections() {
         listOf("L", "R").forEach { side ->
@@ -354,7 +458,7 @@ class SensorSessionService : Service() {
     }
 
     fun forgetSensor(side: String): Boolean {
-        if (activeSessionId != null || transfers.isNotEmpty() || store.hasPendingRecovery()) return false
+        if (recordingActive() || transfers.isNotEmpty() || store.hasPendingRecovery()) return false
         invalidate(side)
         clients.remove(side)?.disconnect()
         addresses.remove(side)
@@ -369,7 +473,7 @@ class SensorSessionService : Service() {
     }
 
     fun swapSensors(): Boolean {
-        if (activeSessionId != null || transfers.isNotEmpty() || store.hasPendingRecovery()) return false
+        if (recordingActive() || transfers.isNotEmpty() || store.hasPendingRecovery()) return false
         val left = addresses["L"]
         val right = addresses["R"]
         listOf("L", "R").forEach { invalidate(it); clients.remove(it)?.disconnect()
@@ -731,6 +835,7 @@ class SensorSessionService : Service() {
     fun isTestRecording() = activeSessionId!=null && testRecording
 
     fun startGuidedTrial(pace: String): String {
+        if (drillController.active) return "A practice set is active. Finish it first."
         if(!isTestRecording()) return "Start a test recording first"
         val side=listOf("L","R").firstOrNull { latestOrientation[it]?.let { p ->
             System.currentTimeMillis()-p.timeMs<1000 && kotlin.math.abs(p.degrees)<3
@@ -749,6 +854,7 @@ class SensorSessionService : Service() {
         if(roll==null) { latestOrientation.remove(side); listener?.onBootOrientation(side,null); return }
         latestOrientation[side]=roll
         listener?.onBootOrientation(side,roll)
+        drillController.accept(roll)
         val movement=movementTrackers.getOrPut(side) { DrySkiAnalysis.Tracker() }.accept(roll) ?: return
         val trial=guidedTrial
         if(trial!=null && trial.side==side && trial.accept(movement)) {
@@ -779,6 +885,7 @@ class SensorSessionService : Service() {
 
     /** Starts a run. Returns null if it started, otherwise the reason it could not. */
     fun startRun(demo: Boolean): String? {
+        if (drillController.active) return "A practice set is active. Return to it or finish it first."
         val reason = runController.start(System.currentTimeMillis(), demo)
         if (reason == null) {
             runStartedMonitoring = !monitoring
@@ -820,7 +927,7 @@ class SensorSessionService : Service() {
     /** Stop waiting for the boots' data; recovery carries on in the background and the boot modes are left as they are. */
     fun abandonRunSave() { runController.abandonSave(System.currentTimeMillis()); runListener?.invoke(runState()) }
     fun resetRun() { runController.reset(); runListener?.invoke(runState()) }
-    fun setOnSnowMode(production: Boolean) { runController.setOnSnowMode(production); runListener?.invoke(runState()) }
+    fun setOnSnowMode(production: Boolean) { if (drillController.active) return; runController.setOnSnowMode(production); runListener?.invoke(runState()) }
 
     private fun runFinished() {
         if (runStartedMonitoring) { monitoring = false; runStartedMonitoring = false }
@@ -844,6 +951,7 @@ class SensorSessionService : Service() {
      * heard without boots. Returns a reason if it could not start, or null if it started.
      */
     fun startCoaching(settings: CoachSettings, demo: Boolean): String? {
+        if (drillController.active) return "A practice set is active. Finish it first."
         if (coachState.running) return null
         val chosen = settings.normalised()
         val target = chosen.target()
@@ -911,21 +1019,28 @@ class SensorSessionService : Service() {
     fun connectedSides(): List<String> = clients.filterValues { it.isReady }.keys.sorted()
 
     /** Ask a boot to recapture its neutral pose from the next still second. Stand upright and still first. */
-    fun zeroSensor(side: String): Boolean = clients[side]?.command(RecorderCommand.ZERO) == true
+    fun zeroSensor(side: String): Boolean = !drillController.active && clients[side]?.command(RecorderCommand.ZERO) == true
 
     /** Production turns the boot's Wi-Fi and raw stream off to save battery; diagnostics turns them back on. */
     fun setSensorMode(side: String, production: Boolean): Boolean {
-        if (ProductionModeRule.blockedReason(activeSessionId != null, transfers.isNotEmpty() || waits.isNotEmpty(), production) != null) return false
+        if (ProductionModeRule.blockedReason(recordingActive(), transfers.isNotEmpty() || waits.isNotEmpty(), production) != null) return false
         return clients[side]?.command(RecorderCommand.SET_MODE, if (production) 1 else 0) == true
     }
 
     /** Why production mode cannot be entered right now, or null if it can. */
     fun productionBlockedReason(): String? =
-        ProductionModeRule.blockedReason(activeSessionId != null, transfers.isNotEmpty() || waits.isNotEmpty())
+        ProductionModeRule.blockedReason(recordingActive(), transfers.isNotEmpty() || waits.isNotEmpty())
 
     fun calibrateTest(side: String, axis: Int, sign: Int, completed: (String)->Unit) {
+        if (drillController.active) { completed("A practice set owns calibration. Finish it first."); return }
+        calibrateTestResult(side, axis, sign) { result ->
+            completed(result.fold({ "$side boot calibrated · ready for movements" }, { it.message ?: "Calibration failed" }))
+        }
+    }
+
+    private fun calibrateTestResult(side: String, axis: Int, sign: Int, completed: (Result<Unit>)->Unit) {
         val id=activeSessionId
-        if(id==null || !testRecording) { completed("Start a test session first"); return }
+        if(id==null || !testRecording) { completed(Result.failure(IllegalStateException("Start a test session first"))); return }
         flush()
         io.execute {
             try {
@@ -939,13 +1054,14 @@ class SensorSessionService : Service() {
                 mainHandler.post { if(!destroyed && activeSessionId==id) {
                     orientationTrackers[side]=BootOrientation.Tracker(calibration.copy(timeMs=System.currentTimeMillis().toDouble()))
                     movementTrackers[side]=DrySkiAnalysis.Tracker()
-                    completed("$side boot calibrated · ready for movements")
+                    completed(Result.success(Unit))
                 } }
-            } catch(error: Exception) { mainHandler.post { if(!destroyed) completed(error.message ?: "Calibration failed") } }
+            } catch(error: Exception) { mainHandler.post { if(!destroyed) completed(Result.failure(error)) } }
         }
     }
 
     fun learnTestMounting(side: String, completed: (String)->Unit) {
+        if (drillController.active) { completed("A practice set owns calibration. Finish it first."); return }
         val id=activeSessionId
         if(id==null || !testRecording) { completed("Start a test session first"); return }
         flush()
@@ -970,7 +1086,11 @@ class SensorSessionService : Service() {
     }
 
     /** [drill] marks a drill's test recording, which follows the phone motion switch (garden trials T3 and T4). */
-    private fun startRecording(testSession: Boolean=false, kind: String="session", drill: Boolean = false) {
+    private fun startRecording(testSession: Boolean=false, kind: String="session", drill: Boolean = false,
+                               drillOwner: String? = null, requestedId: String? = null) {
+        if (drillController.active && drillOwner != drillController.id) {
+            listener?.onRecordingChanged(activeSessionId, "A practice set is active. Finish it first."); return
+        }
         if (activeSessionId != null) { ensureForeground(); return }
         recoveryPaused = false
         ensureForeground() // Meet the foreground-service deadline before opening the database.
@@ -989,7 +1109,7 @@ class SensorSessionService : Service() {
         }
         try {
             storageFailed = false
-            val id = UUID.randomUUID().toString()
+            val id = requestedId ?: UUID.randomUUID().toString()
             store.createSession(id, System.currentTimeMillis(),testSession, kind = kind)
             testRecording=testSession
             orientationTrackers.clear(); movementTrackers.clear(); latestOrientation.clear(); guidedTrial=null
@@ -1127,6 +1247,7 @@ class SensorSessionService : Service() {
     private fun storageError(error: Exception) {
         if (storageFailed) return
         storageFailed = true
+        drillController.interrupt("Storage failed. Practice interrupted; retained data can be recovered.")
         runLocation.stop()   // fixes could no longer be written, so do not keep the location indicator on
         val id = activeSessionId
         activeSessionId = null
@@ -1218,6 +1339,7 @@ class SensorSessionService : Service() {
         val warnings = addresses.keys.filter { side -> clients[side]?.isReady != true ||
             SystemClock.elapsedRealtime() - (lastSampleTime[side] ?: 0) > 3_000 }
         return when {
+            drillController.active -> "Practice · ${drillController.phase.name.lowercase()} · tap to return"
             runPhase() == RunPhase.RUNNING -> runController.state(System.currentTimeMillis()).let { s ->
                 "Run in progress · %d:%02d · %d turns".format(s.elapsedMs / 60000, s.elapsedMs / 1000 % 60, s.turns.values.sum()) }
             runPhase() == RunPhase.SAVING -> runController.state(System.currentTimeMillis()).saveProgress.entries
@@ -1245,8 +1367,10 @@ class SensorSessionService : Service() {
         foreground = true
     }
     private fun settleForeground() {
-        if (activeSessionId == null && transfers.isEmpty() && !coachState.running) releaseWakeLock()
-        if (!monitoring && !coachState.running && !runActive() && activeSessionId == null && !store.hasPendingRecovery() && transfers.isEmpty() && !storageFailed) {
+        if (drillController.active && drillController.demo && !monitoring && !coachState.running &&
+            activeSessionId == null && transfers.isEmpty()) return
+        if (activeSessionId == null && transfers.isEmpty() && !coachState.running && !drillController.active) releaseWakeLock()
+        if (!monitoring && !coachState.running && !runActive() && !drillController.active && activeSessionId == null && !store.hasPendingRecovery() && transfers.isEmpty() && !storageFailed) {
             if (foreground) stopForeground(STOP_FOREGROUND_REMOVE)
             foreground = false
             stopSelf()
@@ -1257,14 +1381,16 @@ class SensorSessionService : Service() {
             NotificationChannel(CHANNEL_ID, "OpenSki sensors and recording", NotificationManager.IMPORTANCE_LOW))
     }
     private fun notification(message: String): Notification {
-        val open = PendingIntent.getActivity(this, 0, Intent(this, MainActivity::class.java),
+        val destination = if (drillController.active) Intent(this, DrillActivity::class.java).putExtra("drill", drillState().drill?.id)
+            else Intent(this, MainActivity::class.java)
+        val open = PendingIntent.getActivity(this, 0, destination,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val action = if (activeSessionId != null) ACTION_STOP_RECORDING else if (store.hasPendingRecovery()) ACTION_PAUSE_RECOVERY else ACTION_STOP_MONITORING
+        val action = if (drillController.active || activeSessionId != null) ACTION_STOP_RECORDING else if (store.hasPendingRecovery()) ACTION_PAUSE_RECOVERY else ACTION_STOP_MONITORING
         val stop = PendingIntent.getService(this, 1, Intent(this, SensorSessionService::class.java).setAction(action),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         return Notification.Builder(this, CHANNEL_ID).setSmallIcon(android.R.drawable.ic_menu_compass)
             .setContentTitle("OpenSki").setContentText(message).setContentIntent(open).setOngoing(true)
-            .addAction(Notification.Action.Builder(null, if (activeSessionId != null) "Stop recording" else if (store.hasPendingRecovery()) "Pause recovery" else "Disconnect sensors", stop).build()).build()
+            .addAction(Notification.Action.Builder(null, if (drillController.active) "Finish practice" else if (activeSessionId != null) "Stop recording" else if (store.hasPendingRecovery()) "Pause recovery" else "Disconnect sensors", stop).build()).build()
     }
     private fun updateNotification(message: String) {
         if (lastNotificationMessage == message) return
@@ -1284,7 +1410,10 @@ class SensorSessionService : Service() {
         // A stop that was waiting for the end ping burst saves now rather than leaving the session open.
         cancelPendingSave()
         stopSequencer.flush(activeSessionId)?.let { finishRecording(it) }
+        drillController.interrupt("Practice interrupted by service shutdown.")
         destroyed = true
+        drillObservers.clear()
+        mainHandler.removeCallbacks(drillTick)
         stopPhoneMotion()
         mainHandler.removeCallbacks(runTick)
         clockSync.stop()
@@ -1304,6 +1433,7 @@ class SensorSessionService : Service() {
     }
 
     companion object {
+        const val ACTION_RESUME_DRILL = "com.openski.android.RESUME_DRILL"
         const val ACTION_MONITOR = "com.openski.android.MONITOR"
         private const val COUNT_IN_BEATS = 4
         const val ACTION_STOP_MONITORING = "com.openski.android.STOP_MONITORING"

@@ -36,7 +36,7 @@ class PracticeStore(private val store: LocalSessionStore) {
                 existing.sessionId == attempt.sessionId && existing.target == attempt.target && existing.scoringVersion == attempt.scoringVersion)) {
                 "Attempt identity belongs to a different practice"
             }
-            val saved = existing ?: run {
+            val saved = if (existing != null && (existing.status != PracticeStatus.ACTIVE || attempt.status == PracticeStatus.ACTIVE)) existing else run {
                 val reward = if (!attempt.eligible) 0 else if (calculateReward) {
                     val best = db.rawQuery("SELECT MAX(score) FROM practice_attempts WHERE drill_id=? AND demo=? AND status='COMPLETED'",
                         arrayOf(attempt.drillId, if (attempt.demo) "1" else "0")).use { c ->
@@ -45,11 +45,27 @@ class PracticeStore(private val store: LocalSessionStore) {
                     if (best == null) attempt.score * 2 else maxOf(attempt.score / 10, (attempt.score - best) * 2)
                 } else attempt.vert
                 attempt.copy(vert = reward, stars = if (attempt.eligible) attempt.stars else 0).also {
-                    db.insertOrThrow("practice_attempts", null, values(it))
+                    if (existing == null) db.insertOrThrow("practice_attempts", null, values(it))
+                    else db.update("practice_attempts", values(it), "id=? AND status='ACTIVE'", arrayOf(it.id))
                 }
             }
             db.setTransactionSuccessful()
             saved
+        } finally { db.endTransaction() }
+    }
+
+    /** Called at process/service creation, never when a screen reattaches. Raw closure is atomic with interruption. */
+    fun interruptActive(closeOpenSessionsAt: Long? = null): List<Attempt> = synchronized(store) {
+        val db = store.writableDatabase
+        db.beginTransaction()
+        try {
+            val unfinished = list().filter { it.status == PracticeStatus.ACTIVE }
+            db.execSQL("UPDATE practice_attempts SET status='INTERRUPTED', stars=0, points=0 WHERE status='ACTIVE'")
+            if (closeOpenSessionsAt != null) unfinished.mapNotNull { it.sessionId }.distinct().forEach { id ->
+                db.execSQL("UPDATE sessions SET ended_at_ms=? WHERE id=? AND ended_at_ms IS NULL", arrayOf(closeOpenSessionsAt, id))
+            }
+            db.setTransactionSuccessful()
+            unfinished
         } finally { db.endTransaction() }
     }
 

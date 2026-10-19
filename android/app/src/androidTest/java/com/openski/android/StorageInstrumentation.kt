@@ -332,11 +332,29 @@ class StorageInstrumentation : Instrumentation() {
                         val early = practice.record(completed.copy(id = "early", status = PracticeStatus.INCOMPLETE), calculateReward = true)
                         check(early.vert == 0 && early.stars == 0)
                         check(Progress(practice.list()).best("slow-rolls") == saved)
+                        val active = completed.copy(id = "active", sessionId = null, status = PracticeStatus.ACTIVE, score = 0, stars = 0)
+                        practice.record(active)
+                        val finished = practice.record(active.copy(status = PracticeStatus.COMPLETED, score = 80, stars = 2), calculateReward = true)
+                        check(finished.vert == 20 && finished.stars == 2) { "active-to-completed reward" }
+                        check(practice.record(active.copy(status = PracticeStatus.COMPLETED, score = 100, stars = 3), calculateReward = true) == finished)
+                        store.createSession("practice-orphan", 4000)
+                        store.createSession("manual-unrelated", 4000)
+                        practice.record(active.copy(id = "abandoned", sessionId = "practice-orphan"))
+                        store.writableDatabase.execSQL("CREATE TRIGGER fail_orphan_close BEFORE UPDATE ON sessions WHEN OLD.id='practice-orphan' BEGIN SELECT RAISE(ABORT, 'test failure'); END")
+                        check(runCatching { practice.interruptActive(4500) }.isFailure)
+                        check(practice.get("abandoned")!!.status == PracticeStatus.ACTIVE && store.getSession("practice-orphan")!!.endedAtMs == null)
+                        store.writableDatabase.execSQL("DROP TRIGGER fail_orphan_close")
+                        check(practice.interruptActive(4500).map { it.id } == listOf("abandoned"))
+                        check(store.getSession("practice-orphan")!!.endedAtMs == 4500L)
+                        check(store.getSession("manual-unrelated")!!.endedAtMs == null) { "recovery closed an unrelated recording" }
+                        check(practice.get("abandoned")!!.let { it.status == PracticeStatus.INTERRUPTED && it.vert == 0 && it.stars == 0 })
+                        check(practice.interruptActive().isEmpty()) { "restart reconciliation repeated" }
+
                     }
                     LocalSessionStore(context, practiceName).use { store ->
                         val practice = PracticeStore(store)
                         practice.importLegacy("[]")
-                        check(practice.list().size == 4 && practice.get("stable-attempt")!!.vert == 140)
+                        check(practice.list().size == 6 && practice.get("stable-attempt")!!.vert == 140)
                     }
                 } finally { context.deleteDatabase(practiceName) }
             }
