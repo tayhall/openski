@@ -56,7 +56,12 @@ data class TestMarker(val id: Long, val timeMs: Long, val label: String, val sid
 data class SensorHealth(val side: String, val timeMs: Long, val battery: Int?, val batteryAtMs: Long?,
     val rssi: Int?, val rssiAtMs: Long?)
 
-class LocalSessionStore(context: Context, databaseName: String = "openski-local.db") : SQLiteOpenHelper(context, databaseName, null, 12) {
+class LocalSessionStore(context: Context, databaseName: String = "openski-local.db") : SQLiteOpenHelper(context, databaseName, null, VERSION) {
+    companion object {
+        /** Current schema version; every step has a migration in [onUpgrade] and a check in StorageInstrumentation. */
+        const val VERSION = 13
+    }
+
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("""CREATE TABLE sessions (
             id TEXT PRIMARY KEY, started_at_ms INTEGER NOT NULL, ended_at_ms INTEGER,
@@ -79,6 +84,7 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
         addTrackSchema(db)
         addClockSchema(db)
         addResortSchema(db)
+        addDaySchema(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
@@ -93,6 +99,23 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
         if (oldVersion < 10) addTrackSchema(db)
         if (oldVersion < 11) addClockSchema(db)
         if (oldVersion < 12) addResortSchema(db)
+        if (oldVersion < 13) addDaySchema(db)
+    }
+
+    /**
+     * Version 13: whole ski days (see DayStore). Independent of sessions and resorts: deleting a session or a resort
+     * never touches these tables; deleting a day removes its fixes and run tags in one transaction. day_fixes keeps
+     * each fix as the phone gave it, with the barometric altitude read alongside (null without a barometer).
+     */
+    private fun addDaySchema(db: SQLiteDatabase) {
+        db.execSQL("""CREATE TABLE ski_days(id TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '', started_at_ms INTEGER NOT NULL,
+            ended_at_ms INTEGER, source TEXT NOT NULL, resort_id TEXT, notes TEXT NOT NULL DEFAULT '',
+            tags_json TEXT NOT NULL DEFAULT '{}', created_at_ms INTEGER NOT NULL)""")
+        db.execSQL("""CREATE TABLE day_fixes(day_id TEXT NOT NULL, time_ms INTEGER NOT NULL, lat REAL NOT NULL, lon REAL NOT NULL,
+            alt REAL, speed REAL, accuracy REAL NOT NULL, vertical_accuracy REAL, baro_alt REAL)""")
+        db.execSQL("CREATE INDEX day_fixes_day_idx ON day_fixes(day_id, time_ms)")
+        db.execSQL("""CREATE TABLE day_run_tags(day_id TEXT NOT NULL, segment_start_ms INTEGER NOT NULL,
+            tags_json TEXT NOT NULL DEFAULT '{}', note TEXT NOT NULL DEFAULT '', PRIMARY KEY(day_id, segment_start_ms))""")
     }
 
     /**

@@ -174,6 +174,18 @@ class HomeActivity : Activity() {
         runCard.add(Snow.button(this@HomeActivity, "Start a run") { startActivity(Intent(this@HomeActivity, RunActivity::class.java)) }, top = 16)
         add(runCard, bottom = 16)
 
+        // Whole-day tracking: a secondary action, so "Start a run" stays the one primary on this screen.
+        val dayStatus = DayTrackingService.status
+        val dayCard = Snow.card(this@HomeActivity, 22, radius = 28)
+        dayCard.addView(t("Ski day", Snow.Type.DISPLAY))
+        dayCard.add(t(if (dayStatus.tracking) "Tracking today's runs and lifts. Open the day to see them or stop tracking."
+            else "Track the whole day from the phone's GPS: runs, lifts and rests, named from a downloaded resort map. Boots optional. Experimental.",
+            Snow.Type.BODY, Snow.INK_SOFT), top = 6)
+        dayCard.add(Snow.button(this@HomeActivity, if (dayStatus.tracking) "Open today's ski day" else "Open ski day", Snow.ButtonKind.SECONDARY) {
+            startActivity(Intent(this@HomeActivity, SkiDayActivity::class.java))
+        }, top = 16)
+        add(dayCard, bottom = 16)
+
         val drill = progress.next(goal)
         if (drill != null) {
             val done = progress.stars(drill.id) > 0

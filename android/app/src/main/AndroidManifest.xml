@@ -34,6 +34,8 @@
         <activity android:name=".TechniqueVideosActivity" android:exported="false" android:theme="@style/Theme.OpenSki.Snow" />
         <activity android:name=".RunActivity" android:exported="false" android:theme="@style/Theme.OpenSki.Snow" />
         <activity android:name=".CoachingActivity" android:exported="false" android:theme="@style/Theme.OpenSki.Snow" />
+        <activity android:name=".SkiDayActivity" android:exported="false" android:theme="@style/Theme.OpenSki.Snow" />
+        <activity android:name=".ResortPickerActivity" android:exported="false" android:theme="@style/Theme.OpenSki.Snow" />
         <activity android:name=".MainActivity" android:exported="false" />
         <activity android:name=".BenchActivity" android:exported="false" />
         <activity android:name=".TrialChecklistActivity" android:exported="false" />
@@ -41,6 +43,11 @@
             android:name=".SensorSessionService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice|mediaPlayback|location" />
+        <!-- Whole-day tracking (ski day): location only, independent of the boot sensors; see docs/ski-day-design.md. -->
+        <service
+            android:name=".DayTrackingService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
         <activity android:name=".SessionDetailActivity" android:exported="false" />
     </application>
 </manifest>

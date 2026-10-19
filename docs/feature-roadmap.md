@@ -13,14 +13,14 @@ The conversation's main table contains 15 ideas. Before this work, 3 were partia
 | Pressure proxy | Not implemented | Acceleration is recorded; no loading metric. |
 | Turn shape | Partial | Dry lean onset/neutral return, durations and normalised roll profiles; real turn shape and radius remain unimplemented. |
 | Stability | Not implemented | No vibration/chatter metric. |
-| Terrain | Not implemented | No phone GPS/altitude recording or mapping. |
+| Terrain | Partial (experimental) | Run GPS; whole-day phone GPS and barometer tracking split into runs, lifts and rests and named from cached OpenStreetMap pistes and lifts (`docs/ski-day-design.md`); synthetic tests only, unchecked on a phone or on snow. |
 | Video sync | Partial | Shared timeline, manual SYNC correspondence, reviewed labels and on-screen orientation overlay; no automatic matching or burned-in export. |
 | Ghost run | Not implemented | No comparison against a reference run. |
 | Progression | Not implemented | Sessions grouped by ski day; no metric trends over time. |
 | AI coach | Not implemented | No coaching engine or AI integration. |
 | Challenges | Not implemented | No challenge tracking. |
 | Equipment comparison | Partial (started here) | Editable session equipment labels, reuse suggestions and exported metadata; no metric comparison yet. |
-| Open telemetry | Partial | Raw IMU, calibrated orientation, labels, battery/RSSI, detected movements and reproducible analysis settings/summary exports; no GPS. |
+| Open telemetry | Partial | Raw IMU, calibrated orientation, labels, battery/RSSI, detected movements and reproducible analysis settings/summary exports; ski days export raw fixes as GPX and the derived day as JSON. |
 
 Other proposals outside that table are also outstanding: telemetry overlays burned into video, OpenSki Score, personal bests, leaderboards, friends, achievements, video sharing and a 3D ski replay.
 
@@ -32,7 +32,7 @@ Session detail now supports Set equipment, including an empty label to clear it.
 
 1. Complete powered-sensor recording/recovery acceptance checks.
 2. Collect labelled skiing footage and mounting information to validate turn detection.
-3. Record phone GPS alongside sessions for speed, distance and terrain context.
+3. Check whole-day tracking and the ski day screens on a phone and then on a real ski day (`docs/android-acceptance.md`, "Ski day checks"), and tune the splitter thresholds on that data.
 4. Build descriptive turn metrics and equipment comparison using quality-qualified recordings.
 5. Validate the existing on-screen overlay and manual SYNC workflow against recorded video, then investigate automatic alignment and video clock drift correction.
 
