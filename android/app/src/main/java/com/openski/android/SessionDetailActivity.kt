@@ -123,7 +123,7 @@ class SessionDetailActivity : Activity() {
         val replayPage=reviewPage()
         val analysisPage=reviewPage()
         val detailsPage=reviewPage()
-        if (session.origin != "synthetic" && loaded.run == null) replayPage.addView(RecoveryCard(this, session.id), LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(14) })
+        if (session.origin != "synthetic" && loaded.run == null) replayPage.addView(RecoveryCard(this, session.id, dark = true), LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(14) })
         if(session.testSession) {
             val summary=SkiUi.card(this)
             summary.addView(SkiUi.label(this,"COMPLETED LEAN MOVEMENTS",11f,SkiUi.MUTED,true))
@@ -137,7 +137,7 @@ class SessionDetailActivity : Activity() {
         }
         val runPage=if(loaded.run!=null) reviewPage() else null
         runPage?.let { page ->
-            if (session.origin != "synthetic") page.addView(RecoveryCard(this, session.id), LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(14) })
+            if (session.origin != "synthetic") page.addView(RecoveryCard(this, session.id, dark = true), LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(14) })
             healthLines.firstOrNull()?.let { page.addView(text("Raw replay screening · $it. Starting screening rules, not validated technique limits.")) }
             loaded.run?.let { page.addView(RunComparisonCard.build(this,RunComparisons.build(it,session.origin=="synthetic")),LinearLayout.LayoutParams(-1,-2).apply { bottomMargin=dp(14) }) }
             loaded.run?.let { run ->

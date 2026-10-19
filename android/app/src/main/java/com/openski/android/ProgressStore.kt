@@ -4,8 +4,11 @@ import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** Profile/mounting remain in preferences; attempts are imported once into SQLite. */
-class ProgressStore(context: Context) {
+/**
+ * Profile/mounting remain in preferences; attempts are imported once into SQLite. A caller that already holds
+ * the database (the service) passes it as [shared] so practice reads use its connection instead of opening another.
+ */
+class ProgressStore(context: Context, private val shared: LocalSessionStore? = null) {
     private val appContext = context.applicationContext
     private val sensorPrefs = context.getSharedPreferences(SensorSessionService.PREFS, Context.MODE_PRIVATE)
     private val prefs = context.getSharedPreferences("openski-training", Context.MODE_PRIVATE)
@@ -20,11 +23,17 @@ class ProgressStore(context: Context) {
 
     val onboarded get() = goal != null
 
-    private fun <T> withPractice(block: (PracticeStore) -> T): T = LocalSessionStore(appContext).use { database ->
+    private fun <T> withPractice(block: (PracticeStore) -> T): T =
+        shared?.let { block(practice(it)) } ?: LocalSessionStore(appContext).use { block(practice(it)) }
+
+    private fun practice(database: LocalSessionStore): PracticeStore {
         (appContext as? OpenSkiApplication)?.ensurePracticeRecovered()
         val practice = PracticeStore(database)
-        practice.importLegacy(prefs.getString("attempts", "[]") ?: "[]")
-        block(practice)
+        // The import is once per database; checking it once per process avoids a write transaction on every read.
+        if (!legacyImported) synchronized(ProgressStore::class.java) {
+            if (!legacyImported) { practice.importLegacy(prefs.getString("attempts", "[]") ?: "[]"); legacyImported = true }
+        }
+        return practice
     }
 
     fun ensureImported() { withPractice { Unit } }
@@ -75,4 +84,6 @@ class ProgressStore(context: Context) {
     }.getOrNull()
 
     fun record(attempt: Attempt): Attempt = withPractice { it.record(attempt, calculateReward = true) }
+
+    private companion object { @Volatile var legacyImported = false }
 }

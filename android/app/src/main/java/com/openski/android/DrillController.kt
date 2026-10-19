@@ -9,6 +9,8 @@ interface DrillEffects {
     fun mark(attempt: Attempt, label: String)
     fun stopSession(attempt: Attempt)
     fun save(attempt: Attempt, run: DrillRun?, completed: (Result<Attempt>) -> Unit)
+    /** A set whose result could not be saved was given up; its ACTIVE row may be closed as interrupted. */
+    fun abandon(attempt: Attempt) {}
 }
 
 data class DrillState(val phase: DrillPhase, val drill: Drill?, val attempt: Attempt?, val side: String?,
@@ -65,7 +67,11 @@ class DrillController(private val effects: DrillEffects, private val now: () -> 
                     demoRun = DemoDrill.simulate(drill, before)
                     clock.resume(now()); phase = DrillPhase.RUNNING; message = "Demo boots · simulated"
                 } else { phase = DrillPhase.CONNECTING; message = "Waiting for a live boot stream" }
-            }.onFailure { finish(PracticeStatus.INTERRUPTED, it.message ?: "Could not prepare practice. Retry saving or reopen later.") }
+            }.onFailure {
+                // Nothing was recorded or written yet, so a refusal leaves no attempt behind.
+                attempt = null; phase = DrillPhase.IDLE
+                message = it.message ?: "Could not prepare practice. Try again later."
+            }
         }
         return null
     }
@@ -156,12 +162,14 @@ class DrillController(private val effects: DrillEffects, private val now: () -> 
     private fun currentRun() = recorder?.run(wall().toDouble(), hasPaused)
 
     fun finishEarly() {
-        if (!active || phase in listOf(DrillPhase.SAVING, DrillPhase.SAVE_FAILED)) return
+        if (phase == DrillPhase.SAVE_FAILED) { abandonSave(); return }
+        if (!active || phase == DrillPhase.SAVING) return
         finish(PracticeStatus.INCOMPLETE, "Set ended early", if (attempt?.demo == true) null else currentRun())
     }
 
     fun interrupt(reason: String) {
-        if (active && phase !in listOf(DrillPhase.SAVING, DrillPhase.SAVE_FAILED))
+        if (phase == DrillPhase.SAVE_FAILED) abandonSave()
+        else if (active && phase != DrillPhase.SAVING)
             finish(PracticeStatus.INTERRUPTED, reason, if (attempt?.demo == true) null else currentRun())
     }
 
@@ -179,6 +187,23 @@ class DrillController(private val effects: DrillEffects, private val now: () -> 
     }
 
     fun retrySave() { if (phase == DrillPhase.SAVE_FAILED) { phase = DrillPhase.SAVING; persist() } }
+
+    /** Gives up on a result that cannot be saved, so a storage failure cannot hold the service active forever. */
+    private fun abandonSave() {
+        val pending = pendingResult ?: return
+        attempt = pending.copy(status = PracticeStatus.INTERRUPTED, stars = 0, vert = 0)
+        pendingResult = null; phase = DrillPhase.DONE
+        message = "Practice could not be saved and was closed as interrupted. The raw recording, if any, has been kept."
+        effects.abandon(pending)
+    }
+
+    /** The attempt and evidence the set will be judged on if it completes, while it is still in progress. */
+    fun prospective(): Pair<Attempt, PracticeEvidence>? {
+        val a = attempt?.takeIf { it.status == PracticeStatus.ACTIVE } ?: return null
+        return a.copy(status = PracticeStatus.COMPLETED) to PracticeEvidence(if (a.demo) null else side, if (a.demo) null else mounting,
+            ScoringEvidenceQuality.SUFFICIENT, if (a.demo) ScoringEvidenceSource.SIMULATED else ScoringEvidenceSource.LIVE_ROLL,
+            timingPolicy = if (hasPaused && !a.demo) PracticeTiming.POLICY else "continuous_v1")
+    }
 
     private fun persist() {
         val pending = pendingResult ?: return

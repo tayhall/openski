@@ -60,6 +60,7 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
     companion object {
         /** Current schema version; every step has a migration in [onUpgrade] and a check in StorageInstrumentation. */
         const val VERSION = 15
+        private val captureWrites = java.util.concurrent.atomic.AtomicLong()
         /** Rows per query when a session is read in chunks ([loadDataInChunks]). */
         const val LOAD_CHUNK_ROWS = 5_000
     }
@@ -406,6 +407,9 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
         }, "id=?", arrayOf(id))
     }
 
+    /** Bumped by every write to captures from any instance, so recovery readers can skip a re-read when nothing changed. */
+    val captureRevision get() = captureWrites.get()
+
     @Synchronized fun deleteSession(id: String): Boolean {
         val session = getSession(id) ?: return false
         if (session.endedAtMs == null || captures(id).any { it.state !in listOf("erased", "unavailable", "lost") }) return false
@@ -418,7 +422,7 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
             db.delete("sessions", "id=?", arrayOf(id))
             db.setTransactionSuccessful()
             return true
-        } finally { db.endTransaction() }
+        } finally { db.endTransaction(); captureWrites.incrementAndGet() }
     }
 
     /** Messages of [sessionId]'s events that start with [prefix], oldest first. */
@@ -440,6 +444,7 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
             put("id", id); put("session_id", sessionId); put("side", side); put("address", address)
             put("started_at_ms", startedAtMs); put("state", state)
         })
+        captureWrites.incrementAndGet()
         return SensorCapture(id, sessionId, side, address, startedAtMs, state, 0, 0, "")
     }
 
@@ -447,6 +452,7 @@ class LocalSessionStore(context: Context, databaseName: String = "openski-local.
         writableDatabase.update("captures", ContentValues().apply {
             put("state", state); put("expected", expected); put("dropped", dropped); put("error", error)
         }, "id=?", arrayOf(id))
+        captureWrites.incrementAndGet()
     }
 
     @Synchronized fun captures(sessionId: String? = null): List<SensorCapture> = readableDatabase.rawQuery(
