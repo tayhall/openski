@@ -10,6 +10,7 @@ platformio.local.ini
 firmware.zip
 .gradle/
 **/.gradle/
+**/.kotlin/
 local.properties
 **/build/
 .idea/

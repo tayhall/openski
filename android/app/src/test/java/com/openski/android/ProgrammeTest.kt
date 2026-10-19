@@ -111,6 +111,37 @@ class ProgrammeTest {
         assertEquals(8, result.vert(80))
         assertEquals(20, result.vert(70))
     }
+
+    @Test fun demosCannotSetMeasuredBestsPointsStreaksOrUnlocks() {
+        val today = LocalDate.of(2026, 10, 19)
+        val demo = attempt("slow-rolls", 3, today, score = 100, demo = true)
+        val measured = Progress(listOf(demo), zone = ZoneOffset.UTC)
+        assertNull(measured.best("slow-rolls"))
+        assertEquals(0, measured.vert)
+        assertEquals(0, measured.streak(demo.timeMs))
+        assertFalse(measured.unlocked(Programme.drills[1]))
+        val exploration = Progress(listOf(demo), demo = true)
+        assertEquals(100, exploration.best("slow-rolls")!!.score)
+        assertTrue(Programme.drills.all(exploration::unlocked))
+    }
+
+    @Test fun incompleteAndInterruptedAttemptsAreNotAchievements() {
+        val a = attempt("slow-rolls", 3, LocalDate.of(2026, 10, 19), score = 100)
+        val progress = Progress(listOf(a.copy(status = PracticeStatus.INCOMPLETE), a.copy(status = PracticeStatus.INTERRUPTED)))
+        assertTrue(progress.attempts.isEmpty())
+        assertEquals(0, progress.vert)
+        assertFalse(progress.unlocked(Programme.drills[1]))
+    }
+
+    @Test fun mixedHistoryUsesOnlyCompletedAttemptsFromTheSelectedSource() {
+        val day = LocalDate.of(2026, 10, 19)
+        val live = attempt("slow-rolls", 1, day, score = 65)
+        val demo = live.copy(demo = true, score = 100, stars = 3, vert = 200)
+        val progress = Progress(listOf(live, demo))
+        assertEquals(live, progress.best("slow-rolls"))
+        assertEquals(65, progress.vert)
+        assertEquals(1, progress.stars("slow-rolls"))
+    }
 }
 
 class LiveDrillTest {

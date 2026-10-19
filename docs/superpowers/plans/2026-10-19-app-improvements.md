@@ -220,6 +220,13 @@ Use the existing [garden trials](../../garden-trial-protocol.md) for integrated 
 
 Full navigation replacement, merged universal activity timeline, Compose migration, new sensing hardware, cloud/social features, automatic personal-target escalation, pressure/true edge-angle inference and a new overall skiing score. These can be reconsidered after the preparation/practice/review loop has real usage evidence.
 
+## Implementation tracking
+
+- Documentation baseline: `docs/project-review-plan`, draft PR #44.
+- Increment 1: `feat/practice-records`, based on the documentation branch. Implements SQLite v14 practice records/import, source-aware progress and UI, incomplete-set eligibility and transactional reward deduplication.
+- Validation: 650 JVM tests, zero failures (one opt-in release check skipped), debug/instrumentation APK builds and lint passed. StorageInstrumentation passed on the Pixel 9a emulator, including the new v13→v14 checks. An existing ski-day test was corrected to find its unknown-accuracy fix by timestamp rather than assuming it sorts last.
+- Remaining branches follow this plan in order; service-owned drill lifecycle has not been implemented in increment 1.
+
 ## First executable task
 
 Begin PR 1 by specifying the attempt/source/completion contract and adding the source-aware progress cases, then implement the transactional legacy import and practice store. Before moving drill state in PR 2, establish a stable attempt ID and an idempotent completion operation. This prevents the reliability fix from moving duplicate-reward risks into the service.

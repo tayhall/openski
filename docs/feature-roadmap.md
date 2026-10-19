@@ -16,7 +16,7 @@ The table tracks the original 15 ideas against current code. Partial implementat
 | Terrain | Partial (experimental) | Run GPS; whole-day phone GPS and barometer tracking split into runs, lifts and rests and named from cached OpenStreetMap pistes and lifts (`docs/ski-day-design.md`); synthetic tests only, unchecked on a phone or on snow. |
 | Video sync | Partial | Shared timeline, manual SYNC correspondence, reviewed labels and on-screen orientation overlay; no automatic matching or burned-in export. |
 | Ghost run | Partial | Drills show a previous-attempt ghost; runs compare a reconstructed half-turn wave with a target. No measured reference-run comparison. |
-| Progression | Partial | Training path unlocks, stars, best drill scores, streaks and vert points; demo attempts count. No longitudinal on-snow metric trends. |
+| Progression | Partial | Training path unlocks, stars, best drill scores, streaks and practice points; Demo is separate from measured achievements. No longitudinal on-snow metric trends. |
 | AI coach | Partial (rule-based) | Metronome and chirp feedback judge half-turn windows against beat/depth targets. No AI model or validated technique diagnosis. |
 | Challenges | Not implemented | No challenge tracking. |
 | Equipment comparison | Partial (started here) | Editable session equipment labels, reuse suggestions and exported metadata; no metric comparison yet. |

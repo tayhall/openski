@@ -175,3 +175,14 @@ Whole-day tracking (`DayTrackingService`), the day report, the ski day and resor
 - [ ] Leave a day open overnight (or set the phone clock 13 h ahead): opening the day screen or resuming closes it at its last fix instead of continuing it.
 - [ ] Rotate the phone while the export save picker is open: the export still writes the file.
 - [ ] Battery: note the battery drop over one hour of tracking with the screen off (unmeasured so far).
+
+
+## Practice records and source separation (v14)
+
+- [x] Pixel 9a emulator, 19 October 2026 — StorageInstrumentation: fresh install and v13→v14 upgrade, failed-import rollback, identical-looking legacy rows, repeat import, immutable completion, target/session round trip and session deletion preserving practice history.
+- [ ] Upgrade with both demo and measured preference attempts. Original rows/scores remain under their correct source; the UI explains why measured totals may now exclude old demos.
+- [ ] Complete a demo: it appears in Demo, changes no My practice best/streak/unlock, and uses practice points rather than GPS vertical units. Demo drills remain freely explorable.
+- [ ] Finish a measured set early: recent history says incomplete, with no stars/points/unlocks. A complete measured set retains normal version-1 scoring.
+- [ ] Open a locked measured drill through Demo and try My boots: measured progression is still enforced.
+- [ ] Failure paths: malformed legacy JSON leaves source preferences untouched; a storage failure shows an error rather than empty successful history; Retry save uses the same attempt identity.
+- [ ] Path/Progress source choice survives rotation. No device-BLE validation is claimed for this increment; drill lifecycle preservation is scheduled separately.

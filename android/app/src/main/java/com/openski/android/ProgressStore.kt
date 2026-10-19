@@ -4,8 +4,9 @@ import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
 
-/** Training profile and drill history. Kept in preferences; raw sessions stay in [LocalSessionStore]. */
+/** Profile/mounting remain in preferences; attempts are imported once into SQLite. */
 class ProgressStore(context: Context) {
+    private val appContext = context.applicationContext
     private val sensorPrefs = context.getSharedPreferences(SensorSessionService.PREFS, Context.MODE_PRIVATE)
     private val prefs = context.getSharedPreferences("openski-training", Context.MODE_PRIVATE)
 
@@ -19,17 +20,15 @@ class ProgressStore(context: Context) {
 
     val onboarded get() = goal != null
 
-    fun attempts(): List<Attempt> {
-        val array = runCatching { JSONArray(prefs.getString("attempts", "[]")) }.getOrDefault(JSONArray())
-        return (0 until array.length()).mapNotNull { index ->
-            array.optJSONObject(index)?.let {
-                Attempt(it.optString("drill"), it.optLong("time"), it.optInt("score"), it.optInt("stars"),
-                    it.optInt("vert"), it.optBoolean("demo"))
-            }
-        }
+    private fun <T> withPractice(block: (PracticeStore) -> T): T = LocalSessionStore(appContext).use { database ->
+        val practice = PracticeStore(database)
+        practice.importLegacy(prefs.getString("attempts", "[]") ?: "[]")
+        block(practice)
     }
 
-    fun progress() = Progress(attempts(), experience.startsOn)
+    fun attempts(): List<Attempt> = withPractice { it.list() }
+
+    fun progress(demo: Boolean = false) = Progress(attempts(), experience.startsOn, demo = demo)
 
     /** Which signed sensor axis points toward the toe, remembered per boot ("L" or "R"). */
     fun mounting(side: String): Mounting? {
@@ -68,12 +67,5 @@ class ProgressStore(context: Context) {
         RollTrace(FloatArray(s.length()) { s.getDouble(it).toFloat() }, FloatArray(d.length()) { d.getDouble(it).toFloat() })
     }.getOrNull()
 
-    fun record(attempt: Attempt) {
-        val array = JSONArray()
-        (attempts() + attempt).forEach {
-            array.put(JSONObject().put("drill", it.drillId).put("time", it.timeMs).put("score", it.score)
-                .put("stars", it.stars).put("vert", it.vert).put("demo", it.demo))
-        }
-        prefs.edit().putString("attempts", array.toString()).apply()
-    }
+    fun record(attempt: Attempt): Attempt = withPractice { it.record(attempt, calculateReward = true) }
 }

@@ -16,7 +16,8 @@ class StorageInstrumentation : Instrumentation() {
     private val tablesByVersion = mapOf(
         11 to listOf("clock_sync","mag_samples","phone_samples"),
         12 to listOf("resorts","resort_ways","resort_stations"),
-        13 to listOf("ski_days","day_fixes","day_run_tags"))
+        13 to listOf("ski_days","day_fixes","day_run_tags"),
+        14 to listOf("practice_attempts","practice_imports"))
     /** Drops every table added after [version], so reopening with an older version number is a genuine upgrade. */
     private fun dropTablesAbove(db: SQLiteDatabase, version: Int) =
         tablesByVersion.filterKeys { it > version }.values.flatten().forEach { db.execSQL("DROP TABLE IF EXISTS $it") }
@@ -298,6 +299,47 @@ class StorageInstrumentation : Instrumentation() {
                     check(resorts.delete("fresh") && resorts.list().isEmpty()) { "fresh delete" }
                 }
             } finally { context.deleteDatabase(freshResorts) }
+            // Version 13 -> 14 and fresh install: import rollback, retry, rewards and session independence.
+            for (upgrade in listOf(false, true)) {
+                val practiceName = "openski-practice-${UUID.randomUUID()}.db"
+                try {
+                    LocalSessionStore(context, practiceName).use { it.writableDatabase.version }
+                    if (upgrade) SQLiteDatabase.openDatabase(context.getDatabasePath(practiceName).path, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
+                        dropTablesAbove(db, 13)
+                        db.version = 13
+                    }
+                    LocalSessionStore(context, practiceName).use { store ->
+                        check(store.readableDatabase.version == LocalSessionStore.VERSION)
+                        val practice = PracticeStore(store)
+                        val row = """{"drill":"slow-rolls","time":1000,"score":95,"stars":3,"vert":190,"demo":true}"""
+                        check(runCatching { practice.importLegacy("[$row,null]") }.isFailure)
+                        check(practice.list().isEmpty()) { "failed import leaked rows" }
+                        practice.importLegacy("[$row,$row]")
+                        practice.importLegacy("malformed after completed import must be ignored")
+                        check(practice.list().size == 2 && practice.list().map { it.id }.toSet().size == 2)
+                        check(practice.list().all { it.demo && it.target == null && it.vert == 190 })
+                        store.createSession("practice-session", 2000)
+                        val completed = Attempt("slow-rolls", 2000, 70, 1, 0, false, id = "stable-attempt",
+                            sessionId = "practice-session", target = PracticeTarget.of(Programme.drills.first()))
+                        val saved = practice.record(completed, calculateReward = true)
+                        check(saved.vert == 140) { "demo affected measured reward" }
+                        check(practice.record(completed.copy(score = 100), calculateReward = true) == saved) { "completion was not idempotent" }
+                        check(practice.get(saved.id) == saved) { "target or link round trip" }
+                        check(!store.deleteSession("practice-session")) { "open-session deletion guard was bypassed" }
+                        store.finishSession("practice-session", 3000)
+                        check(store.deleteSession("practice-session"))
+                        check(practice.get(saved.id) == saved) { "session deletion removed achievement" }
+                        val early = practice.record(completed.copy(id = "early", status = PracticeStatus.INCOMPLETE), calculateReward = true)
+                        check(early.vert == 0 && early.stars == 0)
+                        check(Progress(practice.list()).best("slow-rolls") == saved)
+                    }
+                    LocalSessionStore(context, practiceName).use { store ->
+                        val practice = PracticeStore(store)
+                        practice.importLegacy("[]")
+                        check(practice.list().size == 4 && practice.get("stable-attempt")!!.vert == 140)
+                    }
+                } finally { context.deleteDatabase(practiceName) }
+            }
             // Version 12 -> 13: ski days. A genuine upgrade: drop the three day tables, keep a session and a resort, set 12, reopen.
             val dayMigration="openski-migration-12-${UUID.randomUUID()}.db"
             try {
@@ -312,7 +354,7 @@ class StorageInstrumentation : Instrumentation() {
                     db.version=12
                 }
                 LocalSessionStore(context,dayMigration).use { store ->
-                    check(store.readableDatabase.version==13) { "Not upgraded to 13" }
+                    check(store.readableDatabase.version==LocalSessionStore.VERSION) { "Not upgraded from 12" }
                     check(store.getSession("before-days")!!.endedAtMs==160000L) { "Upgrade lost a session" }
                     check(ResortStore(store).ways("kept").size==3) { "Upgrade lost a resort" }
                     listOf("ski_days","day_fixes","day_run_tags").forEach { table ->
@@ -347,7 +389,7 @@ class StorageInstrumentation : Instrumentation() {
                     val unknown=DayFix(GpsFix(550_000L,46.0,7.0,null,null,RunTrack.UNKNOWN_ACCURACY_M,null))
                     check(days.importDay(gpx,rows.take(3)+unknown)==0 && days.fixes("g1").size==4) { "import" }
                     check(store.readableDatabase.rawQuery("SELECT COUNT(*) FROM day_fixes WHERE day_id='g1' AND accuracy IS NULL",null).use { it.moveToFirst() && it.getInt(0)==1 }) { "unknown accuracy not stored as null" }
-                    check(days.fixes("g1").last()==unknown) { "unknown accuracy round trip" }
+                    check(days.fixes("g1").single { it.fix.timeMs==unknown.fix.timeMs }==unknown) { "unknown accuracy round trip" }
                     check(days.lastFixTime("d1")==1_449_000L && days.lastFixTime("nothing")==null) { "last fix time" }
                     // A day left open for over 12 h is closed at its last fix instead of being resumed.
                     days.create(SkiDay("old","Old",1_000L,null,DaySource.PHONE,null,"",DayTags(),1_000L))
@@ -474,7 +516,7 @@ class StorageInstrumentation : Instrumentation() {
             }
             context.deleteDatabase(name)
             DrillMountingRegression.run(this)
-            finish(Activity.RESULT_OK,Bundle().apply { putString("stream","PASS: v1–v6 migration, demo creation, saved review settings, calibration, test labels, health, session edits, staged recovery validation, retained copy, ZIP export and protected deletion, v9->v10 run GPS track, v11->v12 resort maps, fresh-install resort round trip, v12->v13 ski days\n") })
+            finish(Activity.RESULT_OK,Bundle().apply { putString("stream","PASS: v1–v6 migration, demo creation, saved review settings, calibration, test labels, health, session edits, staged recovery validation, retained copy, ZIP export and protected deletion, v9->v10 run GPS track, v11->v12 resort maps, fresh-install resort round trip, v12->v13 ski days, v13->v14 practice attempts, atomic legacy import and idempotent completion\n") })
         } catch(error: Throwable) {
             targetContext.deleteDatabase(name)
             finish(Activity.RESULT_CANCELED,Bundle().apply { putString("stream","FAIL: ${android.util.Log.getStackTraceString(error)}\n") })

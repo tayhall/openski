@@ -39,6 +39,8 @@ class DrillActivity : Activity(), SensorSessionService.Listener {
     private val io = Executors.newSingleThreadExecutor()
 
     private var phase = Phase.INTRO
+    private var attemptId = java.util.UUID.randomUUID().toString()
+    private var completedSessionId: String? = null
     private var service: SensorSessionService? = null
     private var bound = false
     private val lastSample = ConcurrentHashMap<String, Long>()
@@ -76,8 +78,14 @@ class DrillActivity : Activity(), SensorSessionService.Listener {
         frame = FrameLayout(this).apply { setBackgroundColor(Snow.SNOW) }
         SkiUi.applyInsets(frame)
         setContentView(frame)
+        attemptId = savedInstanceState?.getString("attempt_id") ?: attemptId
         intro()
         handler.post(ticker)
+    }
+
+    override fun onSaveInstanceState(state: Bundle) {
+        state.putString("attempt_id", attemptId)
+        super.onSaveInstanceState(state)
     }
 
     override fun onDestroy() {
@@ -179,6 +187,22 @@ class DrillActivity : Activity(), SensorSessionService.Listener {
     }
 
     private fun startLive() {
+        show { add(t("Checking practice…", Snow.Type.BODY)) }
+        io.execute {
+            val allowed = runCatching { store.progress().unlocked(drill) }
+            runOnUiThread {
+                if (!isDestroyed) allowed.onSuccess { open ->
+                    if (open) {
+                        attemptId = java.util.UUID.randomUUID().toString()
+                        completedSessionId = null
+                        startPreparedLive()
+                    } else problem("This drill is not yet unlocked in My practice. Complete the preceding measured sets, or explore it in Demo.")
+                }.onFailure { problem("Could not load practice history. Your saved history has been kept.") }
+            }
+        }
+    }
+
+    private fun startPreparedLive() {
         val missing = needed()
         if (missing.isNotEmpty()) { requestPermissions(missing, REQUEST_PERMISSIONS); return }
         connect()
@@ -342,23 +366,10 @@ class DrillActivity : Activity(), SensorSessionService.Listener {
         service?.markTest("PAUSE", System.currentTimeMillis(), "Drill set ended")
         stopRecording()
         val run = active.run()
-        if (run.detection.movements.isEmpty()) {
-            phase = Phase.INTRO
-            show {
-                add(backLink("Path"), bottom = 8)
-                add(t("No rolls detected", Snow.Type.DISPLAY), bottom = 10)
-                add(t("Check the sensor mounting, then calibrate again and roll further each side.", Snow.Type.BODY, Snow.INK_SOFT), bottom = 20)
-                add(Snow.button(this@DrillActivity, "Try again") { restart() }, bottom = 10)
-                add(Snow.button(this@DrillActivity, "Change mounting", Snow.ButtonKind.SECONDARY) {
-                    MountingPicker.show(this@DrillActivity, store, side) { restart() }
-                })
-            }
-            return
-        }
         result(run)
     }
 
-    private fun restart() { recorder = null; sessionId = null; ownsRecording = false; intro() }
+    private fun restart() { attemptId = java.util.UUID.randomUUID().toString(); completedSessionId = null; recorder = null; sessionId = null; ownsRecording = false; intro() }
 
     /** Leave the live flow and, if we opened a test recording, close it. */
     private fun abandon() {
@@ -370,6 +381,7 @@ class DrillActivity : Activity(), SensorSessionService.Listener {
         if (!ownsRecording) return
         ownsRecording = false
         val id = sessionId
+        completedSessionId = id
         sessionId = null
         try { startService(Intent(this, SensorSessionService::class.java).setAction(SensorSessionService.ACTION_STOP_RECORDING)) } catch (_: Exception) {}
         id?.let { sessionId ->
@@ -454,7 +466,19 @@ class DrillActivity : Activity(), SensorSessionService.Listener {
     // Demo boots ----------------------------------------------------------------------------------------
 
     private fun startRun() {
-        val before = store.attempts().count { it.drillId == drill.id && it.demo }
+        attemptId = java.util.UUID.randomUUID().toString()
+        completedSessionId = null
+        show { add(t("Loading demo…", Snow.Type.BODY)) }
+        io.execute {
+            val before = runCatching { store.attempts().count { it.drillId == drill.id && it.demo } }
+            runOnUiThread {
+                if (!isDestroyed) before.onSuccess { animateDemo(it) }
+                    .onFailure { problem("Could not load practice history. Your saved history has been kept.") }
+            }
+        }
+    }
+
+    private fun animateDemo(before: Int) {
         val run = DemoDrill.simulate(drill, before)
         val color = Snow.pisteColor(drill.piste)
         phase = Phase.INTRO
@@ -490,28 +514,53 @@ class DrillActivity : Activity(), SensorSessionService.Listener {
     private fun result(run: DrillRun) {
         phase = Phase.DONE
         val result = DrillScoring.score(drill, run.detection)
-        val progress = store.progress()
-        val previousBest = progress.best(drill.id)?.score
-        val vert = result.vert(previousBest)
-        val wasOpen = Programme.drills.filter { progress.unlocked(it) }.map { it.id }.toSet()
+        val id = attemptId
+        val linkedSession = if (run.demo) null else completedSessionId
         val ghost = store.lastTrace(drill.id, run.demo)
-        store.record(Attempt(drill.id, System.currentTimeMillis(), result.score, result.stars, vert, run.demo))
-        store.saveTrace(drill.id, run.demo, run.trace)
-        val after = store.progress()
-        val unlocked = Programme.drills.firstOrNull { after.unlocked(it) && it.id !in wasOpen }
-        val headline = when (result.stars) { 3 -> "Clean set"; 2 -> "Good set"; 1 -> "Passed"; else -> "Not quite yet" }
+        show { add(t("Saving practice…", Snow.Type.BODY)) }
+        io.execute {
+            val saved = runCatching {
+                val progress = store.progress(run.demo)
+                val wasOpen = Programme.drills.filter { progress.unlocked(it) }.map { it.id }.toSet()
+                val attempt = store.record(Attempt(drill.id, System.currentTimeMillis(), result.score, result.stars, 0, run.demo,
+                    id = id, sessionId = linkedSession,
+                    status = if (result.completed >= drill.movements) PracticeStatus.COMPLETED else PracticeStatus.INCOMPLETE,
+                    target = PracticeTarget.of(drill)))
+                store.saveTrace(drill.id, run.demo, run.trace)
+                val after = store.progress(run.demo)
+                attempt to Programme.drills.firstOrNull { after.unlocked(it) && it.id !in wasOpen }
+            }
+            runOnUiThread {
+                if (!isDestroyed) saved.onSuccess { (attempt, unlocked) -> showResult(run, result, ghost, attempt, unlocked) }
+                    .onFailure {
+                        show {
+                            add(t("Practice could not be saved", Snow.Type.DISPLAY), bottom = 12)
+                            add(t("Your existing history has been kept. Retry saving this result.", Snow.Type.BODY), bottom = 12)
+                            add(Snow.button(this@DrillActivity, "Retry save") { result(run) })
+                        }
+                    }
+            }
+        }
+    }
+
+    private fun showResult(run: DrillRun, result: DrillResult, ghost: RollTrace?, attempt: Attempt, unlocked: Drill?) {
+        val vert = attempt.vert
+        val headline = if (!attempt.eligible) "Incomplete set" else when (result.stars) { 3 -> "Clean set"; 2 -> "Good set"; 1 -> "Passed"; else -> "Not quite yet" }
         val again: () -> Unit = { restart(); if (run.demo) startRun() else startLive() }
         show {
             add(t(if (run.demo) "Demo boots" else "Your boots", Snow.Type.CAPTION, Snow.INK_SOFT), bottom = 4)
             add(t(headline, Snow.Type.HERO), bottom = 14)
+            add(t(if (run.demo) "Simulated results stay in Demo. They do not change My practice achievements."
+                else if (!attempt.eligible) "This set is saved as incomplete and earns no stars or practice points."
+                else "Measured cuff-roll exercise · My practice", Snow.Type.CAPTION, Snow.INK_SOFT), bottom = 12)
             add(CarvedLineView(this@DrillActivity, run.trace, ghost, drill.depthDegrees, Snow.pisteColor(drill.piste)), bottom = 6)
             if (ghost != null) add(t("Grey line: your last try", Snow.Type.CAPTION, Snow.INK_SOFT), bottom = 12)
             val summary = LinearLayout(this@DrillActivity).apply { gravity = Gravity.CENTER_VERTICAL }
-            summary.addView(StarRow(this@DrillActivity, result.stars, 28))
+            summary.addView(StarRow(this@DrillActivity, attempt.stars, 28))
             summary.addView(t("${result.score}", Snow.Type.DISPLAY), LinearLayout.LayoutParams(-2, -2).apply { marginStart = Snow.dp(this@DrillActivity, 14) })
             summary.addView(View(this@DrillActivity), LinearLayout.LayoutParams(0, 1, 1f))
-            summary.addView(t("+$vert vert", Snow.Type.TITLE, Snow.ORANGE))
             add(summary, top = 8, bottom = 16)
+            add(t("+$vert practice points", Snow.Type.TITLE), bottom = 12)
 
             val cue = Snow.card(this@DrillActivity, 18, Snow.GLACIER)
             cue.addView(t("Next time", Snow.Type.TITLE))
@@ -525,10 +574,10 @@ class DrillActivity : Activity(), SensorSessionService.Listener {
 
             unlocked?.let { add(t("Unlocked: ${it.title}", Snow.Type.TITLE, Snow.ORANGE), bottom = 12) }
             if (!run.demo) add(t("Saved to your logbook as a test session.", Snow.Type.CAPTION, Snow.INK_SOFT), bottom = 12)
-            if (result.passed && unlocked != null) add(Snow.button(this@DrillActivity, "Next drill") {
+            if (attempt.eligible && result.passed && unlocked != null) add(Snow.button(this@DrillActivity, "Next drill") {
                 startActivity(Intent(this@DrillActivity, DrillActivity::class.java).putExtra("drill", unlocked.id)); finish()
             }, bottom = 10)
-            add(Snow.button(this@DrillActivity, "Try again", if (result.passed && unlocked != null) Snow.ButtonKind.SECONDARY else Snow.ButtonKind.PRIMARY) { again() }, bottom = 10)
+            add(Snow.button(this@DrillActivity, "Try again", if (attempt.eligible && result.passed && unlocked != null) Snow.ButtonKind.SECONDARY else Snow.ButtonKind.PRIMARY) { again() }, bottom = 10)
             add(Snow.button(this@DrillActivity, "Back to path", Snow.ButtonKind.QUIET) { finish() })
         }
     }
