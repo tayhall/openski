@@ -1,4 +1,6 @@
-# OpenSki BLE protocol, version 1
+# OpenSki BLE protocol
+
+Current versions are live frame **2**, status **1**, recorder control **3**, and movement frames **1–5**. These version fields are independent; see compatibility notes before updating firmware.
 
 The ESP32 acts as a BLE GATT peripheral. An Android app scans for `OpenSki-ski`, connects, discovers the OpenSki service, reads status, and subscribes to live sample notifications.
 

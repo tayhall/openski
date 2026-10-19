@@ -1,15 +1,15 @@
 # OpenSki proof-of-concept plan
 
-Status as of 6 October 2026. The goal is a trustworthy basic pipeline before any on-snow data exists: two boot sensors, a repeatable mounting, a roll measurement we can check against known angles, and drills that score what we can actually measure. Claims about carving, edge angle on snow and turn quality wait for snow data (see [ski analysis](ski-analysis.md)).
+Current overview updated 19 October 2026 through PR #43; phase criteria below remain proposed validation steps. See [project status](project-status.md) for evidence and merged work. The goal is a trustworthy basic pipeline before any on-snow data exists: two boot sensors, a repeatable mounting, a roll measurement we can check against known angles, and drills that score what we can actually measure. Claims about carving, edge angle on snow and turn quality wait for snow data (see [ski analysis](ski-analysis.md)).
 
 ## Where we are
 
 | Area | State |
 |---|---|
 | Sensors | MPU-6050 (GY-521 breakout) on an iSpindel 4.0 PCB with an 18650 and charger board. Running on a classic **ESP32 DevKit V1** for now (default PlatformIO environment `esp32-devkit-v1`, SDA 21 / SCL 22). |
-| Next hardware | ESP32-S3 Super Mini. The S3 has no GPIO22, so `kImuSclPin` must change and the board may need its own PlatformIO environment. Not started; do it when the board arrives, then repeat Phase 0. |
-| Firmware | 100 Hz IMU (±1000 °/s, ±8 g, ~42 Hz filter), 50 Hz BLE live stream, ~10 minutes of full-rate flash recording per boot. Battery voltage is read on S3 Super Mini builds with a sense divider (see [battery diagnostics](battery-diagnostics.md)); not yet verified on a cell, and no charge percentage. |
-| App | Training path with drills on demo boots or a live boot; Geek mode keeps raw telemetry, test lab, flash recovery and session replay/export. The live drill flow has not been run on real hardware yet. |
+| New hardware | S3 Super Mini has a dedicated target (MPU-6050 on GPIO8/9). New boot builds are XIAO ESP32S3 + LSM6DSOX on GPIO5/6: `xiao-left-mag` adds LIS3MDL, `xiao-right` does not. XIAO builds use an 8 MB layout and need Phase 0 validation. |
+| Firmware | Legacy MPU-6050: 100 Hz IMU (±1000 °/s, ±8 g, ~42 Hz filter), 50 Hz BLE live stream, ~10 minutes of full-rate flash recording per boot. Battery voltage is read on S3 Super Mini builds with a sense divider (see [battery diagnostics](battery-diagnostics.md)); not yet verified on a cell, and no charge percentage. |
+| App | Runs, audio coaching, run GPS, timing/health/turn/torso exports and whole-day GPS/barometer tracking with resort maps are implemented, with device checks outstanding. Training path with drills on demo boots or a live boot; Geek mode keeps raw telemetry, test lab, flash recovery and session replay/export. The live drill flow has not been run on real hardware yet. |
 
 ## Decision: mount at the top of the cuff, near the calf
 
