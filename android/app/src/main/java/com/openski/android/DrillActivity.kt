@@ -13,7 +13,6 @@ import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 
 /** A view of the service-owned practice. Leaving or recreating this screen never stops capture. */
@@ -21,6 +20,9 @@ class DrillActivity : Activity() {
     private lateinit var drill: Drill
     private lateinit var store: ProgressStore
     private lateinit var frame: FrameLayout
+    private lateinit var phaseLayout: PhaseLayout
+    private var preparationExpanded = false
+    private var renderedScreen = ""
     private var service: SensorSessionService? = null
     private var bound = false
     private var snapshot: DrillState? = null
@@ -53,7 +55,10 @@ class DrillActivity : Activity() {
         if (savedInstanceState?.containsKey("pending_start") == true) pendingStart = savedInstanceState.getBoolean("pending_start")
         showIntro = savedInstanceState?.getBoolean("intro") ?: true
         frame = FrameLayout(this).apply { setBackgroundColor(Snow.SNOW) }
-        SkiUi.applyInsets(frame)
+        preparationExpanded = savedInstanceState?.getBoolean("preparation_expanded") ?: false
+        phaseLayout = PhaseLayout(this)
+        frame.addView(phaseLayout)
+        SkiUi.applyInsets(frame, ime = true)
         setContentView(frame)
         intro()
     }
@@ -72,40 +77,45 @@ class DrillActivity : Activity() {
     override fun onSaveInstanceState(state: Bundle) {
         pendingStart?.let { state.putBoolean("pending_start", it) }
         state.putBoolean("intro", showIntro)
+        state.putBoolean("preparation_expanded", preparationExpanded)
         super.onSaveInstanceState(state)
     }
 
     private fun t(text: String, type: Snow.Type = Snow.Type.BODY, tint: Int = Snow.INK) = Snow.text(this, text, type, tint)
     private fun LinearLayout.add(view: android.view.View, top: Int = 0, bottom: Int = 0) =
         addView(view, LinearLayout.LayoutParams(-1, -2).apply { topMargin = Snow.dp(this@DrillActivity, top); bottomMargin = Snow.dp(this@DrillActivity, bottom) })
-    private fun show(content: LinearLayout.() -> Unit) {
+    private fun show(actions: List<PhaseLayout.Action> = emptyList(), screen: String = "result", content: LinearLayout.() -> Unit) {
         counter = null; status = null; line = null
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(Snow.dp(this@DrillActivity, 20), Snow.dp(this@DrillActivity, 20), Snow.dp(this@DrillActivity, 20), Snow.dp(this@DrillActivity, 28))
             content()
         }
-        frame.removeAllViews()
-        frame.addView(ScrollView(this).apply { isFillViewport = true; addView(column) })
+        phaseLayout.content(column, screen != renderedScreen)
+        phaseLayout.controls(actions)
+        renderedScreen = screen
     }
     private fun back() = Snow.button(this, "‹ Back", Snow.ButtonKind.QUIET) { finish() }.apply { gravity = Gravity.START or Gravity.CENTER_VERTICAL }
 
     private fun intro() {
-        show {
+        val paired = listOf("L", "R").any { store.sensorAddress(it) != null }
+        val start = if (paired) PhaseLayout.Action("start-real", "Start with my boots") { begin(false) }
+            else PhaseLayout.Action("start-demo", "Try Demo") { begin(true) }
+        show(listOf(start), "intro") {
             add(back(), bottom = 8)
-            add(t(drill.title, Snow.Type.HERO), bottom = 8)
+            add(t(drill.title, Snow.Type.DISPLAY), bottom = 8)
             notice?.let { add(t(it), bottom = 12) }
             add(t(drill.summary), bottom = 12)
             add(t("${drill.movements} rolls · ${drill.paceSeconds} s beat · ${drill.depthDegrees.toInt()}° cuff roll", Snow.Type.STRONG), bottom = 16)
             add(t("Coach's cue", Snow.Type.TITLE), bottom = 6)
             add(t(drill.cue), bottom = 16)
+            val details = PreparationDetails(this@DrillActivity, "How to practise", preparationExpanded) { preparationExpanded = it }
+            details.body.add(t("Stand neutral in your boots. Roll to one side, then the other, returning to neutral between rolls."), bottom = 12)
             TechniqueVideos.forDrill(drill.id)?.let { video ->
-                add(Snow.button(this@DrillActivity, "Watch: ${video.title}", Snow.ButtonKind.QUIET) { TechniqueVideos.open(this@DrillActivity, video.id) }, bottom = 12)
+                details.body.add(Snow.button(this@DrillActivity, "Watch: ${video.title}", Snow.ButtonKind.QUIET) { TechniqueVideos.open(this@DrillActivity, video.id) }, bottom = 12)
             }
-            add(t("Stand neutral in your boots. Roll to one side, then the other, returning to neutral between rolls."), bottom = 16)
-            val paired = listOf("L", "R").any { store.sensorAddress(it) != null }
-            if (paired) add(Snow.button(this@DrillActivity, "Start with my boots") { begin(false) }, bottom = 10)
-            add(Snow.button(this@DrillActivity, "Try Demo", if (paired) Snow.ButtonKind.SECONDARY else Snow.ButtonKind.PRIMARY) { begin(true) }, bottom = 10)
+            add(details, bottom = 12)
+            if (paired) add(Snow.button(this@DrillActivity, "Try Demo", Snow.ButtonKind.SECONDARY) { begin(true) }, bottom = 10)
             add(t("Demo is simulated and separate from My practice. Measured scores describe dry cuff roll, not skiing technique.", Snow.Type.CAPTION))
             add(Snow.button(this@DrillActivity, "Set up boots", Snow.ButtonKind.QUIET) {
                 startActivity(Intent(this@DrillActivity, BootSetupActivity::class.java))
@@ -174,7 +184,11 @@ class DrillActivity : Activity() {
         }
     }
 
-    private fun active(state: DrillState) = show {
+    private fun active(state: DrillState) = show(actions = when (state.phase) {
+        DrillPhase.SAVE_FAILED -> listOf(PhaseLayout.Action("retry-save", "Retry save") { service?.retryDrillSave() })
+        DrillPhase.SAVING -> emptyList()
+        else -> listOf(PhaseLayout.Action("finish", "Finish practice", Snow.ButtonKind.SECONDARY) { service?.finishDrill(state.attempt?.id) })
+    }, screen = state.phase.name) {
         add(back(), bottom = 8)
         add(t(drill.title, Snow.Type.DISPLAY), bottom = 10)
         add(t(if (state.attempt?.demo == true) "Demo boots · simulated" else "My practice · ${state.side ?: "connecting"}", Snow.Type.CAPTION), bottom = 12)
@@ -193,10 +207,6 @@ class DrillActivity : Activity() {
             line = chart; add(chart, bottom = 12)
             counter = t("${state.count} of ${drill.movements}", Snow.Type.HERO).also { add(it, bottom = 12) }
         }
-        if (state.phase == DrillPhase.SAVE_FAILED) add(Snow.button(this@DrillActivity, "Retry save") { service?.retryDrillSave() })
-        else if (state.phase != DrillPhase.SAVING) add(Snow.button(this@DrillActivity, "Finish practice", Snow.ButtonKind.SECONDARY) {
-            service?.finishDrill(state.attempt?.id)
-        }, bottom = 12)
         add(t("You can leave this screen or lock the phone. Practice continues in the service; Finish ends the set.", Snow.Type.CAPTION), top = 12)
     }
 

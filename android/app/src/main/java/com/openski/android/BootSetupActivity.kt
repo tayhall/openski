@@ -21,7 +21,6 @@ import android.os.ParcelUuid
 import android.provider.Settings
 import android.view.View
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
 
 /** Preparation uses the same service commands and capture protections as advanced tools. */
@@ -44,6 +43,7 @@ class BootSetupActivity : Activity() {
     private var last: PreparationSnapshot? = null
     private var loading = false
     private var pendingAction: String? = null
+    private var advancedExpanded = false
     private var scanner: android.bluetooth.le.BluetoothLeScanner? = null
     private val found = mutableSetOf<String>()
     private var picker: AlertDialog? = null
@@ -77,6 +77,7 @@ class BootSetupActivity : Activity() {
         super.onCreate(state)
         Snow.configureWindow(this)
         pendingAction = state?.getString("pending_action")
+        advancedExpanded = state?.getBoolean("advanced_expanded") ?: false
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             val pad = Snow.dp(this@BootSetupActivity, 20)
@@ -85,10 +86,9 @@ class BootSetupActivity : Activity() {
         fun text(value: String, type: Snow.Type = Snow.Type.BODY): TextView = Snow.text(this, value, type).also {
             column.addView(it, Snow.fullWidth(0, this, 12))
         }
-        fun action(label: String, kind: Snow.ButtonKind = Snow.ButtonKind.SECONDARY, block: () -> Unit) = Snow.button(this, label, kind, block).also {
-            column.addView(it, Snow.fullWidth(0, this, 10))
+        fun action(label: String, kind: Snow.ButtonKind = Snow.ButtonKind.SECONDARY, parent: LinearLayout = column, block: () -> Unit) = Snow.button(this, label, kind, block).also {
+            parent.addView(it, Snow.fullWidth(0, this, 10))
         }
-        action("‹ Back", Snow.ButtonKind.QUIET) { finish() }
         text("Prepare your boots", Snow.Type.HERO)
         text("Power the sensors and keep them nearby. A saved assignment is separate from a live connection.")
         notice = text("Connect saved sensors or search for a new pair.")
@@ -98,6 +98,7 @@ class BootSetupActivity : Activity() {
         action("Search for OpenSki sensors", Snow.ButtonKind.PRIMARY) { permittedAction("scan") }
         devices = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         column.addView(devices)
+        val advanced = PreparationDetails(this, "More preparation options", advancedExpanded) { advancedExpanded = it }
         for (side in RunController.SIDES) {
             val name = if (side == "L") "Left" else "Right"
             text("$name boot", Snow.Type.TITLE)
@@ -113,29 +114,32 @@ class BootSetupActivity : Activity() {
                     .setPositiveButton("Set neutral") { _, _ -> notice.text = if (service?.zeroSensor(side) == true) "Neutral requested. Wait for the boot to confirm." else "Neutral could not be requested. Finish active capture/recovery and reconnect first." }
                     .setNegativeButton("Cancel", null).show()
             }
-            modeButtons[side] = action("$name: return to Training") {
+            modeButtons[side] = action("$name: return to Training", parent = advanced.body) {
                 notice.text = if (service?.setSensorMode(side, false) == true) "Training requested. Waiting for the boot's reported mode."
                     else "Finish capture and recovery, then reconnect before changing mode."
             }
-            forgetButtons[side] = action("$name: forget assignment") {
+            forgetButtons[side] = action("$name: forget assignment", parent = advanced.body) {
                 AlertDialog.Builder(this).setTitle("Forget $name boot?")
                     .setMessage("Recovery and active recordings protect their sensor assignments. The sensor's recorded data is not erased.")
                     .setPositiveButton("Forget") { _, _ -> notice.text = if (service?.forgetSensor(side) == true) "Assignment removed." else "Assignment is protected while capture or recovery is pending." }
                     .setNegativeButton("Cancel", null).show()
             }
         }
-        action("Swap left and right assignments") { notice.text = if (service?.swapSensors() == true) "Assignments swapped. Connect saved boots to reconnect." else "Assignments are protected while capture or recovery is pending." }
+        action("Swap left and right assignments", parent = advanced.body) { notice.text = if (service?.swapSensors() == true) "Assignments swapped. Connect saved boots to reconnect." else "Assignments are protected while capture or recovery is pending." }
         recoverButton = action("Recover saved recordings / retry") { permittedAction("recover") }
         recoverButton.isEnabled = false
         action("Return to active practice or recording") { returnToCapture() }
         action("Coaching and test sounds") { startActivity(Intent(this, CoachingActivity::class.java)) }
-        action("Bluetooth and audio devices") { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }
-        action("Phone storage") { startActivity(Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS)) }
-        action("App permissions") { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:$packageName"))) }
-        action("Review/export recordings and advanced tools") { startActivity(Intent(this, MainActivity::class.java)) }
+        action("Bluetooth and audio devices", parent = advanced.body) { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }
+        action("Phone storage", parent = advanced.body) { startActivity(Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS)) }
+        action("App permissions", parent = advanced.body) { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:$packageName"))) }
+        action("Review/export recordings and advanced tools", parent = advanced.body) { startActivity(Intent(this, MainActivity::class.java)) }
+        column.addView(advanced, Snow.fullWidth(0, this, 12))
         text("Recovery keeps the sensor copy until the phone copy passes validation. Returning to Training is available after recovery; the displayed mode changes only when the boot reports it.", Snow.Type.CAPTION)
-        val scroll = ScrollView(this).apply { isFillViewport = true; setBackgroundColor(Snow.SNOW); addView(column) }
-        SkiUi.applyInsets(scroll); setContentView(scroll)
+        val layout = PhaseLayout(this)
+        layout.content(column, true)
+        layout.controls(listOf(PhaseLayout.Action("done", "Done", Snow.ButtonKind.SECONDARY) { finish() }))
+        SkiUi.applyInsets(layout, ime = true); setContentView(layout)
     }
 
     override fun onStart() {
@@ -150,7 +154,11 @@ class BootSetupActivity : Activity() {
         bound = false; service = null
         super.onStop()
     }
-    override fun onSaveInstanceState(state: Bundle) { state.putString("pending_action", pendingAction); super.onSaveInstanceState(state) }
+    override fun onSaveInstanceState(state: Bundle) {
+        state.putString("pending_action", pendingAction)
+        state.putBoolean("advanced_expanded", advancedExpanded)
+        super.onSaveInstanceState(state)
+    }
 
     private fun update(snapshot: PreparationSnapshot) {
         last = snapshot
