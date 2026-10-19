@@ -289,6 +289,8 @@ class SensorSessionService : Service() {
     }
 
     fun sessionId(): String? = activeSessionId
+    /** True while a sensor recording or a run is in progress (resort downloads are refused then). Main thread. */
+    fun recordingActive(): Boolean = activeSessionId != null || runActive()
     fun setUiVisible(visible: Boolean) {
         uiVisible = visible
         if (visible && !recoveryPaused) clients.keys.toList().forEach {

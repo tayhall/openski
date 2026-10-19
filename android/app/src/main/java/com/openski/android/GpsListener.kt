@@ -9,10 +9,15 @@ import android.location.LocationListener
 import android.location.LocationManager
 import android.os.Looper
 
-/** One-second GPS updates from the platform `LocationManager`, delivered on the main thread. */
+/**
+ * GPS updates from the platform `LocationManager`, delivered on the main thread: one a second by default, or at the
+ * interval given to [start] (whole-day tracking slows down while the skier stands still).
+ */
 class GpsListener(private val context: Context, private val onFix: (GpsFix) -> Unit) {
     private val manager = context.getSystemService(LocationManager::class.java)
     private var active = false
+    private var intervalMs = DEFAULT_INTERVAL_MS
+    val running: Boolean get() = active
     private val listener = object : LocationListener {
         override fun onLocationChanged(location: Location) {
             onFix(RunTrack.fixFrom(
@@ -35,17 +40,23 @@ class GpsListener(private val context: Context, private val onFix: (GpsFix) -> U
     val providerOn: Boolean
         get() = try { manager.isProviderEnabled(LocationManager.GPS_PROVIDER) } catch (_: Exception) { false }
 
-    /** False when it cannot start (no permission, location off, or the platform refused). */
+    /**
+     * False when it cannot start (no permission, location off, or the platform refused). Called while running with a
+     * different [interval], it replaces the request (the platform keeps one request per listener).
+     */
     @SuppressLint("MissingPermission")
-    fun start(): Boolean {
-        if (active) return true
+    fun start(interval: Long = DEFAULT_INTERVAL_MS): Boolean {
+        if (active && interval == intervalMs) return true
         if (!permitted || !providerOn) return false
         return try {
-            manager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 1000L, 0f, listener, Looper.getMainLooper())
+            manager.requestLocationUpdates(LocationManager.GPS_PROVIDER, interval, 0f, listener, Looper.getMainLooper())
             active = true
+            intervalMs = interval
             true
         } catch (_: Exception) { false }   // SecurityException, or a provider that reports enabled but refuses
     }
+
+    companion object { const val DEFAULT_INTERVAL_MS = 1000L }
 
     fun stop() {
         if (!active) return

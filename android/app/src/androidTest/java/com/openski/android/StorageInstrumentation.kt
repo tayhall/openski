@@ -12,8 +12,17 @@ import org.json.JSONObject
 /** Runs against an isolated database on a real Android SQLite implementation. */
 class StorageInstrumentation : Instrumentation() {
     override fun onCreate(arguments: Bundle?) { super.onCreate(arguments); start() }
+    /** Tables each later schema version adds; dropping them takes a latest-schema database back below that version. */
+    private val tablesByVersion = mapOf(
+        11 to listOf("clock_sync","mag_samples","phone_samples"),
+        12 to listOf("resorts","resort_ways","resort_stations"),
+        13 to listOf("ski_days","day_fixes","day_run_tags"))
+    /** Drops every table added after [version], so reopening with an older version number is a genuine upgrade. */
+    private fun dropTablesAbove(db: SQLiteDatabase, version: Int) =
+        tablesByVersion.filterKeys { it > version }.values.flatten().forEach { db.execSQL("DROP TABLE IF EXISTS $it") }
     /** Takes a latest-schema database back to version 9 by rebuilding run_info, since DROP COLUMN needs SQLite 3.35 (Android 14). */
     private fun removeVersion10(db: SQLiteDatabase) {
+        dropTablesAbove(db,10)
         db.execSQL("DROP TABLE run_track")
         db.execSQL("ALTER TABLE run_info RENAME TO run_info_v10")
         db.execSQL("""CREATE TABLE run_info(session_id TEXT PRIMARY KEY, target_beat REAL NOT NULL, target_depth REAL NOT NULL,
@@ -181,11 +190,11 @@ class StorageInstrumentation : Instrumentation() {
             try {
                 LocalSessionStore(context,clockMigration).use { it.writableDatabase.version }
                 SQLiteDatabase.openDatabase(context.getDatabasePath(clockMigration).path,null,SQLiteDatabase.OPEN_READWRITE).use { db ->
-                    listOf("clock_sync","mag_samples","phone_samples").forEach { db.execSQL("DROP TABLE $it") }
+                    dropTablesAbove(db,10)
                     db.version=10
                 }
                 LocalSessionStore(context,clockMigration).use { store ->
-                    check(store.readableDatabase.version==11) { "Not upgraded to 11" }
+                    check(store.readableDatabase.version==LocalSessionStore.VERSION) { "Not upgraded from 10" }
                     listOf("clock_sync","mag_samples","phone_samples").forEach { table ->
                         check(store.readableDatabase.rawQuery("SELECT COUNT(*) FROM $table",null).use { it.moveToFirst() && it.getInt(0)==0 }) { "$table missing or not empty" }
                     }
@@ -203,6 +212,9 @@ class StorageInstrumentation : Instrumentation() {
                     check(store.phoneSamples(id).let { it.size==2 && it[0].gx==0.5f && it[1].qw==0.99f && it[1].phoneNs==5_000_010_000_000L }) { "phone rows round trip" }
                     store.finishSession(id,1_100_000L)
                     val loaded=store.loadData(id)!!
+                    // The chunked reader used by the ski day returns exactly what loadData returns, even one row per query.
+                    check(store.loadDataInChunks(id,1)==loaded && store.loadDataInChunks(id)==loaded) { "chunked load differs from loadData" }
+                    check(store.lastActivityMs(id)==1_000_000L) { "last activity of a session without samples is its start" }
                     check(loaded.clockPairs.size==9 && loaded.mag.size==1 && loaded.phone.size==2) { "loadData omitted clock, magnetometer or phone rows" }
                     check(store.loadData(id,includeSync=false)!!.phone.isEmpty()) { "phone rows loaded without includeSync" }
                     val zipped=ByteArrayOutputStream()
@@ -227,12 +239,12 @@ class StorageInstrumentation : Instrumentation() {
             try {
                 LocalSessionStore(context,resortMigration).use { it.writableDatabase.version }
                 SQLiteDatabase.openDatabase(context.getDatabasePath(resortMigration).path,null,SQLiteDatabase.OPEN_READWRITE).use { db ->
-                    listOf("resorts","resort_ways","resort_stations").forEach { db.execSQL("DROP TABLE $it") }
+                    dropTablesAbove(db,11)
                     db.execSQL("INSERT INTO sessions(id,started_at_ms,ended_at_ms) VALUES('before-resorts',100000,160000)")
                     db.version=11
                 }
                 LocalSessionStore(context,resortMigration).use { store ->
-                    check(store.readableDatabase.version==12) { "Not upgraded to 12" }
+                    check(store.readableDatabase.version==LocalSessionStore.VERSION) { "Not upgraded from 11" }
                     check(store.getSession("before-resorts")!!.endedAtMs==160000L) { "Upgrade lost a session" }
                     listOf("resorts","resort_ways","resort_stations").forEach { table ->
                         check(store.readableDatabase.rawQuery("SELECT COUNT(*) FROM $table",null).use { it.moveToFirst() && it.getInt(0)==0 }) { "$table missing or not empty" }
@@ -275,7 +287,8 @@ class StorageInstrumentation : Instrumentation() {
             val freshResorts="openski-fresh-12-${UUID.randomUUID()}.db"
             try {
                 LocalSessionStore(context,freshResorts).use { store ->
-                    check(store.readableDatabase.version==12) { "Fresh database not at 12" }
+                    check(store.readableDatabase.version==LocalSessionStore.VERSION) { "Fresh database not at the latest version" }
+                    check(DayStore(store).list().isEmpty()) { "fresh install has no day tables" }
                     val resorts=ResortStore(store)
                     val data=resortSample(listOf(LatLon(45.5,6.5),LatLon(45.501,6.502),LatLon(45.502,6.503)))
                     val fresh=StoredResort("fresh","Fresh",LatLon(45.5,6.5),5000,7_000L,3,"fresh; ${ResortRepository.ATTRIBUTION}")
@@ -285,6 +298,74 @@ class StorageInstrumentation : Instrumentation() {
                     check(resorts.delete("fresh") && resorts.list().isEmpty()) { "fresh delete" }
                 }
             } finally { context.deleteDatabase(freshResorts) }
+            // Version 12 -> 13: ski days. A genuine upgrade: drop the three day tables, keep a session and a resort, set 12, reopen.
+            val dayMigration="openski-migration-12-${UUID.randomUUID()}.db"
+            try {
+                LocalSessionStore(context,dayMigration).use { store ->
+                    store.writableDatabase.version
+                    ResortStore(store).save(StoredResort("kept","Kept",LatLon(46.0,7.0),5000,1_000L,3,"test"),
+                        resortSample(listOf(LatLon(46.0,7.0),LatLon(46.001,7.001),LatLon(46.002,7.002))))
+                }
+                SQLiteDatabase.openDatabase(context.getDatabasePath(dayMigration).path,null,SQLiteDatabase.OPEN_READWRITE).use { db ->
+                    dropTablesAbove(db,12)
+                    db.execSQL("INSERT INTO sessions(id,started_at_ms,ended_at_ms) VALUES('before-days',100000,160000)")
+                    db.version=12
+                }
+                LocalSessionStore(context,dayMigration).use { store ->
+                    check(store.readableDatabase.version==13) { "Not upgraded to 13" }
+                    check(store.getSession("before-days")!!.endedAtMs==160000L) { "Upgrade lost a session" }
+                    check(ResortStore(store).ways("kept").size==3) { "Upgrade lost a resort" }
+                    listOf("ski_days","day_fixes","day_run_tags").forEach { table ->
+                        check(store.readableDatabase.rawQuery("SELECT COUNT(*) FROM $table",null).use { it.moveToFirst() && it.getInt(0)==0 }) { "$table missing or not empty" }
+                    }
+                    val days=DayStore(store)
+                    val tags=DayTags(snow="packed",visibility="flat light",crowd=null,drill="Edge rolls")
+                    val day=SkiDay("d1","Day one",1_000_000L,null,DaySource.PHONE,"kept","",DayTags(),900_000L)
+                    days.create(day)
+                    check(days.day("d1")==day && days.openPhoneDay()==day) { "day round trip / open day" }
+                    // More than one batch of fixes, with and without optional values, one unstorable row, and the barometer.
+                    val rows=(0 until 450).map { i -> DayFix(GpsFix(1_000_000L+i*1000L,46.0+i*1e-5,7.0,if (i%3==0) null else 2000.0-i,
+                        if (i%2==0) 5.5 else null,4f+(i%5),if (i%4==0) null else 3f),if (i%7==0) null else 1500.0-i*0.5) } +
+                        DayFix(GpsFix(2_000_000L,Double.NaN,7.0,null,null,5f,null))
+                    check(days.addFixes("d1",rows)==1) { "unstorable row not skipped" }
+                    val back=days.fixes("d1")
+                    check(back==rows.take(450)) { "fixes round trip" }
+                    check(days.fixCount("d1")==450)
+                    days.update("d1","  Day one renamed ","Windy\nafternoon",tags)
+                    days.setResort("d1",null)
+                    check(days.day("d1")!!.let { it.title=="Day one renamed" && it.notes=="Windy\nafternoon" && it.tags==tags && it.resortId==null }) { "day update" }
+                    days.setRunTag("d1",RunTag(1_100_000L,tags,"first run"))
+                    days.setRunTag("d1",RunTag(1_100_000L,DayTags(snow="icy"),"replaced"))
+                    days.setRunTag("d1",RunTag(1_200_000L,DayTags(crowd="busy"),""))
+                    check(days.runTags("d1")==listOf(RunTag(1_100_000L,DayTags(snow="icy"),"replaced"),RunTag(1_200_000L,DayTags(crowd="busy"),""))) { "run tags" }
+                    days.setRunTag("d1",RunTag(1_200_000L,DayTags(),""))
+                    check(days.runTags("d1").size==1) { "empty run tag not removed" }
+                    days.finish("d1",1_450_000L)
+                    check(days.openPhoneDay()==null && days.day("d1")!!.endedAtMs==1_450_000L) { "finish" }
+                    // An imported day, then deleting a session or a resort never touches days.
+                    val gpx=SkiDay("g1","Imported",500_000L,600_000L,DaySource.GPX,null,"",DayTags(),700_000L)
+                    val unknown=DayFix(GpsFix(550_000L,46.0,7.0,null,null,RunTrack.UNKNOWN_ACCURACY_M,null))
+                    check(days.importDay(gpx,rows.take(3)+unknown)==0 && days.fixes("g1").size==4) { "import" }
+                    check(store.readableDatabase.rawQuery("SELECT COUNT(*) FROM day_fixes WHERE day_id='g1' AND accuracy IS NULL",null).use { it.moveToFirst() && it.getInt(0)==1 }) { "unknown accuracy not stored as null" }
+                    check(days.fixes("g1").last()==unknown) { "unknown accuracy round trip" }
+                    check(days.lastFixTime("d1")==1_449_000L && days.lastFixTime("nothing")==null) { "last fix time" }
+                    // A day left open for over 12 h is closed at its last fix instead of being resumed.
+                    days.create(SkiDay("old","Old",1_000L,null,DaySource.PHONE,null,"",DayTags(),1_000L))
+                    days.addFixes("old",listOf(DayFix(GpsFix(5_000L,46.0,7.0,null,null,5f,null))))
+                    check(days.settleOpenDays(DayTrackingConfig.STALE_OPEN_DAY_MS+10_000L)==null) { "stale day resumed" }
+                    check(days.day("old")!!.endedAtMs==5_000L) { "stale day not closed at its last fix" }
+                    check(days.delete("old"))
+                    check(store.deleteSession("before-days"))
+                    check(ResortStore(store).delete("kept"))
+                    check(days.list().map { it.id }==listOf("d1","g1") && days.fixCount("d1")==450 && days.runTags("d1").size==1) { "session or resort delete touched days" }
+                    // Deleting a day removes its fixes and tags and nothing else.
+                    check(days.delete("d1") && !days.delete("d1"))
+                    listOf("day_fixes","day_run_tags").forEach { table ->
+                        check(store.readableDatabase.rawQuery("SELECT COUNT(*) FROM $table WHERE day_id='d1'",null).use { it.moveToFirst() && it.getInt(0)==0 }) { "$table rows left after day delete" }
+                    }
+                    check(days.fixCount("g1")==4 && days.list().single().id=="g1") { "day delete touched another day" }
+                }
+            } finally { context.deleteDatabase(dayMigration) }
             val path=context.getDatabasePath(name)
             path.parentFile!!.mkdirs()
             SQLiteDatabase.openOrCreateDatabase(path,null).use { db ->
@@ -393,7 +474,7 @@ class StorageInstrumentation : Instrumentation() {
             }
             context.deleteDatabase(name)
             DrillMountingRegression.run(this)
-            finish(Activity.RESULT_OK,Bundle().apply { putString("stream","PASS: v1–v6 migration, demo creation, saved review settings, calibration, test labels, health, session edits, staged recovery validation, retained copy, ZIP export and protected deletion, v9->v10 run GPS track, v11->v12 resort maps, fresh-install resort round trip\n") })
+            finish(Activity.RESULT_OK,Bundle().apply { putString("stream","PASS: v1–v6 migration, demo creation, saved review settings, calibration, test labels, health, session edits, staged recovery validation, retained copy, ZIP export and protected deletion, v9->v10 run GPS track, v11->v12 resort maps, fresh-install resort round trip, v12->v13 ski days\n") })
         } catch(error: Throwable) {
             targetContext.deleteDatabase(name)
             finish(Activity.RESULT_CANCELED,Bundle().apply { putString("stream","FAIL: ${android.util.Log.getStackTraceString(error)}\n") })

@@ -132,13 +132,13 @@ Geek mode, Test lab, "Garden trials checklist (T0 to T6)" opens `TrialChecklistA
 
 ## Resort map download checks (phone and network needed)
 
-The resort data layer (Overpass query, parser, database version 12, repository) is JVM-tested against hand-written fixtures and fake fetchers only; the version 12 migration check is compiled into `StorageInstrumentation` but has not been run. Nothing has been fetched from the live Overpass service and there is no resort screen yet, so these checks need a debug hook or the step 3 resort picker.
+The resort data layer (Overpass query, parser, database version 12, repository) is JVM-tested against hand-written fixtures and fake fetchers only; the version 12 migration check is compiled into `StorageInstrumentation` but has not been run. Nothing has been fetched from the live Overpass service. The resort picker (`ResortPickerActivity`, reached from the ski day screen) now exists; run these checks through it.
 
 What leaves the phone (see `docs/ski-day-design.md`, "What leaves the device"): the Overpass host receives the query (a bounding box to six decimals, or a typed name and an optional box), the User-Agent `OpenSki/0.1 (...; <contact>)` and, as with any request, the phone's IP address. A box built from the phone's own position is centred on the position rounded to 0.01 degrees (about 1 km); no boot or session data is sent.
 
 - [ ] Run `StorageInstrumentation` on an emulator and expect the PASS line to include "v11->v12 resort maps, fresh-install resort round trip".
 - [ ] With a proxy or the network inspector, confirm a "near me" download or search sends a box whose centre is the position rounded to 0.01 degrees, and nothing besides the query, the User-Agent and the usual HTTP headers.
-- [ ] Start a recording, then try a resort download: it is refused (`Blocked`) once the screen wires the guard; no request is sent.
+- [ ] Start a boot recording (or a run), then try a resort download in the picker: it is refused with "a boot recording or run is in progress"; no request is sent. A name search is still allowed.
 - [ ] Over Wi-Fi, fetch one real resort by name search and by current position (radius 5 km): the download finishes in under a minute, `resorts.way_count` is plausible against the OSM map of that area, and lift and piste names and grades look right for a few known runs.
 - [ ] Attribution: the stored `source_note` ends with "(c) OpenStreetMap contributors (ODbL)" and names the OSM data timestamp; the resort screen (step 3) shows the attribution wherever names or geometry appear.
 - [ ] Size: note the response size and the database growth for a large resort at the default radius; it must stay well under the 16 MB cap. Try 25 km once and record what happens (refused as too large, a server timeout remark, or a full answer).
@@ -146,10 +146,32 @@ What leaves the phone (see `docs/ski-day-design.md`, "What leaves the device"): 
 - [ ] The User-Agent contact constant (`HttpResortFetcher.CONTACT`) is set to a real contact before any public build: `OPENSKI_RELEASE_CHECK=1` then `.\gradlew.bat :app:testDebugUnitTest --tests "com.openski.android.ReleaseCheckTest" --rerun` must pass (it is skipped without the variable).
 - [ ] If HTTP 429 occurs naturally: exactly one retry after at least 30 s, no further requests. An HTTP 504 is reported at once and not retried.
 
-## GPX import checks (phone needed, once the import screen exists)
+## GPX import checks (phone needed; Ski day screen, "Import a GPX file")
 
 The parser hardening in `GpxCodec` is unit-tested on the JDK only. Android's DOM parser rejects most hardening switches, so on a phone the protection is the refusal of any document type or entity declaration before parsing.
 
 1. Import a GPX whose prolog contains `<!DOCTYPE gpx [<!ENTITY e SYSTEM "file:///proc/self/status">]>` and uses `&e;` in the track name: the import is refused with "declares a document type" and no name or file content appears anywhere.
 2. Import a GPX exported by the app (`ski-day.gpx`): the fixes come back unchanged (count, first and last time).
 3. Import a file over 20 MB: refused as too large, no crash or long freeze.
+4. Import a real GPX of your own from another app or watch: a day with source "imported GPX" appears with the file's track name, its first and last point times, and runs and lifts that look right against what you skied; the message gives the points imported and skipped.
+
+## Ski day checks (phone needed; boots optional)
+
+Whole-day tracking (`DayTrackingService`), the day report, the ski day and resort screens, run and day tags, and the GPX and JSON exports are JVM-tested on synthetic days only (pure parts) and compiled; none of it has run on a phone. The database version 13 check is compiled into `StorageInstrumentation` but has not run.
+
+- [ ] Run `StorageInstrumentation` on an emulator and expect the PASS line to include "v12->v13 ski days" (the older 8->9, 9->10 and 10->11 checks were fixed in the same change and need this run too).
+- [ ] Permission flow on a fresh install (Android 13 or later): Today, Ski day, Start day asks for precise location and notifications. Refuse location: nothing starts and the screen says precise location is needed, with "Allow location in Settings". Grant approximate only: same refusal. Grant precise but refuse notifications: tracking starts and the screen says the notification will not show.
+- [ ] A short walk (15 to 20 minutes, including a few minutes standing still and some up and down): the tracking line counts fixes, shows the last fix age and accuracy, says "standing still" after about two minutes still and returns to one fix a second on walking off. Afterwards the day shows segments (a walk on the flat is expected to read as rest) and plausible totals.
+- [ ] Screen off: lock the phone for 10 minutes while walking; fixes keep arriving at the expected rate (count roughly matches the time) and the notification stays with its Stop day action, which ends the day.
+- [ ] Barometer: on a phone with one the line says "barometer on" and the JSON has barometer samples; on one without, "no barometer" and the day still splits on GPS altitude.
+- [ ] Kill the app process (Settings, force stop, or `adb shell am kill com.openski.android` while backgrounded) during tracking: the service restarts and resumes the same day, or the screen offers Resume or End for the open day. Note whether Android 14 allows the restarted location service to receive fixes.
+- [ ] Location switched off during tracking: the screen and notification say so and tracking resumes by itself when it is switched back on.
+- [ ] Resort download over Wi-Fi (resort picker, search and "around me"), then "Use for this day": runs and lifts show names and grades, and "Piste and lift names and lines: (c) OpenStreetMap contributors (ODbL)" is visible on the day screen.
+- [ ] Airplane mode: the day screen still names runs from the cached map; a download attempt says the phone is offline and keeps the cached copy.
+- [ ] Tags: edit the day's tags and notes and tag one run; reopen the screen and the tags are there; the JSON carries them.
+- [ ] Export ski-day.gpx and open it in a GPX viewer (another app or a desktop tool): the track and times match the day. Export ski-day.json: it opens as JSON, shows segments, totals, tags, the resort name and the attribution.
+- [ ] With a boot recording during the walk: while it is still recording, the overlapping runs say "session still recording, boot stats not included" and the recording is not disturbed (no storage error, no disconnect) while the day screen is open; after it ends, those runs show a boot line and runs outside it show none. The boot numbers come from dry-ski boot roll and say nothing about technique.
+- [ ] Resort picker "around me" with a last position older than 5 minutes (phone just switched on, location off for a while): it says how old the position is and asks for a fresh fix (Android 11 and later) rather than downloading the old area.
+- [ ] Leave a day open overnight (or set the phone clock 13 h ahead): opening the day screen or resuming closes it at its last fix instead of continuing it.
+- [ ] Rotate the phone while the export save picker is open: the export still writes the file.
+- [ ] Battery: note the battery drop over one hour of tracking with the screen off (unmeasured so far).

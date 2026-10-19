@@ -8,16 +8,12 @@ import java.util.zip.ZipOutputStream
 
 object SessionExport {
     fun write(data: SessionData, output: OutputStream, correction: (String) -> AccelCorrection? = { null }) {
-        val analysis = SessionAnalysis.build(data)
+        // Every boot analysis comes from SessionBootAnalysis, which the ski day report also uses.
+        val boot = SessionBootAnalysis.build(data, correction)
+        val analysis = boot.analysis
         val session = data.session
-        val settings=JSONObject(session.analysisJson)
-        val calibrations = org.json.JSONObject(session.calibrationJson).let { json ->
-            listOf("L","R").mapNotNull { side -> json.optJSONObject(side)?.let { c ->
-                fun vector(key: String)=c.getJSONArray(key).let { Vector3(it.getDouble(0),it.getDouble(1),it.getDouble(2)) }
-                BootCalibration(side,c.getDouble("time_ms"),c.getInt("axis"),c.getInt("sign"),vector("gravity"),vector("bias"),
-                    if(c.has("forward") && !c.isNull("forward")) vector("forward") else null)
-            } }
-        }
+        val settings=boot.settings
+        val calibrations = boot.calibrations
         val metadata = JSONObject().put("format_version", 1).put("session_id", session.id)
             .put("test_session",session.testSession)
             .put("data_origin",session.origin).put("analysis_settings",settings)
@@ -41,14 +37,12 @@ object SessionExport {
                 .put("estimated_coverage", q.coverage).put("gaps_over_100ms", q.gaps).put("longest_gap_ms", q.longestGapMs)
                 .put("rail_samples", q.railSamples).put("rail_percent", q.railPercent)
                 .put("dropped_before_samples", q.droppedBefore)) } })
-        val correctedTimeline=analysis.timeline.corrected(correction)
-        val orientation=calibrations.flatMap { BootOrientation.estimate(correctedTimeline,it) }
-        val clockSyncs=ClockSyncExport.replay(data)
-        val gesture=runCatching { GestureSync.analyse(data,clockSyncs) }
+        val correctedTimeline=boot.correctedTimeline
+        val orientation=boot.orientation
+        val clockSyncs=boot.clockSyncs
+        val gesture=boot.gesture
         // Best available boot-to-boot alignment, applied only to the right boot inside the agreement stage below.
-        val alignment=runCatching { ClockAlignment.estimate(analysis.timeline,gesture.getOrNull(),clockSyncs) }.getOrElse { e ->
-            ClockAlignment.Result(ClockAlignment.Source.NONE,null,null,null,null,"not aligned: alignment failed (${e.message ?: "error"})",
-                null,null,null,false,gesture.getOrNull()?.status?.name?.lowercase()) }
+        val alignment=boot.alignment
         ZipOutputStream(output).use { zip ->
             fun entry(name: String, body: (java.io.Writer) -> Unit) {
                 zip.putNextEntry(ZipEntry(name))
@@ -96,9 +90,9 @@ object SessionExport {
             entry("gesture-sync.json") { it.write(runCatching { GestureSync.toJson(gesture.getOrThrow()).toString(2) }.getOrElse { e -> JSONObject().put("format_version", 1).put("experimental", true).put("status", "error").put("reason", e.message ?: "analysis failed").toString(2) }) }
             entry("magnetometer.csv") { w -> w.write(ClockSyncExport.magnetometerCsv(data)) }
             entry("phone-motion.csv") { w -> PhoneMotionExport.write(w, data.phone, data.events, ClockSyncExport.reference(data.events)?.elapsedNs) }
-            val rollBySide=orientation.groupBy { it.side }
-            val detections=listOf("L","R").associateWith { side -> DrySkiAnalysis.detectTrials(rollBySide[side].orEmpty(),data.markers) }
-            fun positiveLeft(side: String)=settings.optJSONObject(side)?.optBoolean("positive_left",true) ?: true
+            val rollBySide=boot.rollBySide
+            val detections=boot.detections
+            fun positiveLeft(side: String)=boot.positiveLeft(side)
             entry("detected-movements.csv") { w ->
                 w.write("side,direction,positive_roll,start_ms,end_ms,edged_duration_ms,peak_estimated_boot_roll_deg,detector\n")
                 detections.forEach { (side,detection)->detection.movements.forEach { m ->
@@ -106,7 +100,7 @@ object SessionExport {
                     w.write("$side,$direction,${m.positive},${m.startMs},${m.endMs},${m.endMs-m.startMs},${m.peakRoll},experimental_dry_roll\n")
                 } }
             }
-            val headingTurns=listOf("L","R").associateWith { side -> HeadingTurnAnalysis.detect(rollBySide[side].orEmpty()) }
+            val headingTurns=boot.headingTurns
             entry("heading-turns.csv") { w ->
                 w.write("side,direction,positive_heading_rate,start_ms,end_ms,duration_ms,peak_heading_rate_dps,heading_change_deg,detector\n")
                 headingTurns.forEach { (side,turns)->turns.forEach { t ->
@@ -114,19 +108,10 @@ object SessionExport {
                     w.write("$side,$direction,${t.positive},${t.startMs},${t.endMs},${t.endMs-t.startMs},${t.peakRateDps},${t.changeDegrees},experimental_heading_rate\n")
                 } }
             }
-            val turnMetricRows=listOf("L","R").associateWith { side -> TurnMetricsExport.rows(side,rollBySide[side].orEmpty(),
-                detections.getValue(side).movements,headingTurns.getValue(side),positiveLeft(side)) }
+            val turnMetricRows=boot.turnMetricRows
             entry("turn-metrics.csv") { w -> w.write(TurnMetricsExport.csv(turnMetricRows.values.flatten())) }
             // Experimental torso metrics: the phone (jacket pocket) against each boot turn candidate, on each boot's own timeline.
-            val clockRef=ClockSyncExport.reference(data.events)
-            val userOffsets=mapOf("L" to session.leftOffsetMs.toDouble(),"R" to session.rightOffsetMs.toDouble())
-            // Exception only: an OutOfMemoryError or other Error must not be turned into a refusal.
-            val torso=try { TorsoMetricsExport.analyse(data.phone,PhoneMotionExport.clockOffsetMs(data.events),clockRef,
-                TorsoMetricsExport.candidates(turnMetricRows.values.flatten()),rollBySide,
-                listOf("L","R").associateWith { side -> TorsoMetricsExport.SideTiming(ClockAlignment.anchor(analysis.timeline,side),
-                    clockSyncs[side],clockRef,userOffsets.getValue(side)) },
-                session.startedAtMs.toDouble(),(session.endedAtMs ?: System.currentTimeMillis()).toDouble(),
-                alignment.source.name.lowercase(),userOffsets) } catch (e: Exception) { TorsoMetricsExport.failed("refused: torso metrics failed (${e.message ?: "error"})") }
+            val torso=boot.torso
             entry("torso-metrics.csv") { w -> w.write(TorsoMetricsExport.csv(torso.rows,torso.reason)) }
             val summary=JSONObject().put("data_origin",session.origin)
                 .put("detector","experimental_dry_roll").put("entry_deg",8).put("neutral_deg",3)
@@ -167,8 +152,8 @@ object SessionExport {
             summary.put("heading_detector","Experimental heading-rate turn candidates (rotation about the current vertical), not turn classification. " +
                 "The detector was benchmarked on calf-phone data at 10 Hz; transfer to boot-mounted sensors is unproven. Direction: positive heading rate (counter-clockwise from above) = LEFT, independent of per-boot roll settings.")
             // Agreement stage only: the right boot's roll and movements on the left boot's timeline (identity when not aligned).
-            val alignedRight=ClockAlignment.alignRolls(rollBySide["R"].orEmpty(),alignment)
-            val alignedRightDetection=ClockAlignment.alignDetection(detections.getValue("R"),alignment)
+            val alignedRight=boot.alignedRight
+            val alignedRightDetection=boot.alignedRightDetection
             val comparison=BootComparison.analyse(rollBySide["L"].orEmpty(),alignedRight,
                 detections.getValue("L"),alignedRightDetection,positiveLeft("L"),positiveLeft("R"))
             val unaligned=if(!alignment.applied) comparison else BootComparison.analyse(rollBySide["L"].orEmpty(),rollBySide["R"].orEmpty(),
@@ -191,10 +176,7 @@ object SessionExport {
                 .put("rail_samples",q.railSamples).put("rail_percent",q.railPercent)
                 .put("rail_note",RAIL_NOTE)
                 .put("dropped_before_samples",q.droppedBefore)) } })
-            summary.put("turn_metrics",TurnMetricsExport.toJson(TurnMetricsExport.block(turnMetricRows,
-                TurnMetricsExport.agreementPairs(rollBySide["L"].orEmpty(),alignedRight,
-                    detections.getValue("L").movements,alignedRightDetection.movements,positiveLeft("L"),positiveLeft("R"),
-                    alignment.uncertaintyMs),alignment)))
+            summary.put("turn_metrics",TurnMetricsExport.toJson(TurnMetricsExport.block(turnMetricRows,boot.agreementPairs,alignment)))
             summary.put("torso_metrics",TurnMetricsExport.toJson(torso.block))
             entry("analysis-summary.json") { it.write(summary.toString(2)) }
             entry("session-health.json") { it.write(SessionHealth.build(data).toJson()) }
