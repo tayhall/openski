@@ -75,7 +75,8 @@ object PracticeComparisonPolicy {
         if (first.scoringVersion !in supportedVersions || second.scoringVersion !in supportedVersions)
             excluded += ComparisonExclusion.UNSUPPORTED_SCORING_VERSION
         if (first.scoringVersion != second.scoringVersion) excluded += ComparisonExclusion.DIFFERENT_SCORING_VERSION
-        if (firstEvidence.timingPolicy.isNullOrBlank() || secondEvidence.timingPolicy.isNullOrBlank())
+        val supportedTimingPolicies = setOf("continuous_v1")
+        if (firstEvidence.timingPolicy !in supportedTimingPolicies || secondEvidence.timingPolicy !in supportedTimingPolicies)
             excluded += ComparisonExclusion.UNKNOWN_TIMING_POLICY
         else if (firstEvidence.timingPolicy != secondEvidence.timingPolicy) excluded += ComparisonExclusion.DIFFERENT_TIMING_POLICY
         // Simulated exercises have no physical mounting or scored boot; their explicit source establishes that fact.

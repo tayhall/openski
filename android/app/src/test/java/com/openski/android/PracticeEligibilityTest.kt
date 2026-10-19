@@ -66,4 +66,11 @@ class PracticeEligibilityTest {
         val simulated = PracticeEvidence(scoringQuality = ScoringEvidenceQuality.SUFFICIENT, scoringSource = ScoringEvidenceSource.SIMULATED, timingPolicy = "continuous_v1")
         assertTrue(PracticeComparisonPolicy.evaluate(demo, simulated, demo, simulated).comparable)
     }
+
+    @Test fun matchingUnsupportedTimingPoliciesRemainExcluded() {
+        val future = evidence.copy(timingPolicy = "future_policy_v2")
+        val comparison = PracticeComparisonPolicy.evaluate(attempt, future, attempt, future)
+        assertFalse(comparison.comparable)
+        assertTrue(ComparisonExclusion.UNKNOWN_TIMING_POLICY in comparison.exclusions)
+    }
 }
