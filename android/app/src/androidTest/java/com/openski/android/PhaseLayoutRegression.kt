@@ -37,7 +37,9 @@ object PhaseLayoutRegression {
                         root.layout(0, 0, root.measuredWidth, root.measuredHeight)
                     }
                     measure()
-                    val button = layout.actions.getChildAt(1) as Button
+                    fun buttons(view: View): List<Button> = (if (view is Button) listOf(view) else emptyList()) +
+                        if (view is ViewGroup) (0 until view.childCount).flatMap { buttons(view.getChildAt(it)) } else emptyList()
+                    val button = buttons(layout.actions).single()
                     check(layout.scroll.bottom <= layout.actions.top) { "Footer overlaps scrolling content" }
                     check(layout.actions.bottom <= layout.height && layout.scroll.height > 0)
                     check(button.height >= Snow.dp(context, 56))
@@ -49,7 +51,7 @@ object PhaseLayoutRegression {
                         layout.controls(listOf(PhaseLayout.Action("stop", "Stop run") { commands += 10 }),
                             "A longer changing warning $index. Read all preparation details above before starting.")
                         measure()
-                        check(layout.actions.getChildAt(1) === button && button.hasFocus()) { "Status replaced focused action" }
+                        check(buttons(layout.actions).single() === button && button.hasFocus()) { "Status replaced focused action" }
                         check(layout.scroll.scrollY == before) { "Footer update moved content scroll" }
                         check(layout.scroll.bottom <= layout.actions.top)
                     }
@@ -57,13 +59,39 @@ object PhaseLayoutRegression {
                     check(commands == 10) { "Persistent action retained an obsolete callback" }
                     if (android.os.Build.VERSION.SDK_INT >= 30) {
                         SkiUi.applyInsets(root, ime = true)
-                        root.dispatchApplyWindowInsets(WindowInsets.Builder()
-                            .setInsets(WindowInsets.Type.systemBars(), Insets.of(0, 12, 0, 16))
-                            .setInsets(WindowInsets.Type.ime(), Insets.of(0, 0, 0, 80)).build())
-                        measure()
-                        val rect = Rect(); layout.actions.getDrawingRect(rect)
-                        root.offsetDescendantRectToMyCoords(layout.actions, rect)
-                        check(rect.bottom <= root.height - 80) { "Keyboard covers the footer" }
+                        val cases = listOf(
+                            "READY" to listOf(PhaseLayout.Action("start", "Start run", enabled = false) {}),
+                            "ZEROING" to listOf(PhaseLayout.Action("retry-zero", "Try again") {},
+                                PhaseLayout.Action("cancel", "Cancel", Snow.ButtonKind.QUIET) {}),
+                            "SAVING" to listOf(PhaseLayout.Action("background", "Continue saving in background", Snow.ButtonKind.SECONDARY) {})
+                        )
+                        for ((phase, controls) in cases) for (keyboardDp in listOf(120, 160)) {
+                            layout.controls(controls, if (phase == "READY") "Connect both saved boots and choose an audio route before starting." else null)
+                            val keyboard = Snow.dp(context, keyboardDp)
+                            root.dispatchApplyWindowInsets(WindowInsets.Builder()
+                                .setInsets(WindowInsets.Type.systemBars(), Insets.of(0, Snow.dp(context, 24), 0, Snow.dp(context, 24)))
+                                .setInsets(WindowInsets.Type.ime(), Insets.of(0, 0, 0, keyboard)).build())
+                            measure()
+                            val bounds = Rect(); layout.actions.getDrawingRect(bounds)
+                            root.offsetDescendantRectToMyCoords(layout.actions, bounds)
+                            check(bounds.bottom <= root.height - keyboard) { "$phase keyboard covers footer: font=$font $width x $height IME=$keyboardDp" }
+                            check(layout.scroll.height > 0 && layout.scroll.bottom <= layout.actions.top) {
+                                "$phase footer removes content or overlaps it: font=$font $width x $height IME=$keyboardDp"
+                            }
+                            val visible = buttons(layout.actions)
+                            check(visible.size == controls.size)
+                            visible.forEach { command ->
+                                val rect = Rect(); command.getDrawingRect(rect)
+                                root.offsetDescendantRectToMyCoords(command, rect)
+                                check(rect.top >= bounds.top && rect.bottom <= bounds.bottom && rect.left >= 0 && rect.right <= root.width) {
+                                    "$phase command is clipped: ${command.text}"
+                                }
+                                check(command.height >= Snow.dp(context, 64))
+                                check(command.layout.height <= command.height - command.paddingTop - command.paddingBottom) {
+                                    "$phase command text is clipped: ${command.text}"
+                                }
+                            }
+                        }
                     }
                 }
             }

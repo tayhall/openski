@@ -23,6 +23,8 @@ class PhaseLayout(context: Context) : LinearLayout(context) {
         ellipsize = TextUtils.TruncateAt.END
         visibility = View.GONE
     }
+    private val buttonRow = LinearLayout(context).apply { orientation = VERTICAL }
+    private var compact = false
     private var keys = emptyList<String>()
     private val buttons = mutableListOf<Button>()
     init {
@@ -31,6 +33,7 @@ class PhaseLayout(context: Context) : LinearLayout(context) {
         addView(scroll, LayoutParams(-1, 0, 1f))
         addView(actions, LayoutParams(-1, -2))
         actions.addView(reason, LayoutParams(-1, -2).apply { bottomMargin = Snow.dp(context, 6) })
+        actions.addView(buttonRow, LayoutParams(-1, -2))
     }
     fun content(view: View, resetScroll: Boolean = false) {
         val previous = if (resetScroll) 0 else scroll.scrollY
@@ -43,14 +46,15 @@ class PhaseLayout(context: Context) : LinearLayout(context) {
         reason.visibility = if (blockingReason.isNullOrBlank()) View.GONE else View.VISIBLE
         reason.contentDescription = blockingReason
         if (keys != items.map { it.key }) {
-            buttons.forEach { actions.removeView(it) }
+            buttons.forEach { buttonRow.removeView(it) }
             buttons.clear()
             keys = items.map { it.key }
-            items.forEachIndexed { index, item ->
+            items.forEach { item ->
                 val button = Snow.button(context, item.label, item.kind) { item.run() }.apply { minHeight = Snow.dp(context, 64) }
                 buttons.add(button)
-                actions.addView(button, LayoutParams(-1, -2).apply { if (index > 0) topMargin = Snow.dp(context, 6) })
+                buttonRow.addView(button)
             }
+            arrangeButtons()
         }
         items.zip(buttons).forEach { (item, button) ->
             button.text = item.label; button.isEnabled = item.enabled
@@ -60,6 +64,30 @@ class PhaseLayout(context: Context) : LinearLayout(context) {
         }
         actions.visibility = if (items.isEmpty() && blockingReason.isNullOrBlank()) View.GONE else View.VISIBLE
     }
+    private fun arrangeButtons() {
+        val sideBySide = compact && buttons.size > 1
+        buttonRow.orientation = if (sideBySide) HORIZONTAL else VERTICAL
+        buttons.forEachIndexed { index, button ->
+            button.layoutParams = if (sideBySide) LayoutParams(0, -2, 1f).apply {
+                if (index > 0) marginStart = Snow.dp(context, 8)
+            } else LayoutParams(-1, -2).apply {
+                if (index > 0) topMargin = Snow.dp(context, 6)
+            }
+        }
+    }
+    override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
+        val short = MeasureSpec.getMode(heightMeasureSpec) != MeasureSpec.UNSPECIFIED &&
+            MeasureSpec.getSize(heightMeasureSpec) - paddingTop - paddingBottom < Snow.dp(context, 240)
+        if (short != compact) {
+            compact = short
+            val vertical = Snow.dp(context, if (compact) 4 else 8)
+            actions.setPadding(actions.paddingLeft, vertical, actions.paddingRight, vertical)
+            reason.maxLines = if (compact) 1 else 2
+            arrangeButtons()
+        }
+        super.onMeasure(widthMeasureSpec, heightMeasureSpec)
+    }
+
 }
 
 /** Secondary explanations remain available without preceding the current action. */
