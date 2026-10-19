@@ -14,7 +14,9 @@ import kotlin.math.max
  * The target band shows the depth to aim for and a ghost line shows the previous attempt.
  */
 class CarvedLineView(context: Context, private var trace: RollTrace, private val ghost: RollTrace?,
-                     private val targetDegrees: Double, private val lineColor: Int) : View(context) {
+                     private val targetDegrees: Double, private val lineColor: Int,
+                     private val sourceLabel: String = "Measured cuff roll",
+                     private val comparisonLabel: String = "previous attempt") : View(context) {
     /** 0..1 of the trace that has been drawn so far. */
     var progress = 1f
         set(value) { field = value.coerceIn(0f, 1f); invalidate() }
@@ -36,6 +38,7 @@ class CarvedLineView(context: Context, private var trace: RollTrace, private val
     private val ghostPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Snow.GLACIER_DEEP; style = Paint.Style.STROKE; strokeWidth = Snow.dp(context, 3).toFloat()
         strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND
+        pathEffect = DashPathEffect(floatArrayOf(Snow.dp(context, 10).toFloat(), Snow.dp(context, 5).toFloat()), 0f)
     }
     private val line = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = lineColor; style = Paint.Style.STROKE; strokeWidth = Snow.dp(context, 5).toFloat()
@@ -43,18 +46,27 @@ class CarvedLineView(context: Context, private var trace: RollTrace, private val
     }
     private val head = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = lineColor }
     private val label = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Snow.INK_SOFT; textSize = Snow.dp(context, 12).toFloat()
+        color = Snow.INK_SOFT
+        textSize = android.util.TypedValue.applyDimension(android.util.TypedValue.COMPLEX_UNIT_SP, 12f, context.resources.displayMetrics)
         typeface = context.resources.getFont(R.font.barlow_medium)
     }
     private val clip = Path()
 
     init {
-        contentDescription = "Boot roll over time. The dashed middle is neutral and the line should reach into the shaded zone beyond ${targetDegrees.toInt()} degrees."
+        importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_YES
+        isFocusable = true
+        contentDescription = sourceLabel
+    }
+
+    override fun onInitializeAccessibilityNodeInfo(info: android.view.accessibility.AccessibilityNodeInfo) {
+        super.onInitializeAccessibilityNodeInfo(info)
+        // Compute when explored rather than sending an announcement on every sample/animation frame.
+        info.contentDescription = RollChartSummary.describe(trace, sourceLabel, targetDegrees, ghost, comparisonLabel)
     }
 
     override fun onMeasure(widthSpec: Int, heightSpec: Int) {
         val width = MeasureSpec.getSize(widthSpec)
-        setMeasuredDimension(width, Snow.dp(context, 220))
+        setMeasuredDimension(width, max(Snow.dp(context, 220), (label.textSize * 9).toInt()))
     }
 
     override fun onDraw(canvas: Canvas) {

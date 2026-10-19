@@ -11,7 +11,12 @@ import org.json.JSONObject
 
 /** Runs against an isolated database on a real Android SQLite implementation. */
 class StorageInstrumentation : Instrumentation() {
-    override fun onCreate(arguments: Bundle?) { super.onCreate(arguments); start() }
+    private var practiceUiOnly = false
+    override fun onCreate(arguments: Bundle?) {
+        super.onCreate(arguments)
+        practiceUiOnly = arguments?.getString("practice_ui_only") == "true"
+        start()
+    }
     /** Tables each later schema version adds; dropping them takes a latest-schema database back below that version. */
     private val tablesByVersion = mapOf(
         11 to listOf("clock_sync","mag_samples","phone_samples"),
@@ -41,6 +46,11 @@ class StorageInstrumentation : Instrumentation() {
     override fun onStart() {
         val name="openski-test-${UUID.randomUUID()}.db"
         try {
+            if (practiceUiOnly) {
+                PracticeUiRegression(this).run()
+                finish(Activity.RESULT_OK, Bundle().apply { putString("stream", "PASS: native controls and selected navigation, chart facts, stable coaching focus/scroll, exact run/practice links and missing-record fallbacks\n") })
+                return
+            }
             val context=targetContext
             for(version in listOf(2,3,4,5,6)) {
                 val migrationName="openski-migration-$version-${UUID.randomUUID()}.db"
@@ -534,6 +544,7 @@ class StorageInstrumentation : Instrumentation() {
             }
             context.deleteDatabase(name)
             DrillMountingRegression.run(this)
+            PracticeUiRegression(this).run()
             finish(Activity.RESULT_OK,Bundle().apply { putString("stream","PASS: v1–v6 migration, demo creation, saved review settings, calibration, test labels, health, session edits, staged recovery validation, retained copy, ZIP export and protected deletion, v9->v10 run GPS track, v11->v12 resort maps, fresh-install resort round trip, v12->v13 ski days, v13->v14 practice attempts, atomic legacy import and idempotent completion\n") })
         } catch(error: Throwable) {
             targetContext.deleteDatabase(name)

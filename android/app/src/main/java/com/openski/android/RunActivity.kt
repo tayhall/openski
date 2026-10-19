@@ -105,8 +105,7 @@ class RunActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         Snow.configureWindow(this)
-        // A polite live region: changing the description makes TalkBack announce the new phase.
-        frame = FrameLayout(this).apply { setBackgroundColor(Snow.SNOW); accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE }
+        frame = FrameLayout(this).apply { setBackgroundColor(Snow.SNOW) }
         SkiUi.applyInsets(frame)
         setContentView(frame)
     }
@@ -165,10 +164,11 @@ class RunActivity : Activity() {
             RunPhase.ZEROING -> "Stand upright and hold still."
             RunPhase.RUNNING -> "Run started."
             RunPhase.SAVING -> "Run ended. Saving boot data."
-            RunPhase.DONE -> "Run saved."
+            RunPhase.DONE -> "Run finished."
             RunPhase.READY -> return
         }
-        frame.contentDescription = text
+        @Suppress("DEPRECATION")
+        frame.announceForAccessibility(text)
     }
 
     private fun updateLive(s: RunState) {
@@ -305,7 +305,7 @@ class RunActivity : Activity() {
             t(progressLine(side, s), Snow.Type.STRONG).also { card.add(it, top = if (side == "L") 0 else 10) }
         }
         column.add(card, bottom = 16)
-        column.add(Snow.button(this, "Finish later", Snow.ButtonKind.QUIET) { service?.abandonRunSave() })
+        column.add(Snow.button(this, "Continue saving in background", Snow.ButtonKind.QUIET) { service?.abandonRunSave() })
         column.add(t("Saving carries on in the background; the boots stay in On snow mode until you switch them back.", Snow.Type.CAPTION, Snow.INK_SOFT), top = 8)
     }
 
@@ -333,9 +333,10 @@ class RunActivity : Activity() {
         }
         column.add(t(GestureSyncPrompts.DONE, Snow.Type.CAPTION, Snow.INK_SOFT), bottom = 12)
         column.add(Snow.button(this, "Back to ready") { service?.resetRun() }, bottom = 10)
-        column.add(Snow.button(this, "Open in logbook", Snow.ButtonKind.SECONDARY) {
-            startActivity(Intent(this, MainActivity::class.java))
-        })
+        val resultId = service?.lastRunId()
+        if (resultId != null) column.add(Snow.button(this, "Open saved run", Snow.ButtonKind.SECONDARY) {
+            startActivity(Intent(this, SessionDetailActivity::class.java).putExtra("session_id", resultId))
+        }) else column.add(t("No saved session is linked to this result.", Snow.Type.CAPTION))
     }
 
     private companion object { const val REQUEST_LOCATION = 41 }

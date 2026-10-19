@@ -189,7 +189,7 @@ class DrillActivity : Activity() {
         }
         if (state.phase == DrillPhase.RUNNING) {
             val chart = CarvedLineView(this@DrillActivity, state.trace, state.ghost,
-                drill.depthDegrees, Snow.pisteColor(drill.piste))
+                drill.depthDegrees, Snow.pisteColor(drill.piste), if (state.attempt?.demo == true) "Simulated cuff roll" else "Measured cuff roll")
             line = chart; add(chart, bottom = 12)
             counter = t("${state.count} of ${drill.movements}", Snow.Type.HERO).also { add(it, bottom = 12) }
         }
@@ -223,7 +223,8 @@ class DrillActivity : Activity() {
         add(t(if (attempt.demo) "Simulated results stay in Demo; they do not change My practice achievements."
             else "Cuff-roll exercise, not an on-snow technique score.", Snow.Type.CAPTION), bottom = 12)
         if (state.run != null) {
-            add(CarvedLineView(this@DrillActivity, state.trace, null, drill.depthDegrees, Snow.pisteColor(drill.piste)), bottom = 12)
+            add(CarvedLineView(this@DrillActivity, state.trace, null, drill.depthDegrees, Snow.pisteColor(drill.piste),
+                if (attempt.demo) "Simulated cuff roll" else "Measured cuff roll"), bottom = 12)
             add(StarRow(this@DrillActivity, attempt.stars, 28), bottom = 8)
             add(t("${attempt.score} · +${attempt.vert} practice points", Snow.Type.TITLE), bottom = 12)
             state.result?.let { result ->
@@ -237,6 +238,9 @@ class DrillActivity : Activity() {
             }, bottom = 10)
         }
         add(Snow.button(this@DrillActivity, "Try again") { showIntro = true; notice = null; signature = ""; intro() }, bottom = 10)
+        add(Snow.button(this@DrillActivity, "Open saved result", Snow.ButtonKind.SECONDARY) {
+            startActivity(Intent(this@DrillActivity, PracticeResultActivity::class.java).putExtra("attempt_id", attempt.id))
+        }, bottom = 10)
         add(Snow.button(this@DrillActivity, "Back to path", Snow.ButtonKind.QUIET) { finish() })
     }
 
@@ -251,8 +255,9 @@ class DrillActivity : Activity() {
             add(t(if (run.demo) "Simulated results stay in Demo. They do not change My practice achievements."
                 else if (!attempt.eligible) "This set is saved as incomplete and earns no stars or practice points."
                 else "Measured cuff-roll exercise · My practice", Snow.Type.CAPTION, Snow.INK_SOFT), bottom = 12)
-            add(CarvedLineView(this@DrillActivity, run.trace, ghost, drill.depthDegrees, Snow.pisteColor(drill.piste)), bottom = 6)
-            if (ghost != null) add(t("Grey line: your last try", Snow.Type.CAPTION, Snow.INK_SOFT), bottom = 12)
+            add(CarvedLineView(this@DrillActivity, run.trace, ghost, drill.depthDegrees, Snow.pisteColor(drill.piste),
+                if (run.demo) "Simulated cuff roll" else "Measured cuff roll"), bottom = 6)
+            if (ghost != null) add(t("Dashed grey line: your last try", Snow.Type.CAPTION, Snow.INK_SOFT), bottom = 12)
             val summary = LinearLayout(this@DrillActivity).apply { gravity = Gravity.CENTER_VERTICAL }
             summary.addView(StarRow(this@DrillActivity, attempt.stars, 28))
             summary.addView(t("${result.score}", Snow.Type.DISPLAY), LinearLayout.LayoutParams(-2, -2).apply { marginStart = Snow.dp(this@DrillActivity, 14) })
@@ -272,6 +277,9 @@ class DrillActivity : Activity() {
 
             if (attempt.eligible && result.passed) unlocked?.let { add(t("Next practice: ${it.title}", Snow.Type.TITLE), bottom = 12) }
             if (!run.demo) add(t("The raw session is in your logbook; sensor recovery may still be pending.", Snow.Type.CAPTION, Snow.INK_SOFT), bottom = 12)
+            add(Snow.button(this@DrillActivity, "Open saved result", Snow.ButtonKind.SECONDARY) {
+                startActivity(Intent(this@DrillActivity, PracticeResultActivity::class.java).putExtra("attempt_id", attempt.id))
+            }, bottom = 10)
             if (attempt.eligible && result.passed && unlocked != null) add(Snow.button(this@DrillActivity, "Next drill") {
                 startActivity(Intent(this@DrillActivity, DrillActivity::class.java).putExtra("drill", unlocked.id)); finish()
             }, bottom = 10)

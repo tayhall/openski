@@ -42,24 +42,24 @@ object RunComparisonCard {
             val on = index == selected
             tile.setTextColor(if (on) Snow.SNOW else Snow.INK)
             tile.background = Snow.rounded(context, if (on) Snow.INK else Snow.PAPER, 16, Snow.INK, 2)
-            tile.contentDescription = tileDescription(index, comparison.windows[index]) + if (on) ", selected" else ""
+            tile.contentDescription = tileDescription(index, comparison.windows[index])
+            tile.isSelected = on
         }
 
         fun showChart() {
             animator?.cancel()
             val window = comparison.windows[selected]
             // With no target data the chart shows the turns alone: a depth of zero draws no band and no "Reach" label.
-            line = CarvedLineView(context, window.recorded, window.target, comparison.target?.depthDegrees ?: 0.0, Snow.BLUE).apply {
-                contentDescription = "Roll for window ${selected + 1}, reconstructed from your half-turns" +
-                    if (comparison.target != null) ", against the target wave." else "."
-            }
+            line = CarvedLineView(context, window.recorded, window.target, comparison.target?.depthDegrees ?: 0.0, Snow.BLUE,
+                "Window ${selected + 1}, reconstructed from half-turns", "target wave")
             chartHolder.removeAllViews()
             chartHolder.addView(line, FrameLayout.LayoutParams(-1, -2))
             styleTiles()
         }
 
         comparison.windows.forEachIndexed { index, window ->
-            val tile = TextView(context).apply {
+            val tile = android.widget.Button(context).apply {
+                isAllCaps = false; backgroundTintList = null; stateListAnimator = null
                 text = "${marker(window.verdict)}\n${index + 1}"
                 textSize = 16f
                 gravity = Gravity.CENTER
@@ -89,7 +89,7 @@ object RunComparisonCard {
             }
         }, 12)
         card.add(text(if (comparison.target != null)
-            "Reconstructed from your half-turns. The pale line is the target. Dry-ski boot roll against a training target, not on-snow technique."
+            "Reconstructed from your half-turns. The dashed pale line is the target. Dry-ski boot roll against a training target, not on-snow technique."
         else "Reconstructed from your half-turns. Dry-ski boot roll, not on-snow technique.", Snow.Type.CAPTION, Snow.INK_SOFT), 10)
         return card
     }

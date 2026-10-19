@@ -29,6 +29,11 @@ class CoachingActivity : Activity() {
     private var bound = false
     private var settings = CoachSettings()
     private var state = CoachState()
+    private var rendered: Pair<Boolean, CoachSettings>? = null
+    private var scroll: ScrollView? = null
+    private var statusTitle: TextView? = null
+    private var statusMessage: TextView? = null
+    private var verdict: TextView? = null
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
@@ -86,6 +91,11 @@ class CoachingActivity : Activity() {
     }
 
     private fun render() {
+        val structure = state.running to settings
+        if (rendered == structure) { updateStatus(); return }
+        rendered = structure
+        val previousScroll = scroll?.scrollY ?: 0
+        val focusedTag = currentFocus?.tag
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             val inset = Snow.dp(this@CoachingActivity, 20)
@@ -95,9 +105,12 @@ class CoachingActivity : Activity() {
         column.add(t("Audio cues for pace and depth, so you can ski with the phone in a pocket and listen.", Snow.Type.BODY, Snow.INK_SOFT), bottom = 16)
 
         val status = Snow.card(this, 18)
-        status.add(t(when { state.running && state.paused -> "Paused"; state.running -> "Coaching"; else -> "Ready" }, Snow.Type.TITLE))
-        status.add(t(state.message.ifEmpty { settings.targetLabel() }, Snow.Type.BODY, Snow.INK_SOFT), top = 4)
-        state.last?.let { status.add(t(verdictLine(it), Snow.Type.BODY), top = 10) }
+        statusTitle = t("", Snow.Type.TITLE).also {
+            it.accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
+            status.add(it)
+        }
+        statusMessage = t("", Snow.Type.BODY, Snow.INK_SOFT).also { status.add(it, top = 4) }
+        verdict = t("").also { status.add(it, top = 10) }
         column.add(status, bottom = 12)
 
         if (state.running) {
@@ -128,11 +141,29 @@ class CoachingActivity : Activity() {
             column.add(setting("Allow phone speaker", onOff(settings.allowPhoneSpeaker)) { change { it.copy(allowPhoneSpeaker = !it.allowPhoneSpeaker) } })
         }
         frame.removeAllViews()
-        frame.addView(ScrollView(this).apply { isFillViewport = true; addView(column) })
+        scroll = ScrollView(this).apply { isFillViewport = true; addView(column) }
+        frame.addView(scroll)
+        updateStatus()
+        scroll?.post {
+            focusedTag?.let { column.findViewWithTag<View>(it)?.requestFocus() }
+            scroll?.scrollTo(0, previousScroll)
+        }
+    }
+
+    /** Verdict updates keep the same controls, scroll container and accessibility focus. */
+    private fun updateStatus() {
+        fun TextView.update(value: String) { if (text.toString() != value) text = value }
+        statusTitle?.update(when { state.running && state.paused -> "Paused"; state.running -> "Coaching"; else -> "Ready" })
+        statusMessage?.update(state.message.ifEmpty { settings.targetLabel() })
+        verdict?.apply {
+            update(state.last?.let(::verdictLine).orEmpty())
+            visibility = if (state.last == null) View.GONE else View.VISIBLE
+        }
     }
 
     private fun setting(label: String, value: String, action: () -> Unit) =
         Snow.button(this, "$label: $value", Snow.ButtonKind.SECONDARY, action).apply {
+            tag = label
             layoutParams = LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = Snow.dp(this@CoachingActivity, 10) }
         }
 

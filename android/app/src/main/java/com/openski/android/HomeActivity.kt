@@ -97,7 +97,7 @@ class HomeActivity : Activity() {
             item.setTextColor(if (selected) Snow.INK else Snow.INK_SOFT)
             item.setTypeface(resources.getFont(if (selected) R.font.barlow_condensed_bold else R.font.barlow_condensed_semibold))
             item.background = if (selected) Snow.rounded(this, Snow.GLACIER, 20) else null
-            item.contentDescription = navLabels[index] + if (selected) ", selected" else ""
+            item.isSelected = selected
         }
     }
 
@@ -105,8 +105,10 @@ class HomeActivity : Activity() {
         setBackgroundColor(Snow.PAPER)
         setPadding(Snow.dp(this@HomeActivity, 8), Snow.dp(this@HomeActivity, 6), Snow.dp(this@HomeActivity, 8), Snow.dp(this@HomeActivity, 6))
         navLabels.forEachIndexed { index, label ->
-            val item = TextView(this@HomeActivity).apply {
+            val item = android.widget.Button(this@HomeActivity).apply {
+                isAllCaps = false; backgroundTintList = null; stateListAnimator = null
                 text = label; textSize = 17f; gravity = Gravity.CENTER; includeFontPadding = false
+                minimumWidth = 0; setPadding(0, Snow.dp(this@HomeActivity, 12), 0, Snow.dp(this@HomeActivity, 12))
                 minHeight = Snow.dp(this@HomeActivity, 48); isClickable = true; isFocusable = true
                 setOnClickListener { tab = index; render() }
             }
@@ -179,12 +181,21 @@ class HomeActivity : Activity() {
         LinearLayout(this).apply {
             gravity = Gravity.CENTER_VERTICAL
             isClickable = true; isFocusable = true
-            contentDescription = "$title. $blurb" + if (selected) " Selected." else ""
+            contentDescription = "$title. $blurb"
+            isSelected = selected
+            accessibilityDelegate = object : View.AccessibilityDelegate() {
+                override fun onInitializeAccessibilityNodeInfo(host: View, info: android.view.accessibility.AccessibilityNodeInfo) {
+                    super.onInitializeAccessibilityNodeInfo(host, info)
+                    info.className = "android.widget.RadioButton"
+                    info.isCheckable = true; info.isChecked = selected
+                }
+            }
             val inset = Snow.dp(this@HomeActivity, 18)
             setPadding(inset, inset, inset, inset)
             background = Snow.rounded(this@HomeActivity, if (selected) Snow.GLACIER else Snow.PAPER, 24, if (selected) Snow.INK else Snow.GLACIER, if (selected) 2 else 1)
-            addView(PisteMarker(this@HomeActivity, piste, 30))
+            addView(PisteMarker(this@HomeActivity, piste, 30).apply { importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO })
             addView(LinearLayout(this@HomeActivity).apply {
+                importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
                 orientation = LinearLayout.VERTICAL
                 addView(t(title, Snow.Type.TITLE))
                 addView(t(blurb, Snow.Type.BODY, Snow.INK_SOFT).apply { setPadding(0, Snow.dp(this@HomeActivity, 3), 0, 0) })
@@ -256,6 +267,15 @@ class HomeActivity : Activity() {
         pathCard.addView(pathRow)
         pathCard.add(bar(passed.toFloat() / target.size, Snow.pisteColor(goal.piste)), top = 14)
         pathCard.isClickable = true
+        pathCard.isFocusable = true
+        pathCard.contentDescription = "Open Path. ${goal.piste.title}, $passed of ${target.size} drills passed"
+        pathCard.accessibilityDelegate = object : View.AccessibilityDelegate() {
+            override fun onInitializeAccessibilityNodeInfo(host: View, info: android.view.accessibility.AccessibilityNodeInfo) {
+                super.onInitializeAccessibilityNodeInfo(host, info)
+                info.className = "android.widget.Button"
+            }
+        }
+        pathRow.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
         pathCard.setOnClickListener { tab = 1; render() }
         add(pathCard, bottom = 16)
 

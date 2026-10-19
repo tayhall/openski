@@ -59,11 +59,23 @@ class SessionDetailActivity : Activity() {
                     SessionHealth.summaryLines(SessionHealth.build(item))+(runCatching { GestureSync.summaryLine(GestureSync.analyse(withPings)) }.getOrElse { "Boot clocks: stomp sync unavailable (${it.message ?: "error"})." })
                 }.orEmpty()
                 runOnUiThread { mountSlip=slip; healthLines=health; if (!isDestroyed && !isFinishing) {
-                    if (loaded == null) { finish(); return@runOnUiThread }
+                    if (loaded == null) { unavailable("This saved session could not be found on this phone."); return@runOnUiThread }
                     data = loaded; analysis = result; render(loaded, result!!,calibrations,bootRoll)
                 } }
-            } catch (error: Exception) { runOnUiThread { message("Could not load session: ${error.message}") } }
+            } catch (error: Exception) { runOnUiThread { unavailable("Could not load this session. Your saved data has been kept.", retry = true) } }
         }
+    }
+    private fun unavailable(reason: String, retry: Boolean = false) {
+        if (isDestroyed || isFinishing) return
+        val column = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL; setBackgroundColor(SkiUi.CANVAS)
+            setPadding(dp(20), dp(20), dp(20), dp(20))
+            addView(text("Session unavailable", 24f)); addView(text(reason, 16f))
+            if (retry) addView(button("Retry") { load() })
+            addView(button("‹ Back") { finish() })
+        }
+        SkiUi.applyInsets(column)
+        setContentView(column)
     }
     private fun dp(n: Int) = (n*resources.displayMetrics.density).toInt()
     private fun text(s: String, size: Float = 14f) = SkiUi.label(this,s,size,if(size>=18) SkiUi.TEXT else SkiUi.SECONDARY,size>=18).apply {

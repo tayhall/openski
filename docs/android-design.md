@@ -49,4 +49,12 @@ Pause/audio practice controls remain planned for increment 8. New run layout and
 
 ## Verification
 
+### Accessible controls and result identity (implementation increment 3)
+
+Shared Snow actions are platform buttons. Home navigation and comparison-window controls expose selected state; onboarding choices expose checked radio semantics and text headings expose heading semantics where supported. Coaching status/verdict updates retain the same scroll container and controls. Only phase/status titles announce politely; per-window metrics are available for exploration without an automatic announcement on every update. Run announcements are limited to phase changes rather than a live region around the entire updating screen.
+
+`CarvedLineView` uses scaled text and an accessibility summary generated from its actual trace, target and comparison. Callers label measured, simulated and reconstructed data explicitly. A missing target has no invented target instruction. Comparison strokes are dashed and legend text distinguishes a previous attempt from a target wave.
+
+`PracticeResultActivity` reads the exact committed `attempt_id`; it never rescores or awards a result. Standalone imported/demo results retain their summary without raw data. Unknown historical targets and missing/deleted linked sessions are explicit. Run completion captures its `session_id` in the action and opens `SessionDetailActivity` directly; missing sessions offer a visible fallback, and load failures offer retry.
+
 The redesign passed debug/instrumentation builds, 30 JVM unit tests and Android lint. Emulator review covers dashboard navigation, demo creation, Replay/Analysis/Details, 130% text, portrait/landscape and selected-tab restoration. Existing SQLite/export/recovery instrumentation remains part of acceptance. Outdoor readability with gloves and physical camera/video timing require real-device field checks.
