@@ -92,13 +92,20 @@ class SensorSessionService : Service() {
 
     // Practice capture belongs to the service; observers never own or stop it.
     private var drillGhost: RollTrace? = null
+    private var requestedRepeat: Attempt? = null
     private var drillNext: Drill? = null
     fun nextPracticeDrill(): Drill? = drillNext
     private val drillObservers = linkedMapOf<Any, (DrillState) -> Unit>()
     private val drillEffects: DrillEffects = object : DrillEffects {
         override fun prepare(attempt: Attempt, completed: (Result<Int>) -> Unit) {
+            val repeatSource = requestedRepeat
             io.execute {
                 val result = runCatching {
+                    repeatSource?.let { source ->
+                        val saved = requireNotNull(progressStore.attempt(source.id)) { "Saved target is unavailable." }
+                        require(saved == source && saved.demo == attempt.demo && saved.target == attempt.target && saved.scoringVersion == attempt.scoringVersion) { "Saved target changed. Reopen the result." }
+                        PracticeRepeat.drill(saved)
+                    }
                     val previous = progressStore.attempts() // Imports legacy history before the first new write.
                     if (!attempt.demo && !Progress(previous, progressStore.experience.startsOn).unlocked(Programme.drill(attempt.drillId)!!))
                         error("Complete the preceding measured sets, or explore this drill in Demo.")
@@ -163,11 +170,15 @@ class SensorSessionService : Service() {
     private fun publishDrill() {
         if (drillObservers.isNotEmpty()) { val snapshot = drillState(); drillObservers.values.toList().forEach { it(snapshot) } }
     }
-    fun startDrill(id: String, demo: Boolean): String? {
-        val drill = Programme.drill(id) ?: return "Unknown drill"
+    fun startDrill(id: String, demo: Boolean, repeat: Attempt? = null): String? {
+        val drill = if (repeat != null) runCatching { PracticeRepeat.drill(repeat) }.getOrElse { return it.message ?: "Cannot repeat target" }
+            else Programme.drill(id) ?: return "Unknown drill"
+        if (repeat != null && (repeat.drillId != id || repeat.demo != demo)) return "Saved target source does not match."
         if (!demo && listOf("L", "R").none { progressStore.sensorAddress(it) != null }) return "Pair a boot sensor before starting measured practice."
         if (activeSessionId != null || runActive() || coachState.running) return "Another recording or coaching session is active. Finish it first."
         if (transfers.isNotEmpty() || store.hasPendingRecovery()) return "Recover the retained recording before starting practice."
+        if (drillController.active) return "A practice set is already active. Return to it or finish it first."
+        requestedRepeat = repeat
         val problem = drillController.start(drill, demo, UUID.randomUUID().toString(), if (demo) null else UUID.randomUUID().toString())
         if (problem != null) return problem
         try {

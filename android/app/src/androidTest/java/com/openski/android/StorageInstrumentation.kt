@@ -53,6 +53,7 @@ class StorageInstrumentation : Instrumentation() {
                 finish(Activity.RESULT_OK, Bundle().apply { putString("stream", "PASS: native controls and selected navigation, chart facts, stable coaching focus/scroll, exact run/practice links and missing-record fallbacks\n") })
                 return
             }
+            HistoryStorageRegression.run(this)
             val context=targetContext
             for(version in listOf(2,3,4,5,6)) {
                 val migrationName="openski-migration-$version-${UUID.randomUUID()}.db"

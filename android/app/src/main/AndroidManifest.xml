@@ -32,6 +32,7 @@
             </intent-filter>
         </activity>
         <activity android:name=".DrillActivity" android:exported="false" android:theme="@style/Theme.OpenSki.Snow" />
+        <activity android:name=".HistoryActivity" android:exported="false" android:theme="@style/Theme.OpenSki.Snow" />
         <activity android:name=".PracticeResultActivity" android:exported="false" android:theme="@style/Theme.OpenSki.Snow" />
         <activity android:name=".BootSetupActivity" android:exported="false" android:theme="@style/Theme.OpenSki.Snow" />
         <activity android:name=".TechniqueVideosActivity" android:exported="false" android:theme="@style/Theme.OpenSki.Snow" />

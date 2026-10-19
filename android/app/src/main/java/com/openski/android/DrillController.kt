@@ -40,7 +40,7 @@ class DrillController(private val effects: DrillEffects, private val now: () -> 
     fun restoreSaved(previous: Attempt) {
         check(!active)
         require(previous.status != PracticeStatus.ACTIVE)
-        drill = Programme.drill(previous.drillId)
+        drill = runCatching { PracticeRepeat.drill(previous) }.getOrNull() ?: Programme.drill(previous.drillId)
         attempt = previous
         phase = DrillPhase.DONE
         message = when (previous.status) {

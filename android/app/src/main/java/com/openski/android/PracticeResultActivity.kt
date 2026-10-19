@@ -82,6 +82,22 @@ class PracticeResultActivity : Activity() {
             ?: "The target was not recorded for this historical attempt.")
         line("Cuff roll is not an on-snow technique score.", Snow.Type.CAPTION)
         if (attempt.demo) line("Demo results stay separate from My practice achievements.")
+        if (attempt.status == PracticeStatus.ACTIVE) {
+            addView(Snow.button(this@PracticeResultActivity, "Return to active practice") {
+                startActivity(Intent(this@PracticeResultActivity, DrillActivity::class.java).putExtra("drill", attempt.drillId).putExtra("resume_active", true))
+            })
+        } else if (runCatching { PracticeRepeat.drill(attempt) }.isSuccess) {
+            addView(Snow.button(this@PracticeResultActivity, "Repeat this target") {
+                startActivity(Intent(this@PracticeResultActivity, DrillActivity::class.java).putExtra("drill", attempt.drillId).putExtra("repeat_attempt_id", attempt.id))
+            })
+        } else {
+            line(runCatching { PracticeRepeat.drill(attempt) }.exceptionOrNull()?.message ?: "Exact repeat unavailable.")
+            Programme.drill(attempt.drillId)?.let { preset ->
+                addView(Snow.button(this@PracticeResultActivity, "Use current preset", Snow.ButtonKind.SECONDARY) {
+                    startActivity(Intent(this@PracticeResultActivity, DrillActivity::class.java).putExtra("drill", preset.id))
+                })
+            }
+        }
         if (rawExists) addView(RecoveryCard(this@PracticeResultActivity, attempt.sessionId))
         if (rawExists) addView(Snow.button(this@PracticeResultActivity, "Open raw session", Snow.ButtonKind.SECONDARY) {
             startActivity(Intent(this@PracticeResultActivity, SessionDetailActivity::class.java).putExtra("session_id", attempt.sessionId))

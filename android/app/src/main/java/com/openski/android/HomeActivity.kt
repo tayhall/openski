@@ -23,6 +23,7 @@ class HomeActivity : Activity() {
     private var demoProgress = false
     private var practiceAttempts = emptyList<Attempt>()
     private var practiceError: String? = null
+    private var lastRun: Pair<HistoryRow, Boolean>? = null
     private var practiceLoading = true
     private val practiceIo = java.util.concurrent.Executors.newSingleThreadExecutor()
     private var onboardingStep = 0
@@ -51,10 +52,16 @@ class HomeActivity : Activity() {
         practiceLoading = true
         render()
         practiceIo.execute {
-            val loaded = runCatching { store.attempts() }
+            val loaded = runCatching {
+                val attempts = store.attempts()
+                val latest = LocalSessionStore(this).use { db ->
+                    listOf(false, true).mapNotNull { source -> HistoryStore(db).page(HistoryKind.RUNS, source, limit = 1).firstOrNull()?.let { it to source } }.maxByOrNull { it.first.time }
+                }
+                attempts to latest
+            }
             runOnUiThread {
                 if (!isDestroyed) {
-                    loaded.onSuccess { practiceAttempts = it; practiceError = null }
+                    loaded.onSuccess { practiceAttempts = it.first; lastRun = it.second; practiceError = null }
                         .onFailure { practiceError = "Could not load practice history. Your saved history has been kept. Reopen this screen to retry." }
                     practiceLoading = false
                     render()
@@ -205,7 +212,30 @@ class HomeActivity : Activity() {
 
     // Today ---------------------------------------------------------------------------------------------
 
+    private fun LinearLayout.historyLinks() {
+        add(Snow.button(this@HomeActivity, "History", Snow.ButtonKind.SECONDARY) {
+            startActivity(Intent(this@HomeActivity, HistoryActivity::class.java).putExtra("demo", demoProgress))
+        }, bottom = 12)
+    }
+
     private fun today() = page {
+        historyLinks()
+        practiceAttempts.filter { it.status == PracticeStatus.ACTIVE }.maxByOrNull { it.timeMs }?.let { active ->
+            add(Snow.button(this@HomeActivity, "Return to active practice · ${if (active.demo) "Demo" else "My practice"}") {
+                startActivity(Intent(this@HomeActivity, DrillActivity::class.java).putExtra("drill", active.drillId).putExtra("resume_active", true))
+            }, bottom = 12)
+        }
+        val latestPractice = practiceAttempts.filter { it.status != PracticeStatus.ACTIVE }.maxByOrNull { it.timeMs }
+        lastRun?.takeIf { it.first.time > (latestPractice?.timeMs ?: Long.MIN_VALUE) }?.let { (run, demo) ->
+            add(Snow.button(this@HomeActivity, "Last run · ${if(demo) "Demo" else "My practice"} · ${run.detail} · ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(run.time))}", Snow.ButtonKind.SECONDARY) {
+                startActivity(Intent(this@HomeActivity, SessionDetailActivity::class.java).putExtra("session_id", run.id))
+            }, bottom = 12)
+        }
+        latestPractice?.takeIf { it.timeMs >= (lastRun?.first?.time ?: Long.MIN_VALUE) }?.let { recent ->
+            add(Snow.button(this@HomeActivity, "Last practice · ${if(recent.demo) "Demo" else "My practice"} · ${recent.status.name.lowercase()} · ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(recent.timeMs))}", Snow.ButtonKind.SECONDARY) {
+                startActivity(Intent(this@HomeActivity, PracticeResultActivity::class.java).putExtra("attempt_id", recent.id))
+            }, bottom = 12)
+        }
         val progress = practice()
         val goal = store.goal ?: Goal.CARVING
         val now = System.currentTimeMillis()
@@ -380,6 +410,7 @@ class HomeActivity : Activity() {
     // Progress ------------------------------------------------------------------------------------------
 
     private fun progress() = page {
+        historyLinks()
         val progress = practice(demoProgress)
         sourcePicker()
         val now = System.currentTimeMillis()

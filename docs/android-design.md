@@ -78,3 +78,8 @@ Mode commands in either direction refuse active capture and pending recovery. Th
 ## Compact phase layouts
 
 `PhaseLayout` separates a weighted scrolling content region from persistent native action buttons. Parent screens apply system/cutout/keyboard insets once. Stable action keys preserve button identity and focus while status or readiness details change. Run Ready leads with the current target and boot/audio checks; settings expand separately. Drill instructions and secondary setup tools expand without placing more content before the active action. Long readiness reasons remain available in the scrolling details; the footer retains a bounded two-line summary (one line when available height is short). In short windows, Retry/Cancel share one row so keyboard insets cannot force both below the content area. No Pause control is introduced before active-interval scoring supports it.
+
+
+## Practice history and repeat
+
+History uses bounded lightweight SQL keyset pages ordered by timestamp and ID; linked drill raw sessions do not appear as duplicate runs. Repeat preparation revalidates the stored source/target/version on the service IO path. The controller receives the snapshot-adjusted Drill, so detection, scoring, targets and saved results agree; fresh IDs and calibration are retained. No schema migration is needed.

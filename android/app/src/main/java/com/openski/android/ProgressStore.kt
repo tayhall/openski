@@ -27,6 +27,8 @@ class ProgressStore(context: Context) {
         block(practice)
     }
 
+    fun ensureImported() { withPractice { Unit } }
+
     fun attempts(): List<Attempt> = withPractice { it.list() }
     fun attempt(id: String): Attempt? = withPractice { it.get(id) }
 

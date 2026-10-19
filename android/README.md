@@ -101,3 +101,8 @@ The sensor recorder's start/stop/download protocol is documented in the firmware
 ### Compact practice controls
 
 Run and drill preparation keep their current Start action below scrolling explanations. Active phases retain Stop/Finish/Cancel/Retry or Continue saving in background in a separate action region; scrolling warnings cannot cover it. Preparation settings and secondary boot-management tools expand on demand. Expansion survives rotation. Controls retain their identity across same-phase updates; capture ownership, recording and recovery commands are unchanged. Insets include the keyboard for these screens.
+
+
+## Practice history and repeat
+
+History is available from Today and Progress with Runs, Drills and Ski days sections. My practice and Demo remain separate; rows open exact saved records. Repeat this target confirms the stored movement/beat/depth and source, then runs fresh preparation. Older records with unknown settings offer an explicitly labelled current preset instead. Unsupported scoring versions cannot silently repeat.
