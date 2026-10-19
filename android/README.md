@@ -61,7 +61,7 @@ Run results open their exact saved session. Drill results open a persisted attem
 
 ## Guided boot preparation and recovery
 
-Boots → Pair my boots / Prepare boots and recover recordings opens the guided setup screen. Search uses the existing OpenSki BLE service filter; assign discovered sensors to Left or Right, choose mounting, and request neutral zero while standing still. Saved assignments and live connection status are separate. Recording and pending recovery protect replacement, forgetting and swaps. Advanced telemetry and recording export remain available from Review/export recordings and advanced tools.
+Boots → Set up boots / Prepare boots and recover recordings opens the guided setup screen. Search uses the existing OpenSki BLE service filter; assign discovered sensors to Left or Right, choose mounting, and request neutral zero while standing still. Saved assignments and live connection status are separate. Recording and pending recovery protect replacement, forgetting and swaps. Advanced telemetry and recording export remain available from Review/export recordings and advanced tools.
 
 Run readiness lists all blockers with actions for connection, recovery, audio, active capture and phone storage. Mounting guidance applies to dry-ski drills and does not unnecessarily block runs; runs still perform their own neutral zero. GPS remains optional. Shared recovery cards on Today, Run and saved results distinguish downloading, phone-copy validation, checked copies awaiting sensor erase, paused recovery and failures. Reopening setup reads persisted capture state; opening it does not itself resume paused recovery. Connect saved boots and resume recovery or Recover saved recordings / retry resumes explicitly.
 

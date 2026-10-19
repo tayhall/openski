@@ -13,6 +13,9 @@ data class GpsStatus(val state: GpsState, val accuracyM: Int? = null) {
         GpsState.WAITING -> "GPS · waiting for signal"
         GpsState.READY -> "GPS ready · accuracy ${accuracyM ?: "?"} m"
     }
+
+    /** The Ready checklist row: the same tick or circle glyphs as the boots and earbuds rows. GPS never blocks a run. */
+    fun row(): String = "${if (state == GpsState.READY) "✓" else "○"}  ${label()}"
 }
 
 /** What the Ready screen's GPS row says. Never blocks a run: every state still allows starting. */

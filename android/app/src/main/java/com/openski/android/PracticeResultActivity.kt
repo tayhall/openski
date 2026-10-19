@@ -30,12 +30,12 @@ class PracticeResultActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             val pad = Snow.dp(this@PracticeResultActivity, 20)
             setPadding(pad, pad, pad, pad)
-            addView(Snow.button(this@PracticeResultActivity, "‹ Back", Snow.ButtonKind.QUIET) { finish() })
             content()
         }
         val scroll = ScrollView(this).apply { setBackgroundColor(Snow.SNOW); addView(column); isFillViewport = true }
-        SkiUi.applyInsets(scroll)
-        setContentView(scroll)
+        val screen = Snow.screen(this, scroll)
+        SkiUi.applyInsets(screen)
+        setContentView(screen)
     }
 
     private fun LinearLayout.line(value: String, type: Snow.Type = Snow.Type.BODY) {

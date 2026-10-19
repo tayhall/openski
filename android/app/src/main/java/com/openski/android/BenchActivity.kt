@@ -71,8 +71,9 @@ class BenchActivity : Activity(), SensorSessionService.Listener {
             setPadding(inset, inset, inset, inset * 2)
         }
         val root = ScrollView(this).apply { setBackgroundColor(SkiUi.CANVAS); isFillViewport = true; addView(column) }
-        SkiUi.applyInsets(root)
-        setContentView(root)
+        val screen = SkiUi.screen(this, root)
+        SkiUi.applyInsets(screen)
+        setContentView(screen)
         bound = bindService(Intent(this, SensorSessionService::class.java), connection, Context.BIND_AUTO_CREATE)
         render()
         handler.post(ticker)

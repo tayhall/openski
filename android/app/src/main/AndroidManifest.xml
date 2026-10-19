@@ -17,6 +17,7 @@
 
     <application
         android:name=".OpenSkiApplication"
+        android:enableOnBackInvokedCallback="true"
         android:allowBackup="false"
         android:icon="@mipmap/ic_openski"
         android:label="OpenSki"

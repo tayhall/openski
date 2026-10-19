@@ -52,14 +52,15 @@ class TechniqueVideosActivity : Activity() {
         Snow.configureWindow(this)
         selected = TechniqueVideos.find(intent.getStringExtra("video")) ?: TechniqueVideos.all.first()
         val frame = FrameLayout(this).apply { setBackgroundColor(Snow.SNOW) }
-        SkiUi.applyInsets(frame)
         content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             val inset = Snow.dp(this@TechniqueVideosActivity, 20)
             setPadding(inset, inset, inset, Snow.dp(this@TechniqueVideosActivity, 28))
         }
         frame.addView(ScrollView(this).apply { isFillViewport = true; addView(content) })
-        setContentView(frame)
+        val screen = Snow.screen(this, frame)
+        SkiUi.applyInsets(screen)
+        setContentView(screen)
         render()
     }
 
@@ -72,7 +73,6 @@ class TechniqueVideosActivity : Activity() {
 
     private fun render() {
         content.removeAllViews()
-        add(Snow.button(this, "Back", Snow.ButtonKind.QUIET) { finish() }, bottom = 8)
         add(Snow.text(this, "Technique", Snow.Type.HERO))
         add(Snow.text(this, "Short animated demonstrations. They show the movement; your drills score dry-ski boot roll, not these.",
             Snow.Type.BODY, Snow.INK_SOFT), top = 4, bottom = 16)

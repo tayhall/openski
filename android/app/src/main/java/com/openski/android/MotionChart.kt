@@ -39,6 +39,12 @@ class MotionChart(context: Context) : View(context) {
         6,7 -> s.accelX
         else -> sqrt(s.accelX*s.accelX+s.accelY*s.accelY+s.accelZ*s.accelZ)
     } }
+    // Built in onDraw from the samples it already filtered, so TalkBack queries never rescan the timeline.
+    private var summary: String? = null
+    override fun onInitializeAccessibilityNodeInfo(info: android.view.accessibility.AccessibilityNodeInfo) {
+        super.onInitializeAccessibilityNodeInfo(info)
+        summary?.let { info.contentDescription = it }
+    }
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         canvas.drawRoundRect(0f,0f,width.toFloat(),height.toFloat(),unit(16f),unit(16f),paint.apply { color=SkiUi.SURFACE_RAISED })
@@ -48,13 +54,17 @@ class MotionChart(context: Context) : View(context) {
             val value=when(channel) { 6->it.pitchDegrees; 7->it.yawDegrees; else->it.degrees }
             TimelinePoint(it.side,it.timeMs,SensorSample(0,0,value.toFloat(),0f,0f,0f,0f,0f),"orientation")
         } else points.filter { it.timeMs in startMs..endMs }
+        summary = ChartText.motion(channel, (startMs-originMs)/1000, (endMs-originMs)/1000, listOf("L", "R").map { side ->
+            val values = visible.filter { it.side == side }.map { value(it).toDouble() }
+            ChartText.BootRange(side, values.size, values.minOrNull() ?: 0.0, values.maxOrNull() ?: 0.0)
+        })
         var low = visible.minOfOrNull(::value) ?: 0f
         var high = visible.maxOfOrNull(::value) ?: 1f
         val minimumSpan=when(channel) { in 5..7 -> 10f; in 1..4 -> 0.5f; else -> 1f }
         if(high-low<minimumSpan) { val centre=(low+high)/2; low=centre-minimumSpan/2; high=centre+minimumSpan/2 }
         val padding = (high - low) * 0.1f
         low -= padding; high += padding
-        paint.textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP,10f,resources.displayMetrics)
+        paint.textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP,12f,resources.displayMetrics)
         paint.typeface=Typeface.create("sans-serif",Typeface.NORMAL)
         val left = (0..4).maxOf { paint.measureText(String.format(java.util.Locale.US,"%.1f",low+(high-low)*it/4)) }+unit(16f)
         val right = width - unit(14f)

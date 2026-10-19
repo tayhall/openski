@@ -23,6 +23,7 @@ class RecoveryCard(context: Context, private val sessionId: String? = null, priv
     private var generation = 0
     private val body = if (dark) SkiUi.label(context, "Checking recording recovery…", 13f, SkiUi.SECONDARY)
         else Snow.text(context, "Checking recording recovery…")
+    init { body.accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE }
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, binder: IBinder?) {
             service = (binder as? SensorSessionService.LocalBinder)?.service
@@ -52,7 +53,7 @@ class RecoveryCard(context: Context, private val sessionId: String? = null, priv
     }
     init {
         orientation = VERTICAL
-        val open = { context.startActivity(Intent(context, BootSetupActivity::class.java)) }
+        val open = { context.startActivity(Intent(context, BootSetupActivity::class.java).reuseIfOpen()) }
         if (dark) {
             background = SkiUi.rounded(context, SkiUi.SURFACE)
             val pad = SkiUi.dp(context, 18); setPadding(pad, pad, pad, pad)
@@ -61,7 +62,7 @@ class RecoveryCard(context: Context, private val sessionId: String? = null, priv
             addView(body, gap())
             addView(SkiUi.button(context, "Open preparation and recovery") { open() })
         } else {
-            background = Snow.rounded(context, Snow.PAPER, 24, Snow.GLACIER)
+            background = Snow.rounded(context, Snow.PAPER, 24, Snow.EDGE)
             val pad = Snow.dp(context, 18); setPadding(pad, pad, pad, pad)
             addView(Snow.text(context, "Recording recovery", Snow.Type.TITLE), Snow.fullWidth(0, context, 8))
             addView(body, Snow.fullWidth(0, context, 8))

@@ -20,7 +20,8 @@ object SkiUi {
     val CANVAS = 0xFF0B1116.toInt()
     val SURFACE = 0xFF141D24.toInt()
     val SURFACE_RAISED = 0xFF1C2931.toInt()
-    val BORDER = 0xFF30414C.toInt()
+    val BORDER = 0xFF5A7080.toInt()
+    val RIPPLE = 0x30FFFFFF
     val TEXT = 0xFFF1F5F5.toInt()
     val SECONDARY = 0xFFB8C6CE.toInt()
     val MUTED = 0xFF94A7B5.toInt()
@@ -80,6 +81,17 @@ object SkiUi {
         setOnClickListener { onClick() }
     }
 
+    /** The dark screens' way out: a quiet "‹  Back" bar above the content, matching the light [Snow.screen]. */
+    fun screen(activity: android.app.Activity, content: View, up: () -> Unit = { activity.finish() }): LinearLayout =
+        LinearLayout(activity).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(CANVAS)
+            addView(button(activity, "‹  Back", ButtonStyle.QUIET) { up() }.apply {
+                contentDescription = "Back"; minHeight = dp(activity, 56); minWidth = dp(activity, 96)
+            }, LinearLayout.LayoutParams(-2, -2).apply { marginStart = dp(activity, 12) })
+            addView(content, LinearLayout.LayoutParams(-1, 0, 1f))
+        }
+
     fun styleButton(button: Button, style: ButtonStyle = ButtonStyle.SECONDARY) {
         val context = button.context
         val fill = when (style) {
@@ -98,7 +110,7 @@ object SkiUi {
             ButtonStyle.QUIET -> null
             else -> BORDER
         }
-        val enabled = RippleDrawable(ColorStateList.valueOf(0x30FFFFFF),
+        val enabled = RippleDrawable(ColorStateList.valueOf(RIPPLE),
             rounded(context, fill, 12, stroke), null)
         button.background = StateListDrawable().apply {
             addState(intArrayOf(-android.R.attr.state_enabled), rounded(context, SURFACE, 12, BORDER))
@@ -112,8 +124,10 @@ object SkiUi {
         button.isAllCaps = false
         button.textSize = 14f
         button.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
-        button.minHeight = dp(context, 48)
-        button.minimumHeight = dp(context, 48)
+        // Primary actions get glove-sized targets; the rest stay at 48 dp.
+        val height = if (style == ButtonStyle.PRIMARY) 56 else 48
+        button.minHeight = dp(context, height)
+        button.minimumHeight = dp(context, height)
         button.minWidth = dp(context, 48)
         button.minimumWidth = dp(context, 48)
         button.setPadding(dp(context, 14), dp(context, 12), dp(context, 14), dp(context, 12))

@@ -2,6 +2,7 @@ package com.openski.android
 
 import android.app.Activity
 import android.content.Intent
+import android.os.Build
 import android.os.Bundle
 import android.view.Gravity
 import android.view.View
@@ -49,7 +50,16 @@ class HomeActivity : Activity() {
 
     override fun onResume() {
         super.onResume()
-        practiceLoading = true
+        reload()
+    }
+
+    private var hasLoaded = false
+    private var renderedTab = -1
+
+    /** Only the first load replaces the tab with "Loading"; later refreshes update in place and keep scroll position. */
+    private fun reload() {
+        practiceLoading = !hasLoaded
+        practiceError = null
         render()
         practiceIo.execute {
             val loaded = runCatching {
@@ -61,8 +71,8 @@ class HomeActivity : Activity() {
             }
             runOnUiThread {
                 if (!isDestroyed) {
-                    loaded.onSuccess { practiceAttempts = it.first; lastRun = it.second; practiceError = null }
-                        .onFailure { practiceError = "Could not load practice history. Your saved history has been kept. Reopen this screen to retry." }
+                    loaded.onSuccess { practiceAttempts = it.first; lastRun = it.second; practiceError = null; hasLoaded = true }
+                        .onFailure { practiceError = "Could not load practice history. Your saved history has been kept." }
                     practiceLoading = false
                     render()
                 }
@@ -71,6 +81,30 @@ class HomeActivity : Activity() {
     }
 
     override fun onDestroy() { practiceIo.shutdown(); super.onDestroy() }
+
+    /** Back steps toward Today (or the previous onboarding step) before it leaves the app. */
+    private fun stepBack(): Boolean = when {
+        !store.onboarded && onboardingStep > 0 -> { onboardingStep -= 1; render(); true }
+        store.onboarded && tab != 0 -> { tab = 0; render(); true }
+        else -> false
+    }
+
+    private val backCallback = if (Build.VERSION.SDK_INT >= 33) android.window.OnBackInvokedCallback { stepBack() } else null
+    private var backRegistered = false
+
+    private fun syncBackCallback() {
+        if (Build.VERSION.SDK_INT < 33) return
+        val wanted = if (store.onboarded) tab != 0 else onboardingStep > 0
+        if (wanted == backRegistered) return
+        val cb = backCallback ?: return
+        if (wanted) onBackInvokedDispatcher.registerOnBackInvokedCallback(android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, cb)
+        else onBackInvokedDispatcher.unregisterOnBackInvokedCallback(cb)
+        backRegistered = wanted
+    }
+
+    // Below API 33 there is no back callback, so Back arrives as a key event.
+    override fun onKeyDown(keyCode: Int, event: android.view.KeyEvent?): Boolean =
+        (keyCode == android.view.KeyEvent.KEYCODE_BACK && Build.VERSION.SDK_INT < 33 && stepBack()) || super.onKeyDown(keyCode, event)
 
     private fun practice(demo: Boolean = false) = Progress(practiceAttempts, store.experience.startsOn, demo = demo)
 
@@ -93,17 +127,23 @@ class HomeActivity : Activity() {
     private fun render() {
         val nav = (body.parent as LinearLayout).getChildAt(1)
         nav.visibility = if (store.onboarded) View.VISIBLE else View.GONE
+        val keepY = if (renderedTab == tab) (body.getChildAt(0) as? ScrollView)?.scrollY ?: 0 else 0
         body.removeAllViews()
-        body.addView(if (!store.onboarded) onboarding() else if (tab != 3 && (practiceLoading || practiceError != null)) page {
-            add(t(if (practiceLoading) "Loading practice…" else practiceError!!, Snow.Type.BODY))
+        val content = if (!store.onboarded) onboarding() else if (tab != 3 && (practiceLoading || practiceError != null)) page {
+            add(t(if (practiceLoading) "Loading practice…" else practiceError!!, Snow.Type.BODY), bottom = 12)
+            if (!practiceLoading) add(Snow.button(this@HomeActivity, "Try again", Snow.ButtonKind.SECONDARY) { reload() })
         } else when (tab) {
             0 -> today(); 1 -> path(); 2 -> progress(); else -> boots()
-        })
+        }
+        body.addView(content)
+        renderedTab = tab
+        if (keepY > 0 && content is ScrollView) content.post { content.scrollTo(0, keepY) }
+        syncBackCallback()
         navItems.forEachIndexed { index, item ->
             val selected = index == tab
-            item.setTextColor(if (selected) Snow.INK else Snow.INK_SOFT)
+            item.setTextColor(if (selected) Snow.PAPER else Snow.INK_SOFT)
             item.setTypeface(resources.getFont(if (selected) R.font.barlow_condensed_bold else R.font.barlow_condensed_semibold))
-            item.background = if (selected) Snow.rounded(this, Snow.GLACIER, 20) else null
+            item.background = if (selected) Snow.rounded(this, Snow.INK, 20) else null
             item.isSelected = selected
         }
     }
@@ -133,18 +173,17 @@ class HomeActivity : Activity() {
         return ScrollView(this).apply { isFillViewport = true; addView(column) }
     }
 
-    private fun LinearLayout.add(view: View, top: Int = 0, bottom: Int = 0) =
-        addView(view, LinearLayout.LayoutParams(-1, -2).apply { topMargin = Snow.dp(this@HomeActivity, top); bottomMargin = Snow.dp(this@HomeActivity, bottom) })
 
     private fun t(text: String, type: Snow.Type = Snow.Type.BODY, tint: Int = Snow.INK) = Snow.text(this, text, type, tint)
     private fun openDrill(drill: Drill) = startActivity(Intent(this, DrillActivity::class.java).putExtra("drill", drill.id))
-    private fun openBoots() = startActivity(Intent(this, MainActivity::class.java))
+    private fun openBoots() = startActivity(Intent(this, BootSetupActivity::class.java).reuseIfOpen())
+    private fun openGeek() = startActivity(Intent(this, MainActivity::class.java))
     private fun openBench() = startActivity(Intent(this, BenchActivity::class.java))
 
     // Onboarding ----------------------------------------------------------------------------------------
 
     private fun onboarding() = page {
-        add(t("OpenSki", Snow.Type.TITLE, Snow.ORANGE), bottom = 24)
+        add(t("OpenSki", Snow.Type.TITLE, Snow.ORANGE_TEXT), bottom = 24)
         when (onboardingStep) {
             0 -> {
                 add(t("What do you want to ski better?", Snow.Type.HERO), bottom = 8)
@@ -154,7 +193,7 @@ class HomeActivity : Activity() {
                 }
                 add(Snow.button(this@HomeActivity, "Continue") {
                     if (pickedGoal != null) { onboardingStep = 1; render() }
-                }.apply { alpha = if (pickedGoal == null) .4f else 1f; isEnabled = pickedGoal != null }, top = 8)
+                }.apply { isEnabled = pickedGoal != null }, top = 8)
             }
             1 -> {
                 add(t("Where are you now?", Snow.Type.HERO), bottom = 8)
@@ -164,14 +203,14 @@ class HomeActivity : Activity() {
                 }
                 add(Snow.button(this@HomeActivity, "Continue") {
                     if (pickedExperience != null) { onboardingStep = 2; render() }
-                }.apply { alpha = if (pickedExperience == null) .4f else 1f; isEnabled = pickedExperience != null }, top = 8)
+                }.apply { isEnabled = pickedExperience != null }, top = 8)
                 add(Snow.button(this@HomeActivity, "Back", Snow.ButtonKind.QUIET) { onboardingStep = 0; render() }, top = 4)
             }
             else -> {
                 add(t("Your boots", Snow.Type.HERO), bottom = 8)
                 add(t("Drills score how you roll from boot to boot. Start with demo boots now and pair real sensors when you are ready.", Snow.Type.BODY, Snow.INK_SOFT), bottom = 24)
                 add(Snow.button(this@HomeActivity, "Start with demo boots") { finishOnboarding(false) }, bottom = 12)
-                add(Snow.button(this@HomeActivity, "Pair my boots first", Snow.ButtonKind.SECONDARY) { finishOnboarding(true) })
+                add(Snow.button(this@HomeActivity, "Set up boots first", Snow.ButtonKind.SECONDARY) { finishOnboarding(true) })
                 add(t("Demo boots are simulated and always labelled. They are for learning the drills, not a measurement of your skiing.", Snow.Type.CAPTION, Snow.INK_SOFT), top = 16)
             }
         }
@@ -181,7 +220,7 @@ class HomeActivity : Activity() {
         store.goal = pickedGoal ?: Goal.CARVING
         store.experience = pickedExperience ?: Experience.NEW
         tab = 0; render()
-        if (pair) startActivity(Intent(this, BootSetupActivity::class.java))
+        if (pair) startActivity(Intent(this, BootSetupActivity::class.java).reuseIfOpen())
     }
 
     private fun choice(piste: Piste, title: String, blurb: String, selected: Boolean, onPick: () -> Unit) =
@@ -199,7 +238,7 @@ class HomeActivity : Activity() {
             }
             val inset = Snow.dp(this@HomeActivity, 18)
             setPadding(inset, inset, inset, inset)
-            background = Snow.rounded(this@HomeActivity, if (selected) Snow.GLACIER else Snow.PAPER, 24, if (selected) Snow.INK else Snow.GLACIER, if (selected) 2 else 1)
+            background = Snow.rounded(this@HomeActivity, if (selected) Snow.GLACIER else Snow.PAPER, 24, if (selected) Snow.INK else Snow.EDGE, if (selected) 2 else 1)
             addView(PisteMarker(this@HomeActivity, piste, 30).apply { importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO })
             addView(LinearLayout(this@HomeActivity).apply {
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO_HIDE_DESCENDANTS
@@ -212,14 +251,25 @@ class HomeActivity : Activity() {
 
     // Today ---------------------------------------------------------------------------------------------
 
-    private fun LinearLayout.historyLinks() {
-        add(Snow.button(this@HomeActivity, "History", Snow.ButtonKind.SECONDARY) {
-            startActivity(Intent(this@HomeActivity, HistoryActivity::class.java).putExtra("demo", demoProgress))
-        }, bottom = 12)
+    private fun historyButton() = Snow.button(this, "History", Snow.ButtonKind.QUIET) {
+        startActivity(Intent(this, HistoryActivity::class.java).putExtra("demo", demoProgress))
+    }.apply { minWidth = 0 }
+
+    /** A tappable summary of the latest saved record, so it reads as content rather than a button. */
+    private fun recentCard(title: String, whenMs: Long, onOpen: () -> Unit) = Snow.card(this, 16, Snow.PAPER, 20).apply {
+        addView(t(title, Snow.Type.STRONG))
+        add(t(java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT).format(java.util.Date(whenMs)),
+            Snow.Type.CAPTION, Snow.INK_SOFT), top = 2)
+        isClickable = true; isFocusable = true
+        contentDescription = "$title, ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(whenMs))}"
+        setOnClickListener { onOpen() }
     }
 
     private fun today() = page {
-        historyLinks()
+        val header = LinearLayout(this@HomeActivity).apply { gravity = Gravity.CENTER_VERTICAL }
+        header.addView(t("OpenSki", Snow.Type.TITLE, Snow.ORANGE_TEXT), LinearLayout.LayoutParams(0, -2, 1f))
+        header.addView(historyButton(), LinearLayout.LayoutParams(-2, -2))
+        add(header, bottom = 4)
         practiceAttempts.filter { it.status == PracticeStatus.ACTIVE }.maxByOrNull { it.timeMs }?.let { active ->
             add(Snow.button(this@HomeActivity, "Return to active practice · ${if (active.demo) "Demo" else "My practice"}") {
                 startActivity(Intent(this@HomeActivity, DrillActivity::class.java).putExtra("drill", active.drillId).putExtra("resume_active", true))
@@ -227,12 +277,12 @@ class HomeActivity : Activity() {
         }
         val latestPractice = practiceAttempts.filter { it.status != PracticeStatus.ACTIVE }.maxByOrNull { it.timeMs }
         lastRun?.takeIf { it.first.time > (latestPractice?.timeMs ?: Long.MIN_VALUE) }?.let { (run, demo) ->
-            add(Snow.button(this@HomeActivity, "Last run · ${if(demo) "Demo" else "My practice"} · ${run.detail} · ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(run.time))}", Snow.ButtonKind.SECONDARY) {
+            add(recentCard("Last run · ${if (demo) "Demo" else "My practice"} · ${run.detail}", run.time) {
                 startActivity(Intent(this@HomeActivity, SessionDetailActivity::class.java).putExtra("session_id", run.id))
             }, bottom = 12)
         }
         latestPractice?.takeIf { it.timeMs >= (lastRun?.first?.time ?: Long.MIN_VALUE) }?.let { recent ->
-            add(Snow.button(this@HomeActivity, "Last practice · ${if(recent.demo) "Demo" else "My practice"} · ${recent.resultLabel} · ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(recent.timeMs))}", Snow.ButtonKind.SECONDARY) {
+            add(recentCard("Last practice · ${if (recent.demo) "Demo" else "My practice"} · ${recent.resultLabel}", recent.timeMs) {
                 startActivity(Intent(this@HomeActivity, PracticeResultActivity::class.java).putExtra("attempt_id", recent.id))
             }, bottom = 12)
         }
@@ -240,22 +290,19 @@ class HomeActivity : Activity() {
         val goal = store.goal ?: Goal.CARVING
         val now = System.currentTimeMillis()
         val streak = progress.streak(now)
-        val header = LinearLayout(this@HomeActivity).apply { gravity = Gravity.CENTER_VERTICAL }
-        header.addView(t("OpenSki", Snow.Type.TITLE, Snow.ORANGE), LinearLayout.LayoutParams(0, -2, 1f))
-        header.addView(t("${NumberFormat.getInstance().format(progress.vert)} practice points", Snow.Type.TITLE))
-        add(header, bottom = 20)
+        add(t("${NumberFormat.getInstance().format(progress.vert)} practice points", Snow.Type.TITLE), bottom = 20)
         add(RecoveryCard(this@HomeActivity, pendingOnly = true), bottom = 16)
 
         val runCard = Snow.card(this@HomeActivity, 22, radius = 28)
         runCard.addView(t("Ready to ski?", Snow.Type.DISPLAY))
         runCard.add(t("Check your boots and earbuds, then start a run. Coaching plays through your earbuds with the phone in your pocket.", Snow.Type.BODY, Snow.INK_SOFT), top = 6)
-        runCard.add(Snow.button(this@HomeActivity, "Start a run") { startActivity(Intent(this@HomeActivity, RunActivity::class.java)) }, top = 16)
+        runCard.add(Snow.button(this@HomeActivity, "Start a run") { startActivity(Intent(this@HomeActivity, RunActivity::class.java).reuseIfOpen()) }, top = 16)
         add(runCard, bottom = 16)
 
         // Whole-day tracking: a secondary action, so "Start a run" stays the one primary on this screen.
         val dayStatus = DayTrackingService.status
         val dayCard = Snow.card(this@HomeActivity, 22, radius = 28)
-        dayCard.addView(t("Ski day", Snow.Type.DISPLAY))
+        dayCard.addView(Snow.titleWithChip(this@HomeActivity, "Ski day", Snow.Type.DISPLAY))
         dayCard.add(t(if (dayStatus.tracking) "Tracking today's runs and lifts. Open the day to see them or stop tracking."
             else "Track the whole day from the phone's GPS: runs, lifts and rests, named from a downloaded resort map. Boots optional. Experimental.",
             Snow.Type.BODY, Snow.INK_SOFT), top = 6)
@@ -327,16 +374,18 @@ class HomeActivity : Activity() {
             progress.week(now).forEach { (day, trained) ->
                 val isToday = day == today
                 val cell = TextView(this@HomeActivity).apply {
-                    text = day.dayOfWeek.getDisplayName(TextStyle.NARROW, Locale.getDefault())
+                    // A tick as well as the orange fill, so a trained day is not shown by colour alone.
+                    text = day.dayOfWeek.getDisplayName(TextStyle.NARROW, Locale.getDefault()) + if (trained) "\n✓" else ""
+                    minHeight = Snow.dp(this@HomeActivity, 48)
                     textSize = 15f; gravity = Gravity.CENTER; includeFontPadding = false
                     typeface = resources.getFont(R.font.barlow_condensed_bold)
                     setTextColor(if (trained) Snow.INK else Snow.INK_SOFT)
                     background = Snow.rounded(this@HomeActivity, if (trained) Snow.ORANGE else Snow.SNOW, 20,
-                        if (isToday) Snow.INK else Snow.GLACIER, if (isToday) 2 else 1)
+                        if (isToday) Snow.INK else Snow.EDGE, if (isToday) 2 else 1)
                     contentDescription = day.dayOfWeek.getDisplayName(TextStyle.FULL, Locale.getDefault()) +
                         if (trained) ", trained" else if (isToday) ", today" else ""
                 }
-                addView(cell, LinearLayout.LayoutParams(0, Snow.dp(this@HomeActivity, 40), 1f).apply {
+                addView(cell, LinearLayout.LayoutParams(0, -2, 1f).apply {
                     marginStart = Snow.dp(this@HomeActivity, 2); marginEnd = Snow.dp(this@HomeActivity, 2)
                 })
             }
@@ -393,7 +442,7 @@ class HomeActivity : Activity() {
             background = Snow.rounded(this@HomeActivity, if (stars > 0) color else if (open) Snow.PAPER else Snow.SNOW, 12, if (open) color else Snow.GLACIER_DEEP, 3)
         }, FrameLayout.LayoutParams(Snow.dp(this, 24), Snow.dp(this, 24), Gravity.CENTER_HORIZONTAL).apply { topMargin = Snow.dp(this@HomeActivity, 16) })
         row.addView(rail, LinearLayout.LayoutParams(Snow.dp(this, 36), -1))
-        val card = Snow.card(this, 16, if (open) Snow.PAPER else Snow.SNOW, 20).apply { alpha = if (open) 1f else .6f }
+        val card = Snow.card(this, 16, if (open) Snow.PAPER else Snow.SNOW, 20)
         val top = LinearLayout(this).apply { gravity = Gravity.CENTER_VERTICAL }
         top.addView(t(drill.title, Snow.Type.TITLE), LinearLayout.LayoutParams(0, -2, 1f))
         if (open) top.addView(StarRow(this, stars, 16))
@@ -410,7 +459,7 @@ class HomeActivity : Activity() {
     // Progress ------------------------------------------------------------------------------------------
 
     private fun progress() = page {
-        historyLinks()
+        addView(historyButton(), LinearLayout.LayoutParams(-2, -2).apply { gravity = Gravity.END; bottomMargin = Snow.dp(this@HomeActivity, 4) })
         val progress = practice(demoProgress)
         sourcePicker()
         val now = System.currentTimeMillis()
@@ -467,13 +516,13 @@ class HomeActivity : Activity() {
             if (address != null) {
                 status.add(t("Mounting: ${store.mounting(side)?.label(store.landmarks()) ?: "not set yet"}", Snow.Type.BODY, Snow.INK_SOFT), top = 2)
                 status.add(Snow.button(this@HomeActivity, "Set mounting", Snow.ButtonKind.QUIET) {
-                    startActivity(Intent(this@HomeActivity, BootSetupActivity::class.java))
+                    startActivity(Intent(this@HomeActivity, BootSetupActivity::class.java).reuseIfOpen())
                 }.apply { gravity = Gravity.START or Gravity.CENTER_VERTICAL; setPadding(0, paddingTop, paddingRight, paddingBottom) })
             }
         }
         add(status, bottom = 12)
-        add(Snow.button(this@HomeActivity, if (paired.isEmpty()) "Pair my boots" else "Prepare boots and recover recordings", if (paired.isEmpty()) Snow.ButtonKind.PRIMARY else Snow.ButtonKind.SECONDARY) {
-            startActivity(Intent(this@HomeActivity, BootSetupActivity::class.java))
+        add(Snow.button(this@HomeActivity, if (paired.isEmpty()) "Set up boots" else "Prepare boots and recover recordings", if (paired.isEmpty()) Snow.ButtonKind.PRIMARY else Snow.ButtonKind.SECONDARY) {
+            startActivity(Intent(this@HomeActivity, BootSetupActivity::class.java).reuseIfOpen())
         }, bottom = 28)
 
         add(t("Coaching", Snow.Type.DISPLAY), bottom = 6)
@@ -481,7 +530,7 @@ class HomeActivity : Activity() {
         coaching.add(t("Metronome and turn chirps", Snow.Type.TITLE))
         coaching.add(t("Audio cues for pace and depth, for skiing with the phone in a pocket. Needs earbuds or a helmet speaker.", Snow.Type.BODY, Snow.INK_SOFT), top = 6)
         coaching.add(Snow.button(this@HomeActivity, "Open coaching", Snow.ButtonKind.SECONDARY) {
-            startActivity(Intent(this@HomeActivity, CoachingActivity::class.java))
+            startActivity(Intent(this@HomeActivity, CoachingActivity::class.java).reuseIfOpen())
         }, top = 14)
         add(coaching, bottom = 28)
 
@@ -489,7 +538,7 @@ class HomeActivity : Activity() {
         val geek = Snow.card(this@HomeActivity, 18, Snow.INK)
         geek.addView(t("Raw telemetry and the logbook", Snow.Type.TITLE, Snow.SNOW))
         geek.add(t("Live acceleration, gyro and orientation, the dry-ski test lab, flash recovery, and every saved session with replay, analysis and export.", Snow.Type.BODY, Snow.GLACIER), top = 6)
-        geek.add(Snow.button(this@HomeActivity, "Open Geek mode", Snow.ButtonKind.SECONDARY) { openBoots() }, top = 14)
+        geek.add(Snow.button(this@HomeActivity, "Open Geek mode", Snow.ButtonKind.SECONDARY) { openGeek() }, top = 14)
         geek.add(Snow.button(this@HomeActivity, "Bench tools for a loose board", Snow.ButtonKind.SECONDARY) { openBench() }, top = 10)
         add(geek, bottom = 28)
 

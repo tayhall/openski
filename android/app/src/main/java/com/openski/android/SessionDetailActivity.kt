@@ -188,7 +188,7 @@ class SessionDetailActivity : Activity() {
         page.addView(text("Motion timeline",18f))
         page.addView(text("Left · solid lime     Right · dashed blue",12f))
         page.addView(note("Timeline help","Tap the graph or scrub the timeline to select a moment. Video time = session time + video offset; a negative offset means the video starts later."))
-        page.addView(spinner(listOf("Acceleration magnitude (m/s²)","Gyro X (rad/s)","Gyro Y (rad/s)","Gyro Z (rad/s)","Gyro magnitude (rad/s)","Estimated boot roll (degrees)","Estimated boot pitch (degrees)","Relative yaw (degrees, drifts)")) { position -> chart?.channel=position; chart?.invalidate() }.apply { setSelection(if(bootRoll.isEmpty()) 0 else 5) })
+        page.addView(spinner(ChartText.MOTION_CHANNELS) { position -> chart?.channel=position; chart?.invalidate() }.apply { setSelection(if(bootRoll.isEmpty()) 0 else 5) })
         page.addView(spinner(listOf("30-second window","10-second window","Whole session")) { position ->
             windowMs = when(position) { 1->10_000.0; 2->duration.coerceAtLeast(1).toDouble(); else->30_000.0 }; updateChart()
         })

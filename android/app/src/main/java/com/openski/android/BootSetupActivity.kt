@@ -34,6 +34,7 @@ class BootSetupActivity : Activity() {
     private lateinit var recovery: TextView
     private lateinit var devices: LinearLayout
     private lateinit var recoverButton: View
+    private lateinit var returnButton: View
     private lateinit var connectButton: View
     private val bootLabels = mutableMapOf<String, TextView>()
     private val mountingButtons = mutableMapOf<String, View>()
@@ -128,8 +129,8 @@ class BootSetupActivity : Activity() {
         action("Swap left and right assignments", parent = advanced.body) { notice.text = if (service?.swapSensors() == true) "Assignments swapped. Connect saved boots to reconnect." else "Assignments are protected while capture or recovery is pending." }
         recoverButton = action("Recover saved recordings / retry") { permittedAction("recover") }
         recoverButton.isEnabled = false
-        action("Return to active practice or recording") { returnToCapture() }
-        action("Coaching and test sounds") { startActivity(Intent(this, CoachingActivity::class.java)) }
+        returnButton = action("Return to active practice or recording") { returnToCapture() }
+        action("Coaching and test sounds") { startActivity(Intent(this, CoachingActivity::class.java).reuseIfOpen()) }
         action("Bluetooth and audio devices", parent = advanced.body) { startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS)) }
         action("Phone storage", parent = advanced.body) { startActivity(Intent(Settings.ACTION_INTERNAL_STORAGE_SETTINGS)) }
         action("App permissions", parent = advanced.body) { startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, android.net.Uri.parse("package:$packageName"))) }
@@ -139,7 +140,8 @@ class BootSetupActivity : Activity() {
         val layout = PhaseLayout(this)
         layout.content(column, true)
         layout.controls(listOf(PhaseLayout.Action("done", "Done", Snow.ButtonKind.SECONDARY) { finish() }))
-        SkiUi.applyInsets(layout, ime = true); setContentView(layout)
+        val screen = Snow.screen(this, layout)
+        SkiUi.applyInsets(screen, ime = true); setContentView(screen)
     }
 
     override fun onStart() {
@@ -162,9 +164,9 @@ class BootSetupActivity : Activity() {
 
     private fun update(snapshot: PreparationSnapshot) {
         last = snapshot
+        returnButton.visibility = if (service?.let { activeCaptureScreen(it) } != null) View.VISIBLE else View.GONE
         recoverButton.isEnabled = !snapshot.captureActive && snapshot.recovery.items.any { it.canRetry }
         recoverButton.visibility = if (snapshot.recovery.items.any { it.canRetry }) View.VISIBLE else View.GONE
-        recoverButton.alpha = if (recoverButton.isEnabled) 1f else .45f
         connectButton.visibility = if (snapshot.boots.any { it.address != null }) View.VISIBLE else View.GONE
         issues.text = if (snapshot.readiness.issues.isEmpty()) "Ready for a run. Neutral zero is captured when you start."
             else snapshot.readiness.issues.joinToString("\n") { it.message }
@@ -181,7 +183,6 @@ class BootSetupActivity : Activity() {
             forgetButtons[b.side]?.isEnabled = b.address != null && !snapshot.captureActive && !snapshot.recovery.pending
             listOf(mountingButtons[b.side], zeroButtons[b.side], modeButtons[b.side], forgetButtons[b.side]).forEach { control ->
                 control?.visibility = if (b.address != null) View.VISIBLE else View.GONE
-                control?.alpha = if (control?.isEnabled == true) 1f else .45f
             }
         }
     }
@@ -247,15 +248,21 @@ class BootSetupActivity : Activity() {
         } }
         override fun onScanFailed(code: Int) { runOnUiThread { stopScan(); notice.text = "Search failed ($code). Check Bluetooth and permissions, then retry." } }
     }
+    /** The screen the user left an active drill, run, coaching session or recording on, if any. */
+    /** The screen that owns the practice, run, coaching or recording in progress, if any. Checked every second. */
+    private fun activeCaptureScreen(connected: SensorSessionService): Class<out Activity>? = when {
+        connected.drillState().phase !in listOf(DrillPhase.IDLE, DrillPhase.DONE) -> DrillActivity::class.java
+        connected.runState().phase !in listOf(RunPhase.READY, RunPhase.DONE) -> RunActivity::class.java
+        connected.coachState().running -> CoachingActivity::class.java
+        connected.sessionId() != null -> MainActivity::class.java
+        else -> null
+    }
+
     private fun returnToCapture() {
         val connected = service ?: return
-        val drill = connected.drillState()
-        when {
-            drill.phase !in listOf(DrillPhase.IDLE, DrillPhase.DONE) -> startActivity(Intent(this, DrillActivity::class.java).putExtra("drill", drill.drill?.id))
-            connected.runState().phase !in listOf(RunPhase.READY, RunPhase.DONE) -> startActivity(Intent(this, RunActivity::class.java))
-            connected.coachState().running -> startActivity(Intent(this, CoachingActivity::class.java))
-            connected.sessionId() != null -> startActivity(Intent(this, MainActivity::class.java))
-            else -> notice.text = "No practice or recording is active."
-        }
+        val screen = activeCaptureScreen(connected) ?: run { notice.text = "No practice or recording is active."; return }
+        val intent = Intent(this, screen).reuseIfOpen()
+        if (screen == DrillActivity::class.java) intent.putExtra("drill", connected.drillState().drill?.id)
+        startActivity(intent)
     }
 }

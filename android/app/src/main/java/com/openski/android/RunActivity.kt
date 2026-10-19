@@ -37,7 +37,7 @@ class RunActivity : Activity() {
     private var lastFixAt = 0L   // phone uptime when it arrived, so a wrong clock cannot make it look stale
     private var gpsView: TextView? = null
     private var startWhenBound = false   // a start tap answered by the location prompt, waiting for the service
-    private val probe by lazy { GpsListener(this) { fix -> lastFix = fix; lastFixAt = android.os.SystemClock.elapsedRealtime(); statusCache = null; gpsView?.text = gpsStatus().label() } }
+    private val probe by lazy { GpsListener(this) { fix -> lastFix = fix; lastFixAt = android.os.SystemClock.elapsedRealtime(); statusCache = null; gpsView?.text = gpsStatus().row() } }
 
     private var statusAt = 0L
     private var statusCache: GpsStatus? = null
@@ -84,8 +84,9 @@ class RunActivity : Activity() {
         preparationExpanded = savedInstanceState?.getBoolean("preparation_expanded") ?: false
         phaseLayout = PhaseLayout(this)
         frame.addView(phaseLayout)
-        SkiUi.applyInsets(frame, ime = true)
-        setContentView(frame)
+        val screen = Snow.screen(this, frame)
+        SkiUi.applyInsets(screen, ime = true)
+        setContentView(screen)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -109,8 +110,6 @@ class RunActivity : Activity() {
     }
 
     private fun t(text: String, type: Snow.Type = Snow.Type.BODY, tint: Int = Snow.INK) = Snow.text(this, text, type, tint)
-    private fun LinearLayout.add(view: View, top: Int = 0, bottom: Int = 0) =
-        addView(view, LinearLayout.LayoutParams(-1, -2).apply { topMargin = Snow.dp(this@RunActivity, top); bottomMargin = Snow.dp(this@RunActivity, bottom) })
 
     private fun name(side: String) = if (side == "L") "Left" else "Right"
     private fun clock(ms: Long) = "%d:%02d".format(ms / 60000, ms / 1000 % 60)
@@ -159,7 +158,7 @@ class RunActivity : Activity() {
         turnsView?.text = "${s.turns.values.sum()} turns"
         verdictView?.text = verdictLine(s)
         progressViews.forEach { (side, view) -> view.text = progressLine(side, s) }
-        gpsView?.text = gpsStatus().label()
+        gpsView?.text = gpsStatus().row()
     }
 
     private fun verdictLine(s: RunState) = when (s.lastVerdict?.verdict) {
@@ -203,7 +202,7 @@ class RunActivity : Activity() {
     }
 
     private fun ready(column: LinearLayout, s: RunState) {
-        column.add(t("Ready to ski?", Snow.Type.DISPLAY))
+        column.add(Snow.titleWithChip(this, "Ready to ski?", Snow.Type.DISPLAY))
         column.add(t(CoachSettingsStore(this).settings.targetLabel(), Snow.Type.STRONG), top = 4)
         column.add(t("Check your boots and earbuds, then start. Your phone goes in your pocket.", Snow.Type.BODY, Snow.INK_SOFT), top = 4, bottom = 16)
         column.add(t(GestureSyncPrompts.READY, Snow.Type.STRONG), bottom = 12)
@@ -213,7 +212,7 @@ class RunActivity : Activity() {
             status.add(t("${mark(ok)}  ${name(side)} boot · ${if (ok) "connected" else "not connected"}", Snow.Type.STRONG), top = if (index == 0) 0 else 10)
         }
         status.add(t("${mark(s.earbuds)}  Earbuds · ${if (s.earbuds) "connected" else "not connected"}", Snow.Type.STRONG), top = 10)
-        gpsView = t(gpsStatus().label(), Snow.Type.STRONG).also { status.add(it, top = 10) }
+        gpsView = t(gpsStatus().row(), Snow.Type.STRONG).also { it.accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE; status.add(it, top = 10) }
         if (gpsSettings.enabled && gpsStatus().state == GpsState.NO_PERMISSION && gpsSettings.asked) {
             // The system prompt may not appear again after a refusal or an approximate-only grant.
             status.add(Snow.button(this, "Allow location in Settings", Snow.ButtonKind.QUIET) {
@@ -226,7 +225,7 @@ class RunActivity : Activity() {
         val settingsColumn = preparation.body
         settingsColumn.add(t("Reported boot mode: $modeLabel", Snow.Type.STRONG), bottom = 8)
         settingsColumn.add(Snow.button(this, "Prepare boots and recover recordings", Snow.ButtonKind.SECONDARY) {
-            startActivity(Intent(this, BootSetupActivity::class.java))
+            startActivity(Intent(this, BootSetupActivity::class.java).reuseIfOpen())
         }, bottom = 10)
         settingsColumn.add(Snow.button(this, "GPS for runs: ${if (gpsSettings.enabled) "On" else "Off"} · tap to switch", Snow.ButtonKind.SECONDARY) {
             gpsSettings.enabled = !gpsSettings.enabled
@@ -234,13 +233,13 @@ class RunActivity : Activity() {
             structure = ""; state?.let { apply(it) }
         }, bottom = 10)
         settingsColumn.add(Snow.button(this, "Coaching: ${CoachSettingsStore(this).settings.targetLabel()}", Snow.ButtonKind.SECONDARY) {
-            startActivity(Intent(this, CoachingActivity::class.java))
+            startActivity(Intent(this, CoachingActivity::class.java).reuseIfOpen())
         }, bottom = 16)
         if (s.message.isNotEmpty()) column.add(t(s.message, Snow.Type.BODY, Snow.INK_SOFT), bottom = 8)
         s.readiness.issues.forEach { issue ->
             column.add(t(issue.message, Snow.Type.STRONG), bottom = 6)
             val label = when (issue.action) {
-                PreparationAction.CONNECT -> "Connect ${issue.side?.let(::name) ?: "saved"} boot"
+                PreparationAction.CONNECT -> "Connect${issue.side?.let { " · ${name(it)} boot" } ?: ""}"
                 PreparationAction.RECOVER -> "Open recovery${issue.side?.let { " · ${name(it)} boot" } ?: ""}"
                 PreparationAction.AUDIO -> "Choose audio route and test sounds"
                 PreparationAction.STORAGE -> "Manage phone storage"
@@ -250,11 +249,14 @@ class RunActivity : Activity() {
             }
             column.add(Snow.button(this, label, Snow.ButtonKind.SECONDARY) {
                 startActivity(when (issue.action) {
-                    PreparationAction.AUDIO -> Intent(this, CoachingActivity::class.java)
+                    PreparationAction.AUDIO -> Intent(this, CoachingActivity::class.java).reuseIfOpen()
                     PreparationAction.STORAGE -> Intent(android.provider.Settings.ACTION_INTERNAL_STORAGE_SETTINGS)
                     PreparationAction.RETURN_TO_CAPTURE -> activeCaptureIntent()
-                    else -> Intent(this, BootSetupActivity::class.java)
+                    else -> Intent(this, BootSetupActivity::class.java).reuseIfOpen()
                 })
+            }.apply {
+                // The visible label is short because the sentence above names the boot; TalkBack gets the full action.
+                if (issue.action == PreparationAction.CONNECT) contentDescription = "Connect ${issue.side?.let(::name)?.lowercase() ?: "saved"} boot"
             }, bottom = 10)
         }
         if (s.readiness.issues.isEmpty()) s.readiness.reason?.let { column.add(t(it, Snow.Type.STRONG), bottom = 8) }
@@ -264,13 +266,13 @@ class RunActivity : Activity() {
     }
 
     private fun activeCaptureIntent(): Intent {
-        val connected = service ?: return Intent(this, BootSetupActivity::class.java)
+        val connected = service ?: return Intent(this, BootSetupActivity::class.java).reuseIfOpen()
         val drill = connected.drillState()
         return when {
             drill.phase !in listOf(DrillPhase.IDLE, DrillPhase.DONE) -> Intent(this, DrillActivity::class.java).putExtra("drill", drill.drill?.id)
-            connected.coachState().running -> Intent(this, CoachingActivity::class.java)
+            connected.coachState().running -> Intent(this, CoachingActivity::class.java).reuseIfOpen()
             connected.sessionId() != null -> Intent(this, MainActivity::class.java)
-            else -> Intent(this, BootSetupActivity::class.java)
+            else -> Intent(this, BootSetupActivity::class.java).reuseIfOpen()
         }
     }
 

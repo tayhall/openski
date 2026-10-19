@@ -68,8 +68,9 @@ class ResortPickerActivity : Activity() {
         dayId = intent.getStringExtra(EXTRA_DAY)
         query = savedInstanceState?.getString("query") ?: ""
         frame = FrameLayout(this).apply { setBackgroundColor(Snow.SNOW) }
-        SkiUi.applyInsets(frame)
-        setContentView(frame)
+        val screen = Snow.screen(this, frame)
+        SkiUi.applyInsets(screen)
+        setContentView(screen)
     }
 
     override fun onSaveInstanceState(state: Bundle) { state.putString("query", query); super.onSaveInstanceState(state) }
@@ -228,8 +229,6 @@ class ResortPickerActivity : Activity() {
     }
 
     private fun t(text: String, type: Snow.Type = Snow.Type.BODY, tint: Int = Snow.INK) = Snow.text(this, text, type, tint)
-    private fun LinearLayout.add(view: View, top: Int = 0, bottom: Int = 0) =
-        addView(view, LinearLayout.LayoutParams(-1, -2).apply { topMargin = Snow.dp(this@ResortPickerActivity, top); bottomMargin = Snow.dp(this@ResortPickerActivity, bottom) })
 
     private fun render() {
         if (destroyed) return
@@ -254,9 +253,9 @@ class ResortPickerActivity : Activity() {
             })
         }
         searchCard.add(field)
-        searchCard.add(Snow.button(this, "Search") { search() }.apply { isEnabled = busy == null; alpha = if (busy == null) 1f else .4f }, top = 10)
+        searchCard.add(Snow.button(this, "Search") { search() }.apply { isEnabled = busy == null }, top = 10)
         searchCard.add(Snow.button(this, "Download the area around me", Snow.ButtonKind.SECONDARY) { aroundMe() }
-            .apply { isEnabled = busy == null; alpha = if (busy == null) 1f else .4f }, top = 8)
+            .apply { isEnabled = busy == null }, top = 8)
         searchCard.add(t("A search sends the typed name; the area download sends a box around your position rounded to about 1 km. Nothing else leaves the phone.",
             Snow.Type.CAPTION, Snow.INK_SOFT), top = 8)
         column.add(searchCard, bottom = 12)

@@ -8,7 +8,7 @@ enum class PracticeFocus(val label: String, val cue: String) {
 
     companion object {
         fun decode(value: String?): PracticeFocus? = entries.firstOrNull { it.name == value }
-        const val SCORING_NOTICE = "Focus pilot · the existing four-component score (version 1) is unchanged. Focus does not create a new score or increase your target."
+        const val SCORING_NOTICE = "Practice focus is a trial. Your score works the same as before, and the focus never raises your target."
     }
 }
 

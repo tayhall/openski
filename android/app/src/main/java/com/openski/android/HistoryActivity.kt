@@ -24,7 +24,9 @@ class HistoryActivity : Activity() {
         kind = state?.getString("kind")?.let { runCatching { HistoryKind.valueOf(it) }.getOrNull() } ?: HistoryKind.DRILLS
         demo = state?.getBoolean("demo") ?: intent.getBooleanExtra("demo", false)
     }
-    override fun onResume() { super.onResume(); load(false) }
+    private var firstLoad = true
+    // Returning from a record keeps the list and scroll position; only the first visit clears and reloads.
+    override fun onResume() { super.onResume(); if (firstLoad) { firstLoad = false; load(false) } else refreshInPlace() }
     override fun onSaveInstanceState(state: Bundle) { state.putString("kind", kind.name); state.putBoolean("demo", demo); super.onSaveInstanceState(state) }
     override fun onDestroy() { generation++; io.shutdown(); super.onDestroy() }
     private fun load(append: Boolean) {
@@ -48,6 +50,28 @@ class HistoryActivity : Activity() {
             }
         }
     }
+    private fun refreshInPlace() {
+        // A load still in flight finishes on its own; a failed one is retried from the start.
+        if (loading) return
+        if (error != null) { load(false); return }
+        val token = ++generation; val selected = kind; val source = demo; val want = rows.size.coerceAtLeast(50)
+        io.execute {
+            // Re-read as many rows as are shown, plus one to tell whether more remain, in pages the store allows.
+            val result = runCatching { LocalSessionStore(this).use { db ->
+                val history = HistoryStore(db)
+                buildList<HistoryRow> {
+                    while (size <= want) {
+                        val page = history.page(selected, source, lastOrNull()?.let { HistoryCursor(it.time, it.id) }, 100)
+                        addAll(page)
+                        if (page.size < 100) break
+                    }
+                }
+            } }
+            runOnUiThread {
+                if (!isDestroyed && token == generation) { result.onSuccess { rows = it.take(want); more = it.size > want }; render() }
+            }
+        }
+    }
     private fun open(row: HistoryRow) {
         val route = when (kind) {
             HistoryKind.RUNS -> Intent(this, SessionDetailActivity::class.java).putExtra("session_id", row.id)
@@ -62,11 +86,17 @@ class HistoryActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             val pad = Snow.dp(this@HistoryActivity, 20); setPadding(pad,pad,pad,pad)
         }
-        fun text(value: String, type: Snow.Type = Snow.Type.BODY) { column.addView(Snow.text(this,value,type)) }
+        fun text(value: String, type: Snow.Type = Snow.Type.BODY) { column.addView(Snow.text(this,value,type), Snow.fullWidth(0, this, 12)) }
         fun button(value: String, selected: Boolean = false, action: () -> Unit) {
-            column.addView(Snow.button(this,value,Snow.ButtonKind.SECONDARY,action).apply { isSelected = selected })
+            val view = Snow.button(this,value,Snow.ButtonKind.SECONDARY,action)
+            if (selected) {
+                view.isSelected = true
+                view.contentDescription = "$value, selected"
+                view.background = android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(Snow.RIPPLE), Snow.rounded(this, Snow.GLACIER, 28, Snow.INK, 3), null)
+            }
+            column.addView(view, Snow.fullWidth(0, this, 12))
         }
-        button("‹ Back") { finish() }; text("History",Snow.Type.HERO)
+        text("History",Snow.Type.HERO)
         HistoryKind.entries.forEach { option -> button(when(option) { HistoryKind.RUNS -> "Runs"; HistoryKind.DRILLS -> "Drills"; HistoryKind.DAYS -> "Ski days" },kind == option) { kind = option; load(false) } }
         if (kind != HistoryKind.DAYS) {
             text(if(demo) "Demo · simulated" else "My practice · measured")
@@ -82,7 +112,8 @@ class HistoryActivity : Activity() {
         else if(more) button("Load more") { load(true) }
         val scroll = ScrollView(this).apply { setBackgroundColor(Snow.SNOW); addView(column) }
         currentScroll = scroll
-        SkiUi.applyInsets(scroll); setContentView(scroll)
+        val screen = Snow.screen(this, scroll)
+        SkiUi.applyInsets(screen); setContentView(screen)
         scroll.post { if (currentScroll === scroll) scroll.scrollTo(0,scrollY) }
     }
 }

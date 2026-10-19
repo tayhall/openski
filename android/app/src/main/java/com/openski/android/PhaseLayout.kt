@@ -18,10 +18,11 @@ class PhaseLayout(context: Context) : LinearLayout(context) {
         setPadding(pad, Snow.dp(context, 8), pad, Snow.dp(context, 8))
         setBackgroundColor(Snow.SNOW)
     }
-    private val reason = Snow.text(context, "", Snow.Type.CAPTION).apply {
+    private val reason = Snow.text(context, "", Snow.Type.STRONG).apply {
         maxLines = 2
         ellipsize = TextUtils.TruncateAt.END
         visibility = View.GONE
+        accessibilityLiveRegion = View.ACCESSIBILITY_LIVE_REGION_POLITE
     }
     private val buttonRow = LinearLayout(context).apply { orientation = VERTICAL }
     private var compact = false
@@ -58,7 +59,6 @@ class PhaseLayout(context: Context) : LinearLayout(context) {
         }
         items.zip(buttons).forEach { (item, button) ->
             button.text = item.label; button.isEnabled = item.enabled
-            button.alpha = if (item.enabled) 1f else .4f
             button.contentDescription = item.description
             button.setOnClickListener { item.run() }
         }
