@@ -234,3 +234,7 @@ Full navigation replacement, merged universal activity timeline, Compose migrati
 ## First executable task
 
 Begin PR 1 by specifying the attempt/source/completion contract and adding the source-aware progress cases, then implement the transactional legacy import and practice store. Before moving drill state in PR 2, establish a stable attempt ID and an idempotent completion operation. This prevents the reliability fix from moving duplicate-reward risks into the service.
+
+- Increment 7: feat/explained-practice-results adds SQLite v15 immutable scoring evidence, factual saved-result explanations, conservative compatibility rules, optional independent reflection and additive versioned export metadata. Focused validation: 63 JVM tests pass (eligibility/review/controller/programme/run comparison), debug and instrumentation APK builds plus lint pass. New PracticeReviewStorageRegression is compiled for root runner integration; no emulator/physical pass claimed here.
+
+- Increment 7 integration: rebased onto History head 2520681 (including compact phase layouts), preserving exact stored-target/source repeat and canonical unlock checks. Shared full instrumentation runner now invokes PracticeReviewStorageRegression and rewinds v15 reflection tables. History/Today labels distinguish completed-but-unscored results. Integration focused checks cover 65 JVM cases plus debug/instrumentation APK builds and lint; emulator execution remains a separate gate.

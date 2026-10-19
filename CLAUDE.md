@@ -96,3 +96,5 @@ Toolchain: AGP 9.0.1 with built-in Kotlin, compile/target SDK 36, minSdk 26, Jav
 
 - Git-ignored build/local artefacts: `.pio/`, `include/wifi_config.h`, `android/local.properties`, `*.bin`.
 - Branch work happens on feature branches; `main` is the PR target. See `docs/project-status.md` for the current merged baseline and validation gaps.
+
+Practice review: v15 review_json/score_eligible and independent practice_reflections persist factual scoring evidence plus optional user context. PracticeEligibility/PracticeComparisonPolicy keep unknown legacy evidence and raw replay quality separate from live scoring; new insufficient evidence never earns completion rewards. Version/timing/source/target/mounting/side compatibility governs comparisons and ghost display.

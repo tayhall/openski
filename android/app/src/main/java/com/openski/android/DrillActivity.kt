@@ -254,7 +254,7 @@ class DrillActivity : Activity() {
         add(back(), bottom = 8)
         add(t(if (attempt.demo) "Demo boots" else "My practice", Snow.Type.CAPTION), bottom = 8)
         add(t(when (attempt.status) {
-            PracticeStatus.COMPLETED -> "Set completed"
+            PracticeStatus.COMPLETED -> if (attempt.eligible) "Set completed" else "Cannot judge this set"
             PracticeStatus.INTERRUPTED -> "Practice interrupted"
             else -> "Incomplete set"
         }, Snow.Type.HERO), bottom = 12)
@@ -265,7 +265,7 @@ class DrillActivity : Activity() {
         }
         add(t(if (attempt.demo) "Simulated results stay in Demo; they do not change My practice achievements."
             else "Cuff-roll exercise, not an on-snow technique score.", Snow.Type.CAPTION), bottom = 12)
-        if (state.run != null) {
+        if (state.run != null && attempt.eligible) {
             add(CarvedLineView(this@DrillActivity, state.trace, null, drill.depthDegrees, Snow.pisteColor(drill.piste),
                 if (attempt.demo) "Simulated cuff roll" else "Measured cuff roll"), bottom = 12)
             add(StarRow(this@DrillActivity, attempt.stars, 28), bottom = 8)
@@ -289,34 +289,41 @@ class DrillActivity : Activity() {
 
     private fun showResult(run: DrillRun, result: DrillResult, ghost: RollTrace?, attempt: Attempt, unlocked: Drill?, message: String) {
         val vert = attempt.vert
-        val headline = if (attempt.status == PracticeStatus.INTERRUPTED) "Practice interrupted" else if (!attempt.eligible) "Incomplete set" else when (result.stars) { 3 -> "Clean set"; 2 -> "Good set"; 1 -> "Passed"; else -> "Not quite yet" }
+        val headline = if (attempt.status == PracticeStatus.INTERRUPTED) "Practice interrupted" else if (attempt.status == PracticeStatus.COMPLETED && !attempt.eligible) "Cannot judge this set" else if (!attempt.eligible) "Incomplete set" else when (result.stars) { 3 -> "Clean set"; 2 -> "Good set"; 1 -> "Passed"; else -> "Not quite yet" }
         val again: () -> Unit = { begin(run.demo) }
         show {
             add(t(if (run.demo) "Demo boots" else "Your boots", Snow.Type.CAPTION, Snow.INK_SOFT), bottom = 4)
             add(t(headline, Snow.Type.HERO), bottom = 14)
             if (attempt.status == PracticeStatus.INTERRUPTED) add(t(message), bottom = 12)
             add(t(if (run.demo) "Simulated results stay in Demo. They do not change My practice achievements."
-                else if (!attempt.eligible) "This set is saved as incomplete and earns no stars or practice points."
+                else if (!attempt.eligible) "This set is unscored and earns no stars or practice points."
                 else "Measured cuff-roll exercise · My practice", Snow.Type.CAPTION, Snow.INK_SOFT), bottom = 12)
             add(CarvedLineView(this@DrillActivity, run.trace, ghost, drill.depthDegrees, Snow.pisteColor(drill.piste),
                 if (run.demo) "Simulated cuff roll" else "Measured cuff roll"), bottom = 6)
             if (ghost != null) add(t("Dashed grey line: your last try", Snow.Type.CAPTION, Snow.INK_SOFT), bottom = 12)
+            val eligibility = PracticeEligibility.evaluate(attempt, attempt.review?.evidence ?: PracticeEvidence())
+            add(t(eligibility.reason), bottom = 12)
+            attempt.review?.let { add(t(it.observation(attempt.target)), bottom = 12) }
+            if (attempt.eligible) {
             val summary = LinearLayout(this@DrillActivity).apply { gravity = Gravity.CENTER_VERTICAL }
             summary.addView(StarRow(this@DrillActivity, attempt.stars, 28))
             summary.addView(t("${result.score}", Snow.Type.DISPLAY), LinearLayout.LayoutParams(-2, -2).apply { marginStart = Snow.dp(this@DrillActivity, 14) })
             summary.addView(View(this@DrillActivity), LinearLayout.LayoutParams(0, 1, 1f))
             add(summary, top = 8, bottom = 16)
             add(t("+$vert practice points", Snow.Type.TITLE), bottom = 12)
+            }
 
             val cue = Snow.card(this@DrillActivity, 18, Snow.GLACIER)
             cue.addView(t("Next time", Snow.Type.TITLE))
-            cue.add(t(result.cue, Snow.Type.BODY), top = 6)
+            cue.add(t(if (attempt.eligible) result.cue else eligibility.nextAction, Snow.Type.BODY), top = 6)
             add(cue, bottom = 16)
 
+            if (attempt.eligible) {
             val metrics = Snow.card(this@DrillActivity, 18)
             listOf("Tempo" to result.tempo, "Steadiness" to result.steadiness, "Left and right balance" to result.balance, "Depth" to result.depth)
                 .forEachIndexed { index, (name, value) -> metrics.add(metric(name, value), top = if (index == 0) 0 else 14) }
             add(metrics, bottom = 20)
+            }
 
             if (attempt.eligible && result.passed) unlocked?.let { add(t("Next practice: ${it.title}", Snow.Type.TITLE), bottom = 12) }
             if (!run.demo) add(t("The raw session is in your logbook; sensor recovery may still be pending.", Snow.Type.CAPTION, Snow.INK_SOFT), bottom = 12)

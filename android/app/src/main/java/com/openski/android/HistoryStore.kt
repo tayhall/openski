@@ -10,7 +10,7 @@ class HistoryStore(private val store: LocalSessionStore) {
         val table: String; val time: String; val filter: String; val title: String; val detail: String
         when (kind) {
             HistoryKind.RUNS -> { table = "sessions"; time = "started_at_ms"; filter = "kind='run' AND origin='${if (demo) "synthetic" else "sensor"}'"; title = "title"; detail = "CASE WHEN ended_at_ms IS NULL THEN 'Recording active' ELSE 'Saved run · check recovery in result' END" }
-            HistoryKind.DRILLS -> { table = "practice_attempts"; time = "time_ms"; filter = "demo=${if (demo) 1 else 0}"; title = "drill_id"; detail = "status" }
+            HistoryKind.DRILLS -> { table = "practice_attempts"; time = "time_ms"; filter = "demo=${if (demo) 1 else 0}"; title = "drill_id"; detail = "CASE WHEN status='COMPLETED' AND score_eligible=0 THEN 'Completed · cannot judge' ELSE status END" }
             HistoryKind.DAYS -> { table = "ski_days"; time = "started_at_ms"; filter = "1=1"; title = "title"; detail = "source" }
         }
         val bounds = if (before == null) "" else " AND ($time < ? OR ($time = ? AND id < ?))"

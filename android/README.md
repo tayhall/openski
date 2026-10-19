@@ -106,3 +106,8 @@ Run and drill preparation keep their current Start action below scrolling explan
 ## Practice history and repeat
 
 History is available from Today and Progress with Runs, Drills and Ski days sections. My practice and Demo remain separate; rows open exact saved records. Repeat this target confirms the stored movement/beat/depth and source, then runs fresh preparation. Older records with unknown settings offer an explicitly labelled current preset instead. Unsupported scoring versions cannot silently repeat.
+## Practice result evidence and notes
+
+New drill results store the actual movement count, within-set beat mean, cuff-roll peak means, scored boot, mounting and timing policy with scoring version 1. Structural sufficiency requires a complete finite alternating movement set, known mounting for measured practice and at least one positive within-group beat; these are evidence checks, not validated technique thresholds. Insufficient new evidence earns no completion reward and displays cannot-judge rather than a zero-performance score. Legacy scores/rewards remain intact with unknown evidence.
+
+Saved results explain one measured target difference and show why a previous result cannot be compared. Comparisons require known matching source pipeline, drill/target, supported scoring version, timing policy and measured mounting/boot. Unknown old ghost traces are hidden. Optional intention/reflection are user-reported context and survive raw-session deletion. Raw session ZIPs add versioned practice_reviews metadata without changing CSV contracts. Live firmware verdicts remain separate from recovered raw screening.

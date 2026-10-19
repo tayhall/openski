@@ -44,7 +44,7 @@ object Programme {
         Drill("slow-rolls", Piste.BLUE, "Slow rolls", "Roll onto one edge, then the other, slowly and evenly.",
             "Roll your ankles first and let the knees follow. Keep your chest quiet.", 10, 3.0, 15.0),
         Drill("even-both-ways", Piste.BLUE, "Even both ways", "Match your left and right rolls for depth and time.",
-            "Count the same beat each side. Look for the weaker side and give it equal time.", 12, 2.4, 20.0),
+            "Count the same beat each side. Observe whether one roll direction takes longer.", 12, 2.4, 20.0),
         Drill("steady-rhythm", Piste.BLUE, "Steady rhythm", "Hold one tempo for a whole set.",
             "Breathe out as you roll in. Let the rhythm come from the legs, not the arms.", 16, 2.0, 20.0),
         Drill("deeper-edges", Piste.RED, "Deeper edges", "Roll further without losing control of the return.",
@@ -136,7 +136,7 @@ object DrillScoring {
                 val left = moves.filter { it.positive }; val right = moves.filter { !it.positive }
                 val longer = if (left.isNotEmpty() && right.isNotEmpty() &&
                     left.map { it.endMs - it.startMs }.average() > right.map { it.endMs - it.startMs }.average()) "first" else "second"
-                "One side was slower or shallower than the other (the $longer direction was longer). Give the weaker side equal time."
+                "One side was slower or shallower than the other (the $longer direction was longer). Count the same beat in both roll directions."
             }
             else -> {
                 val mean = moves.map { it.peakRoll }.average()

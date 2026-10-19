@@ -232,7 +232,7 @@ class HomeActivity : Activity() {
             }, bottom = 12)
         }
         latestPractice?.takeIf { it.timeMs >= (lastRun?.first?.time ?: Long.MIN_VALUE) }?.let { recent ->
-            add(Snow.button(this@HomeActivity, "Last practice · ${if(recent.demo) "Demo" else "My practice"} · ${recent.status.name.lowercase()} · ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(recent.timeMs))}", Snow.ButtonKind.SECONDARY) {
+            add(Snow.button(this@HomeActivity, "Last practice · ${if(recent.demo) "Demo" else "My practice"} · ${recent.resultLabel} · ${java.text.DateFormat.getDateTimeInstance().format(java.util.Date(recent.timeMs))}", Snow.ButtonKind.SECONDARY) {
                 startActivity(Intent(this@HomeActivity, PracticeResultActivity::class.java).putExtra("attempt_id", recent.id))
             }, bottom = 12)
         }
@@ -444,7 +444,7 @@ class HomeActivity : Activity() {
         recent.forEach { attempt ->
             val drillTitle = Programme.drill(attempt.drillId)?.title ?: attempt.drillId
             val date = java.text.DateFormat.getDateInstance(java.text.DateFormat.MEDIUM).format(java.util.Date(attempt.timeMs))
-            add(t("$drillTitle  ·  ${if (attempt.eligible) attempt.score.toString() else attempt.status.name.lowercase()}  ·  $date" + if (attempt.demo) "  ·  Demo" else "  ·  My practice", Snow.Type.BODY), bottom = 8)
+            add(t("$drillTitle  ·  ${if (attempt.eligible) attempt.score.toString() else attempt.resultLabel}  ·  $date" + if (attempt.demo) "  ·  Demo" else "  ·  My practice", Snow.Type.BODY), bottom = 8)
         }
     }
 

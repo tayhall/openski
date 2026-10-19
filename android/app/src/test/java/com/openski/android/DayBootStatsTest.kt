@@ -203,6 +203,36 @@ class DayBootStatsTest {
         assertEquals(preRefactorExport.keys.toList(), hashes.keys.toList())   // same entries in the same order
     }
 
+    @Test fun linkedPracticeMetadataIsAdditiveAndLeavesEveryRawEntryUnchanged() {
+        fun files(data: SessionData): Map<String, String> {
+            val out = ByteArrayOutputStream(); SessionExport.write(data, out)
+            val result = linkedMapOf<String, String>()
+            ZipInputStream(out.toByteArray().inputStream()).use { zip ->
+                while (true) { val entry = zip.nextEntry ?: break; result[entry.name] = zip.readBytes().toString(Charsets.UTF_8) }
+            }
+            return result
+        }
+        val data = calibratedDemo()
+        val attempt = Attempt("slow-rolls", START, 80, 2, 160, true, id = "practice", sessionId = data.session.id,
+            target = PracticeTarget(10, 3.0, 15.0))
+        val original = files(data)
+        val updated = files(data.copy(practiceReviews = listOf(PracticeExportReview(attempt, PracticeReflection("Count the beat", "Felt steady")))))
+        assertEquals(original.keys.toList(), updated.keys.toList())
+        for (name in original.keys.filter { it != "session.json" }) assertEquals(name, original[name], updated[name])
+        val oldMetadata = JSONObject(original.getValue("session.json"))
+        val metadata = JSONObject(updated.getValue("session.json"))
+        val originalKeys = oldMetadata.keys().asSequence().toSet()
+        assertEquals(originalKeys + "practice_reviews", metadata.keys().asSequence().toSet())
+        for (key in originalKeys) assertEquals(key, oldMetadata.get(key).toString(), metadata.get(key).toString())
+        val review = metadata.getJSONArray("practice_reviews").getJSONObject(0)
+        assertEquals(1, review.getInt("format_version"))
+        assertEquals("practice", review.getString("attempt_id"))
+        assertEquals(80, review.getInt("original_score"))
+        assertTrue(review.isNull("score_eligible")) // Legacy unknown remains explicit.
+        assertEquals("Count the beat", review.getString("user_reported_intention"))
+        assertEquals("Felt steady", review.getString("user_reported_reflection"))
+    }
+
     @Test fun theSessionExportStillReadsTheSharedAnalysis() {
         val data = calibratedDemo()
         val out = ByteArrayOutputStream()

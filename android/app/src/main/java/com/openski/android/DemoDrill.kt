@@ -8,7 +8,7 @@ data class RollTrace(val seconds: FloatArray, val degrees: FloatArray) {
     val duration get() = if (seconds.isEmpty()) 0f else seconds.last()
 }
 
-data class DrillRun(val detection: DryDetection, val trace: RollTrace, val demo: Boolean)
+data class DrillRun(val detection: DryDetection, val trace: RollTrace, val demo: Boolean, val evidenceIssues: Set<String> = emptySet())
 
 /**
  * Sensor-free practice run. It is always labelled as demo boots and is not a measurement.

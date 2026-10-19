@@ -37,6 +37,7 @@ object SessionExport {
                 .put("estimated_coverage", q.coverage).put("gaps_over_100ms", q.gaps).put("longest_gap_ms", q.longestGapMs)
                 .put("rail_samples", q.railSamples).put("rail_percent", q.railPercent)
                 .put("dropped_before_samples", q.droppedBefore)) } })
+        if (data.practiceReviews.isNotEmpty()) metadata.put("practice_reviews", JSONArray().apply { data.practiceReviews.forEach { put(it.json()) } })
         val correctedTimeline=boot.correctedTimeline
         val orientation=boot.orientation
         val clockSyncs=boot.clockSyncs

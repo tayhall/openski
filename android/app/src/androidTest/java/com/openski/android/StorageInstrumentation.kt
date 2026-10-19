@@ -22,7 +22,8 @@ class StorageInstrumentation : Instrumentation() {
         11 to listOf("clock_sync","mag_samples","phone_samples"),
         12 to listOf("resorts","resort_ways","resort_stations"),
         13 to listOf("ski_days","day_fixes","day_run_tags"),
-        14 to listOf("practice_attempts","practice_imports"))
+        14 to listOf("practice_attempts","practice_imports"),
+        15 to listOf("practice_reflections"))
     /** Drops every table added after [version], so reopening with an older version number is a genuine upgrade. */
     private fun dropTablesAbove(db: SQLiteDatabase, version: Int) =
         tablesByVersion.filterKeys { it > version }.values.flatten().forEach { db.execSQL("DROP TABLE IF EXISTS $it") }
@@ -54,6 +55,7 @@ class StorageInstrumentation : Instrumentation() {
                 return
             }
             HistoryStorageRegression.run(this)
+            PracticeReviewStorageRegression.run(this)
             val context=targetContext
             for(version in listOf(2,3,4,5,6)) {
                 val migrationName="openski-migration-$version-${UUID.randomUUID()}.db"
