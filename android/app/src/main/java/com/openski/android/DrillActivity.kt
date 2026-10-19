@@ -105,6 +105,7 @@ class DrillActivity : Activity() {
     override fun onStop() {
         mountingDialog?.dismiss(); mountingDialog = null
         preparationDialog?.dismiss(); preparationDialog = null
+        service?.stopPracticeSoundPreview()
         service?.removeDrillObserver(this)
         if (bound) unbindService(connection)
         bound = false; service = null
@@ -170,12 +171,12 @@ class DrillActivity : Activity() {
                 val connected = service
                 if (connected == null) { notice = "Connecting to the audio service. Try the sound test again."; intro() }
                 else {
-                    connected.playCoachTestSounds(CoachSettingsStore(this@DrillActivity).settings)
-                    notice = "Listen for a tick, accented tick and rising/falling chirps. Connect earbuds, or explicitly permit phone audio in Coaching settings."
+                    notice = connected.playPracticeTestSounds(CoachSettingsStore(this@DrillActivity).settings)
+                        ?: "Listen for three count-in ticks, the start chime, two alternating beat ticks, a completed-movement tone, then the end chime. Confirm the volume before starting."
                     intro()
                 }
             }, bottom = 8)
-            add(t("Count-in ticks prepare you to move; alternating ticks guide the beat. The start/end chimes mark the active set. Route or audio-focus loss pauses scoring; reconnect and Resume from neutral. Test chirps demonstrate existing coaching sounds, not a new focus score.", Snow.Type.CAPTION), bottom = 8)
+            add(t("Three count-in ticks prepare you to move. Alternating ticks guide the beat; a short single tone marks each completed movement. Start/end chimes mark the active set. Route or audio-focus loss pauses scoring; reconnect and Resume from neutral. These cues do not signal a new focus score.", Snow.Type.CAPTION), bottom = 8)
             add(Snow.button(this@DrillActivity, "Audio route and speaker permission", Snow.ButtonKind.QUIET) {
                 startActivity(Intent(this@DrillActivity, CoachingActivity::class.java))
             }, bottom = 12)
