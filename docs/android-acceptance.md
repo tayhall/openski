@@ -129,3 +129,11 @@ Geek mode, Test lab, "Garden trials checklist (T0 to T6)" opens `TrialChecklistA
 
 - [ ] Seven cards, T0 to T6, each with the trial title, numbered steps, the export files and the `trial_report.py` command; text is readable at the largest font size and the screen scrolls.
 - [ ] Ticking a box updates the "n of 7 done" line, and the ticks survive leaving the screen and restarting the app.
+
+## GPX import checks (phone needed, once the import screen exists)
+
+The parser hardening in `GpxCodec` is unit-tested on the JDK only. Android's DOM parser rejects most hardening switches, so on a phone the protection is the refusal of any document type or entity declaration before parsing.
+
+1. Import a GPX whose prolog contains `<!DOCTYPE gpx [<!ENTITY e SYSTEM "file:///proc/self/status">]>` and uses `&e;` in the track name: the import is refused with "declares a document type" and no name or file content appears anywhere.
+2. Import a GPX exported by the app (`ski-day.gpx`): the fixes come back unchanged (count, first and last time).
+3. Import a file over 20 MB: refused as too large, no crash or long freeze.
