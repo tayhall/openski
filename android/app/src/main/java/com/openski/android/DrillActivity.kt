@@ -254,7 +254,7 @@ class DrillActivity : Activity() {
         add(back(), bottom = 8)
         add(t(if (attempt.demo) "Demo boots" else "My practice", Snow.Type.CAPTION), bottom = 8)
         add(t(when (attempt.status) {
-            PracticeStatus.COMPLETED -> "Set completed"
+            PracticeStatus.COMPLETED -> if (attempt.eligible) "Set completed" else "Cannot judge this set"
             PracticeStatus.INTERRUPTED -> "Practice interrupted"
             else -> "Incomplete set"
         }, Snow.Type.HERO), bottom = 12)

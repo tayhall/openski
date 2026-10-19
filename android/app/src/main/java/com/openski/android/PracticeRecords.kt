@@ -23,6 +23,7 @@ data class Attempt(
     val review: PracticeReview? = null,
 ) {
     val eligible get() = status == PracticeStatus.COMPLETED && review?.scoreEligible != false
+    val resultLabel get() = if (status == PracticeStatus.COMPLETED && !eligible) "Completed · cannot judge" else status.name.lowercase()
 }
 
 /** Strict import: malformed history must fail without marking the import complete or dropping rows. */

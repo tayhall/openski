@@ -53,6 +53,7 @@ object PracticeReviewStorageRegression {
                         evidence = terminal.review.evidence.copy(scoringQuality = ScoringEvidenceQuality.INSUFFICIENT)))
                     val unscored = store.record(insufficient, true)
                     check(unscored.stars == 0 && unscored.vert == 0 && !unscored.eligible)
+                    check(HistoryStore(database).page(HistoryKind.DRILLS, false).first { it.id == "poor" }.detail.contains("cannot judge"))
                     // Removing raw data preserves review and optional user notes.
                     database.writableDatabase.delete("sessions", "id='raw'", null)
                     check(store.get("new")!!.review == saved.review)
