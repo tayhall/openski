@@ -154,6 +154,10 @@ class SensorSessionService : Service() {
                     completed(result.map { it.first }); publishDrill(); settleForeground() } }
             }
         }
+        override fun abandon(attempt: Attempt) {
+            // Best effort: if storage has recovered, close the ACTIVE row now; otherwise the next start does it.
+            io.execute { runCatching { PracticeStore(store).interruptActive() } }
+        }
     }
     private val drillController: DrillController by lazy { DrillController(drillEffects, SystemClock::elapsedRealtime, System::currentTimeMillis) }
     private val drillTick = object : Runnable {
@@ -168,10 +172,11 @@ class SensorSessionService : Service() {
     }
     fun drillState(): DrillState {
         val state = drillController.state()
-        val current = state.attempt
+        // While the set runs it has no review yet, so judge it on the evidence it will carry if it completes.
+        val (current, evidence) = drillController.prospective() ?: (state.attempt to state.attempt?.review?.evidence)
         val previous = drillGhostAttempt
         val compatible = current != null && previous != null && PracticeComparisonPolicy.evaluate(current,
-            current.review?.evidence ?: PracticeEvidence(), previous, previous.review?.evidence ?: PracticeEvidence()).comparable
+            evidence ?: PracticeEvidence(), previous, previous.review?.evidence ?: PracticeEvidence()).comparable
         return state.copy(ghost = if (compatible) drillGhost else null)
     }
     fun observeDrill(owner: Any, observer: (DrillState) -> Unit) { drillObservers[owner] = observer; observer(drillState()) }
@@ -184,8 +189,9 @@ class SensorSessionService : Service() {
             else Programme.drill(id) ?: return "Unknown drill"
         if (repeat != null && (repeat.drillId != id || repeat.demo != demo)) return "Saved target source does not match."
         if (!demo && listOf("L", "R").none { progressStore.sensorAddress(it) != null }) return "Pair a boot sensor before starting measured practice."
-        if (activeSessionId != null || runActive() || coachState.running) return "Another recording or coaching session is active. Finish it first."
-        if (transfers.isNotEmpty() || store.hasPendingRecovery()) return "Recover the retained recording before starting practice."
+        // A demo is simulated and touches neither the boots nor a recording, so only measured practice is guarded.
+        if (!demo && (activeSessionId != null || runActive() || coachState.running)) return "Another recording or coaching session is active. Finish it first."
+        if (!demo && (transfers.isNotEmpty() || store.hasPendingRecovery())) return "Recover the retained recording before starting practice."
         if (drillController.active) return "A practice set is already active. Return to it or finish it first."
         requestedRepeat = repeat
         val problem = drillController.start(drill, demo, UUID.randomUUID().toString(), if (demo) null else UUID.randomUUID().toString())
@@ -224,8 +230,8 @@ class SensorSessionService : Service() {
     private val gps by lazy { GpsListener(this) { fix -> runController.onFix(fix) } }
     private val runBoots = object : RunBoots {
         override fun connected(side: String) = clients[side]?.isReady == true
-        override fun productionMode(side: String): Boolean? = if (clients[side]?.isReady == true && side in modeSeen && !modeRequests.pending(side)) side in productionSides else null
-        override fun modeChangePending(side: String): Boolean = modeRequests.pending(side)
+        override fun productionMode(side: String): Boolean? = if (clients[side]?.isReady == true && side in modeSeen && !modeRequests.pending(side, SystemClock.elapsedRealtime())) side in productionSides else null
+        override fun modeChangePending(side: String): Boolean = modeRequests.pending(side, SystemClock.elapsedRealtime())
         override fun zeroed(side: String) = zeroTracker.isZeroed(side)
         override fun flashRetained(side: String) = recorderStates[side]?.let { it.hasSession || it.recording } == true
         override fun flashFull(side: String) = side in runFullSides
@@ -294,6 +300,7 @@ class SensorSessionService : Service() {
         override fun preparationIssues(): List<ReadinessIssue> = buildList {
             if (drillController.active || (activeSessionId != null && activeSessionId != runSessionId) || (coachState.running && !runActive()))
                 add(ReadinessIssue(IssueKind.CAPTURE_CONFLICT, "Another practice, recording or coaching session is active. Return to it before starting a run.", PreparationAction.RETURN_TO_CAPTURE))
+            refreshPendingRecovery()  // the answer lands on a later readiness check, never blocking this one
             if (activeSessionId == null) pendingRecoverySides.forEach { side ->
                 add(ReadinessIssue(IssueKind.RETAINED_DATA, "${if (side == "L") "Left" else "Right"} boot recovery is pending. Finish recovery before starting.", PreparationAction.RECOVER, side))
             }
@@ -372,7 +379,7 @@ class SensorSessionService : Service() {
     private val movementTrackers=mutableMapOf<String,DrySkiAnalysis.Tracker>()
     private val latestOrientation=mutableMapOf<String,BootRoll>()
     private var guidedTrial: GuidedTrial?=null
-    private val progressStore by lazy { ProgressStore(this) }
+    private val progressStore by lazy { ProgressStore(this, store) }
     @Volatile private var corrections: Map<String, AccelCorrection?>? = null
 
     override fun onBind(intent: Intent?): IBinder = binder
@@ -382,11 +389,14 @@ class SensorSessionService : Service() {
         recoveryPaused = getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean("recovery_paused", false)
         createNotificationChannel()
         activeSessionId = store.latestOpenSessionId()
-        val interrupted = PracticeStore(store).interruptActive(System.currentTimeMillis())
-        PracticeStore(store).list().lastOrNull()?.let(drillController::restoreSaved)
+        // A storage failure here must not crash the sticky service into a restart loop; the next start retries.
+        val interrupted = try {
+            PracticeStore(store).run { interruptActive(System.currentTimeMillis()).also { latest()?.let(drillController::restoreSaved) } }
+        } catch (_: Exception) { emptyList() }
         if (interrupted.any { !it.demo && it.sessionId == activeSessionId }) {
             activeSessionId = null
         }
+        refreshPendingRecovery()
         testRecording=activeSessionId?.let { store.getSession(it)?.testSession } ?: false
         activeSessionId?.let { id ->
             // Reuse the decision made when the session started, not the switch as it is now.
@@ -406,7 +416,7 @@ class SensorSessionService : Service() {
             when (intent?.action) {
                 ACTION_MONITOR -> { monitoring = true; ensureForeground() }
                 ACTION_STOP_MONITORING -> {
-                    if (drillController.active) { finishDrill(); return START_STICKY }
+                    if (drillController.active && !drillController.demo) { finishDrill(); return START_STICKY }
                     monitoring = false
                     recoveryPaused = true
                     reconnectTasks.values.forEach(mainHandler::removeCallbacks)
@@ -419,7 +429,7 @@ class SensorSessionService : Service() {
                     settleForeground()
                 }
                 ACTION_START_RECORDING -> startRecording(intent.getBooleanExtra("test_session",false), drill = intent.getBooleanExtra(EXTRA_DRILL, false))
-                ACTION_STOP_RECORDING -> if (drillController.active) finishDrill() else if (runController.phase() == RunPhase.RUNNING) stopRun() else stopRecording()
+                ACTION_STOP_RECORDING -> if (drillController.active && !drillController.demo) finishDrill() else if (runController.phase() == RunPhase.RUNNING) stopRun() else stopRecording()
                 ACTION_RESUME_DRILL -> if (drillController.active && !drillController.demo) { ensureForeground(); acquireWakeLock() } else if (!drillController.active) settleForeground()
                 ACTION_RECOVER -> recoverFlash()
                 ACTION_PAUSE_RECOVERY -> if (activeSessionId == null) pauseRecovery()
@@ -1093,6 +1103,26 @@ class SensorSessionService : Service() {
         return queued
     }
 
+    private var pendingRecoveryRefreshing = false
+    private var pendingRecoveryRevision = -1L
+    /** Re-reads which boots have recovery pending when captures changed, on the I/O executor, one read at a time. Main thread. */
+    private fun refreshPendingRecovery() {
+        val revision = store.captureRevision
+        if (pendingRecoveryRefreshing || revision == pendingRecoveryRevision) return
+        pendingRecoveryRefreshing = true
+        io.execute {
+            val sides = runCatching { store.pendingRecoverySides() }
+            mainHandler.post {
+                pendingRecoveryRefreshing = false
+                sides.onSuccess { pendingRecoverySides = it; pendingRecoveryRevision = revision }
+            }
+        }
+    }
+
+    /** Persisted recovery facts per requested session, valid while [LocalSessionStore.captureRevision] is unchanged. */
+    private class RecoveryFacts(val revision: Long, val captures: List<SensorCapture>, val committed: Set<String>)
+    private val recoveryFacts = mutableMapOf<String?, RecoveryFacts>()
+
     /** Main-thread snapshot of runtime facts; persisted captures are read on the existing I/O executor. */
     fun loadPreparation(sessionId: String? = null, callback: (Result<PreparationSnapshot>) -> Unit) {
         val boots = RunController.SIDES.map { side -> BootPreparation(side, progressStore.sensorAddress(side),
@@ -1105,16 +1135,32 @@ class SensorSessionService : Service() {
         val storage = storageFailed
         val active = activeSessionId
         val busy = recordingActive() || coachState.running
+        fun deliver(facts: Result<RecoveryFacts>) {
+            if (destroyed) return
+            callback(facts.mapCatching { f ->
+                val items = f.captures.map { c -> RecoverySummary.item(c, progress[c.id], c.id in validating,
+                    paused, storage || c.side in failed, active, c.id in f.committed) }
+                PreparationSnapshot(boots, runController.readiness(), RecoveryReport(items), busy)
+            })
+        }
+        // Visible recovery cards ask every second; the database is read again only after a capture changed.
+        val revision = store.captureRevision
+        recoveryFacts[sessionId]?.takeIf { it.revision == revision }?.let { cached ->
+            mainHandler.post { deliver(Result.success(cached)) }; return
+        }
         io.execute {
             val result = runCatching {
-                val items = store.recoveryCaptures(sessionId).map { c -> RecoverySummary.item(c, progress[c.id], c.id in validating,
-                    paused, storage || c.side in failed, active, store.hasCommittedCopy(c.id)) }
-                items to store.pendingRecoverySides()
+                val captures = store.recoveryCaptures(sessionId)
+                RecoveryFacts(revision, captures, captures.filter { store.hasCommittedCopy(it.id) }.map { it.id }.toSet())
             }
-            mainHandler.post { if (!destroyed) {
-                result.onSuccess { pendingRecoverySides = it.second }
-                callback(result.mapCatching { (items, _) -> PreparationSnapshot(boots, runController.readiness(), RecoveryReport(items), busy) })
-            } }
+            mainHandler.post {
+                result.onSuccess { facts ->
+                    recoveryFacts.values.removeAll { it.revision != revision }
+                    recoveryFacts[sessionId] = facts
+                }
+                refreshPendingRecovery()
+                deliver(result)
+            }
         }
     }
 

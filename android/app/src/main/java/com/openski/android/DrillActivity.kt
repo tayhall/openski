@@ -200,6 +200,8 @@ class DrillActivity : Activity() {
             return
         }
         if (state.phase == DrillPhase.IDLE || (state.phase == DrillPhase.DONE && state.drill?.id != drill.id)) {
+            // A start this screen made and preparation refused returns to IDLE with its reason and no attempt.
+            if (state.phase == DrillPhase.IDLE && state.drill?.id == drill.id && state.message.isNotBlank()) notice = state.message
             signature = ""; intro(); return
         }
         state.drill?.let { drill = it }
@@ -218,7 +220,8 @@ class DrillActivity : Activity() {
     }
 
     private fun active(state: DrillState) = show(actions = when (state.phase) {
-        DrillPhase.SAVE_FAILED -> listOf(PhaseLayout.Action("retry-save", "Retry save") { service?.retryDrillSave() })
+        DrillPhase.SAVE_FAILED -> listOf(PhaseLayout.Action("retry-save", "Retry save") { service?.retryDrillSave() },
+            PhaseLayout.Action("discard", "Close without saving", Snow.ButtonKind.SECONDARY) { service?.finishDrill(state.attempt?.id) })
         DrillPhase.SAVING -> emptyList()
         else -> listOf(PhaseLayout.Action("finish", "Finish practice", Snow.ButtonKind.SECONDARY) { service?.finishDrill(state.attempt?.id) })
     }, screen = state.phase.name) {

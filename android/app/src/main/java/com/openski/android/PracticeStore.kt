@@ -26,6 +26,12 @@ class PracticeStore(private val store: LocalSessionStore) {
 
     fun get(id: String): Attempt? = synchronized(store) { getLocked(id) }
 
+    /** The most recent attempt, the same one [list] ends with. */
+    fun latest(): Attempt? = synchronized(store) {
+        store.readableDatabase.rawQuery("SELECT $COLUMNS FROM practice_attempts ORDER BY time_ms DESC, rowid DESC LIMIT 1", null)
+            .use { if (it.moveToFirst()) read(it) else null }
+    }
+
     /** Insert once. Retrying completion returns the committed result, including its original reward. */
     fun record(attempt: Attempt, calculateReward: Boolean = false): Attempt = synchronized(store) {
         val db = store.writableDatabase
@@ -59,7 +65,8 @@ class PracticeStore(private val store: LocalSessionStore) {
         val db = store.writableDatabase
         db.beginTransaction()
         try {
-            val unfinished = list().filter { it.status == PracticeStatus.ACTIVE }
+            val unfinished = db.rawQuery("SELECT $COLUMNS FROM practice_attempts WHERE status='ACTIVE' ORDER BY time_ms, rowid", null)
+                .use { c -> buildList { while (c.moveToNext()) add(read(c)) } }
             db.execSQL("UPDATE practice_attempts SET status='INTERRUPTED', stars=0, points=0 WHERE status='ACTIVE'")
             if (closeOpenSessionsAt != null) unfinished.mapNotNull { it.sessionId }.distinct().forEach { id ->
                 db.execSQL("UPDATE sessions SET ended_at_ms=? WHERE id=? AND ended_at_ms IS NULL", arrayOf(closeOpenSessionsAt, id))
