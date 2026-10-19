@@ -184,7 +184,7 @@ Whole-day tracking (`DayTrackingService`), the day report, the ski day and resor
 - [ ] Complete a demo: it appears in Demo, changes no My practice best/streak/unlock, and uses practice points rather than GPS vertical units. Demo drills remain freely explorable.
 - [ ] Finish a measured set early: recent history says incomplete, with no stars/points/unlocks. A complete measured set retains normal version-1 scoring.
 - [ ] Open a locked measured drill through Demo and try My boots: measured progression is still enforced.
-- [ ] Failure paths: malformed legacy JSON leaves source preferences untouched; a storage failure shows an error rather than empty successful history; Retry save uses the same attempt identity.
+- [ ] Failure paths: malformed legacy JSON leaves source preferences untouched; a storage failure shows an error rather than empty successful history; Retry save uses the same attempt identity. If saving keeps failing, Close without saving (or the notification's Finish) closes the set as interrupted and releases the service; a refused start (locked drill) saves no attempt.
 - [ ] Path/Progress source choice survives rotation. No device-BLE validation is claimed for this increment; drill lifecycle preservation is scheduled separately.
 
 

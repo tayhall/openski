@@ -14,15 +14,19 @@ class DrillControllerTest {
         var calibration: ((Result<Unit>) -> Unit)? = null
         var deferPrepare = false
         var failSave = false
+        var failPrepare: String? = null
+        var abandoned = 0
         val markers = mutableListOf<String>()
         val controller = DrillController(this, { clock }, { 100_000L + clock })
         override fun prepare(attempt: Attempt, completed: (Result<Int>) -> Unit) {
-            if (deferPrepare) prepared = completed else completed(Result.success(6))
+            if (deferPrepare) prepared = completed
+            else completed(failPrepare?.let { Result.failure(IllegalStateException(it)) } ?: Result.success(6))
         }
         override fun openSession(attempt: Attempt, completed: (Result<Unit>) -> Unit) {
             opens++; recording = attempt.sessionId; completed(Result.success(Unit))
         }
         override fun calibrate(attempt: Attempt, side: String, mounting: Mounting, completed: (Result<Unit>) -> Unit) { calibration = completed }
+        override fun abandon(attempt: Attempt) { abandoned++ }
         override fun mark(attempt: Attempt, label: String) { markers += label }
         override fun stopSession(attempt: Attempt) { if (recording == attempt.sessionId) { recording = null; stops++ } }
         override fun save(attempt: Attempt, run: DrillRun?, completed: (Result<Attempt>) -> Unit) {
@@ -101,7 +105,6 @@ class DrillControllerTest {
         val h = Harness(); h.ready(); h.failSave = true
         h.controller.finishEarly()
         assertEquals(DrillPhase.SAVE_FAILED, h.controller.phase)
-        h.controller.finishEarly()
         assertEquals(1, h.saves)
         h.failSave = false; h.controller.retrySave(); h.controller.retrySave()
         assertEquals(DrillPhase.DONE, h.controller.phase)
@@ -155,5 +158,58 @@ class DrillControllerTest {
         assertEquals(DrillPhase.DONE, h.controller.phase)
         assertEquals(0, h.opens)
         assertEquals(0, h.saves)
+    }
+
+    @Test fun aSaveThatKeepsFailingCanBeAbandonedSoTheServiceIsNotHeldActive() {
+        val h = Harness(); h.ready(); h.failSave = true
+        h.controller.finishEarly()
+        h.controller.retrySave()
+        assertEquals(DrillPhase.SAVE_FAILED, h.controller.phase)
+        assertTrue(h.controller.active)
+        h.controller.finishEarly()
+        assertFalse(h.controller.active)
+        assertEquals(DrillPhase.DONE, h.controller.phase)
+        assertEquals(PracticeStatus.INTERRUPTED, h.controller.state().attempt!!.status)
+        assertEquals(0, h.controller.state().attempt!!.stars)
+        assertEquals(1, h.abandoned)
+        assertEquals(2, h.saves)
+        h.controller.interrupt("again")
+        assertEquals(1, h.abandoned)
+    }
+
+    @Test fun interruptingAFailedSaveAlsoReleasesTheController() {
+        val h = Harness(); h.ready(); h.failSave = true
+        h.controller.finishEarly()
+        h.controller.interrupt("service destroyed")
+        assertFalse(h.controller.active)
+        assertEquals(1, h.abandoned)
+    }
+
+    @Test fun refusedPreparationLeavesNoAttemptOrSave() {
+        val h = Harness(); h.failPrepare = "Complete the preceding measured sets, or explore this drill in Demo."
+        assertNull(h.controller.start(Programme.drills.last(), false, "a", "session"))
+        assertEquals(DrillPhase.IDLE, h.controller.phase)
+        assertFalse(h.controller.active)
+        assertNull(h.controller.state().attempt)
+        assertEquals(h.failPrepare, h.controller.state().message)
+        assertEquals(0, h.saves)
+        assertTrue(h.markers.isEmpty())
+        h.tick()
+        assertEquals(DrillPhase.IDLE, h.controller.phase)
+        h.failPrepare = null
+        assertNull(h.controller.start(Programme.drills.first(), false, "b", "session"))
+        assertEquals(DrillPhase.CONNECTING, h.controller.phase)
+    }
+
+    @Test fun aRunningSetIsJudgedForTheGhostOnTheEvidenceItWillCarry() {
+        val h = Harness(); h.ready()
+        assertEquals(DrillPhase.RUNNING, h.controller.phase)
+        val (subject, evidence) = h.controller.prospective()!!
+        val previous = subject.copy(id = "earlier", review = PracticeReview(evidence, 6, 1.0, 10.0, 10.0, 10.0, 5, emptySet()))
+        assertTrue(PracticeComparisonPolicy.evaluate(subject, evidence, previous, previous.review!!.evidence).comparable)
+        val otherSide = previous.copy(review = previous.review!!.copy(evidence = evidence.copy(scoredSide = "R")))
+        assertFalse(PracticeComparisonPolicy.evaluate(subject, evidence, otherSide, otherSide.review!!.evidence).comparable)
+        h.controller.finishEarly()
+        assertNull(h.controller.prospective())
     }
 }

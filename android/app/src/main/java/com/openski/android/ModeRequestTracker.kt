@@ -1,11 +1,19 @@
 package com.openski.android
 
-/** Tracks explicit mode-command acknowledgements; periodic state reports cannot acknowledge writes. */
-class ModeRequestTracker(private val throttleMs: Long = 2000) {
+/**
+ * Tracks explicit mode-command acknowledgements; periodic state reports cannot acknowledge writes. A request whose
+ * acknowledgement never arrives stops counting as pending after [timeoutMs], so the boot's reported mode is trusted again.
+ */
+class ModeRequestTracker(private val throttleMs: Long = 2000, private val timeoutMs: Long = 10_000) {
     private data class Requests(val targets: MutableList<Boolean>, var desired: Boolean, var queuedAt: Long)
     private val requests = mutableMapOf<String, Requests>()
 
-    fun pending(side: String): Boolean = side in requests
+    fun pending(side: String, now: Long): Boolean {
+        val existing = requests[side] ?: return false
+        if (now - existing.queuedAt < timeoutMs) return true
+        requests.remove(side)
+        return false
+    }
 
     fun shouldSend(side: String, desired: Boolean, now: Long): Boolean {
         val existing = requests[side] ?: return true
@@ -26,8 +34,11 @@ class ModeRequestTracker(private val throttleMs: Long = 2000) {
         val existing = requests[side] ?: return
         if (existing.targets.isEmpty()) return
         if (result != 0) {
+            // A rejected command never satisfies the desired mode; once nothing else is outstanding the boot keeps
+            // the mode it reports, so stop waiting.
             existing.targets.removeAt(0)
-            return // A rejected command never satisfies the desired mode.
+            if (existing.targets.isEmpty()) requests.remove(side)
+            return
         }
         val matched = existing.targets.indexOf(reported)
         if (matched < 0) return
