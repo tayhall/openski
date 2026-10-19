@@ -89,6 +89,50 @@ class GpxCodecTest {
             <gpx version="1.1"><trk><name>&e;</name><trkseg><trkpt lat="1" lon="2"><time>2026-01-10T09:00:00Z</time></trkpt></trkseg></trk></gpx>""")
     }
 
+    @Test fun everyHardeningSwitchIsAppliedOnTheJvm() {
+        assertEquals(emptyList<String>(), GpxCodec.factory().second)
+    }
+
+    @Test fun anyDoctypeOrEntityTextIsRefusedBeforeParsing() {
+        expectFormatError("""<?xml version="1.0"?><!doctype gpx><gpx version="1.1"/>""")
+        expectFormatError("""<gpx version="1.1"><!ENTITY x "y"></gpx>""")
+    }
+
+    @Test fun oversizeInputIsRefused() {
+        val big = ByteArray(GpxCodec.MAX_INPUT_BYTES + 1) { ' '.code.toByte() }
+        try { GpxCodec.read(java.io.ByteArrayInputStream(big)); fail("expected GpxFormatException") } catch (e: GpxFormatException) {
+            assertTrue(e.message!!.contains("too large"))
+        }
+        expectFormatError(" ".repeat(GpxCodec.MAX_INPUT_BYTES + 1))
+    }
+
+    @Test fun aStreamWithAByteOrderMarkIsDecoded() {
+        val text = GpxCodec.write(listOf(GpsFix(1000, 1.0, 2.0, null, null, 5f, null)), "Zermatt été")
+        val utf8 = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte()) + text.toByteArray(Charsets.UTF_8)
+        assertEquals("Zermatt été", GpxCodec.read(java.io.ByteArrayInputStream(utf8)).name)
+        val utf16 = byteArrayOf(0xFF.toByte(), 0xFE.toByte()) + text.replace("UTF-8", "UTF-16").toByteArray(Charsets.UTF_16LE)
+        assertEquals(1, GpxCodec.read(java.io.ByteArrayInputStream(utf16)).fixes.size)
+    }
+
+    @Test fun negativeAccuracyAndSpeedAreTreatedAsMissing() {
+        val text = """<gpx version="1.1" xmlns:o="${GpxCodec.NS_OPENSKI}"><trk><trkseg>
+            <trkpt lat="1" lon="2"><time>2026-01-10T09:00:00Z</time><speed>-3</speed>
+            <extensions><o:accuracy>-5</o:accuracy><o:vaccuracy>-1</o:vaccuracy></extensions></trkpt></trkseg></trk></gpx>"""
+        val f = GpxCodec.read(text).fixes.single()
+        assertEquals(GpxCodec.ASSUMED_ACCURACY_M, f.accuracyM, 0f)
+        assertNull(f.verticalAccuracyM)
+        assertNull(f.speedMps)
+    }
+
+    @Test fun writtenNumbersHaveNoExponentAndNamesNoControlCharacters() {
+        val text = GpxCodec.write(listOf(GpsFix(1000, 1e-7, 2.0, 1e-5, 1e-6, 1e-4f, 2e-5f)), "a\u0001b\u0000c\td")
+        assertTrue(text, !text.contains("E-"))
+        val read = GpxCodec.read(text)
+        assertEquals("abc\td", read.name)
+        assertEquals(1e-6, read.fixes.single().speedMps!!, 0.0)
+        assertEquals(1e-4f, read.fixes.single().accuracyM, 0f)
+    }
+
     @Test fun writeSkipsNonFiniteOptionalFields() {
         val text = GpxCodec.write(listOf(GpsFix(1000, 1.0, 2.0, Double.NaN, Double.POSITIVE_INFINITY, Float.NaN, Float.NaN)))
         assertTrue(!text.contains("NaN") && !text.contains("Infinity"))

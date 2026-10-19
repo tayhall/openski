@@ -20,7 +20,12 @@ class SkiDaySplitterTest {
             "dist=${s.distanceM.toInt()} vert=${s.verticalM?.toInt()} mean=${s.meanSpeedMps} top=${s.topSpeedMps} ${s.notes}"
     }
 
-    private fun assertMatchesTruth(split: SkiDaySplit, truth: List<SyntheticSkiDay.Truth>, boundaryS: Double, verticalFraction: Double) {
+    /**
+     * Kinds in order, inner boundaries within [boundaryS], and verticals within 3 m + 3 %. With GPS altitude a
+     * further 15 m is allowed: the synthetic GPS altitude drifts with a 5 m spread, and the two ends of a segment
+     * each carry their own drift (about 7 m spread for the difference), which no endpoint estimate can remove.
+     */
+    private fun assertMatchesTruth(split: SkiDaySplit, truth: List<SyntheticSkiDay.Truth>, boundaryS: Double) {
         val text = describe(split)
         assertEquals(text, truth.map { it.kind }, split.segments.map { it.kind })
         for ((s, tr) in split.segments.zip(truth)) {
@@ -28,7 +33,8 @@ class SkiDaySplitterTest {
             assertEquals("start of ${tr.kind}\n$text", tr.startMs / 1000.0, s.startMs / 1000.0, boundaryS)
             assertEquals("end of ${tr.kind}\n$text", tr.endMs / 1000.0, s.endMs / 1000.0, boundaryS)
             if (tr.kind != SegmentKind.REST) {
-                assertEquals("vertical of ${tr.kind}\n$text", tr.verticalM, s.verticalM!!, abs(tr.verticalM) * verticalFraction + 15)
+                val gpsNoise = if (split.altitudeSource == AltitudeSource.BAROMETER) 0.0 else 15.0
+                assertEquals("vertical of ${tr.kind}\n$text", tr.verticalM, s.verticalM!!, 3 + abs(tr.verticalM) * 0.03 + gpsNoise)
             }
         }
     }
@@ -36,7 +42,7 @@ class SkiDaySplitterTest {
     @Test fun aFullDaySplitsIntoThreeDescentsTwoLiftsAndRestsWithGpsAltitude() {
         val split = SkiDaySplitter.split(day.fixes)
         assertEquals(AltitudeSource.GPS, split.altitudeSource)
-        assertMatchesTruth(split, day.truth, boundaryS = 20.0, verticalFraction = 0.12)
+        assertMatchesTruth(split, day.truth, boundaryS = 20.0)
         assertTrue(split.notes.contains(SkiDaySplitter.NOTE_GPS_ALTITUDE))
         assertTrue(split.notes.contains(SkiDaySplitter.NOTE_NO_MAP))
         split.segments.forEach {
@@ -54,8 +60,8 @@ class SkiDaySplitterTest {
         val descents = split.segments.filter { it.kind == SegmentKind.DESCENT }
         val truths = day.truth.filter { it.kind == SegmentKind.DESCENT }
         for ((s, tr) in descents.zip(truths)) {
-            // Distance is measured on 5 s smoothed positions, which cut the turn wiggle: expect 75 to 105 % of the path.
-            assertTrue("distance ${s.distanceM} vs path ${tr.pathM}", s.distanceM in tr.pathM * 0.75..tr.pathM * 1.05)
+            // Distance on raw fixes while moving: 100 to 103.4 % of the path over 20 seeds (GPS jitter adds a little).
+            assertTrue("distance ${s.distanceM} vs path ${tr.pathM}", s.distanceM in tr.pathM * 0.99..tr.pathM * 1.05)
             assertTrue("top ${s.topSpeedMps}", s.topSpeedMps!! in 7.0..11.5)
             assertTrue("mean ${s.meanSpeedMps}", s.meanSpeedMps!! in 6.0..10.5)
         }
@@ -75,7 +81,7 @@ class SkiDaySplitterTest {
         val split = SkiDaySplitter.split(noisy.fixes, noisy.baro)
         assertEquals(AltitudeSource.BAROMETER, split.altitudeSource)
         assertTrue(split.segments.all { it.notes.contains(SkiDaySplitter.NOTE_BARO_ALTITUDE) })
-        assertMatchesTruth(split, noisy.truth, boundaryS = 15.0, verticalFraction = 0.05)
+        assertMatchesTruth(split, noisy.truth, boundaryS = 15.0)
     }
 
     @Test fun aBarometerThatCoversTooLittleOfTheDayFallsBackToGpsAltitude() {
@@ -83,13 +89,13 @@ class SkiDaySplitterTest {
         val split = SkiDaySplitter.split(day.fixes, partial)
         assertEquals(AltitudeSource.GPS, split.altitudeSource)
         assertTrue(split.notes.contains(SkiDaySplitter.NOTE_BARO_SHORT))
-        assertMatchesTruth(split, day.truth, boundaryS = 20.0, verticalFraction = 0.12)
+        assertMatchesTruth(split, day.truth, boundaryS = 20.0)
     }
 
     @Test fun otherNoiseSeedsGiveTheSameSegments() {
         for (seed in listOf(1L, 2L, 3L, 4L, 5L)) {
             val d = SyntheticSkiDay.build(SyntheticSkiDay.FULL_DAY, seed = seed)
-            assertMatchesTruth(SkiDaySplitter.split(d.fixes), d.truth, boundaryS = 20.0, verticalFraction = 0.12)
+            assertMatchesTruth(SkiDaySplitter.split(d.fixes), d.truth, boundaryS = 20.0)
         }
     }
 
@@ -116,7 +122,7 @@ class SkiDaySplitterTest {
 
     @Test fun aMapConfirmsLiftsAndDescents() {
         val split = SkiDaySplitter.split(day.fixes, map = mapFrom(day))
-        assertMatchesTruth(split, day.truth, boundaryS = 20.0, verticalFraction = 0.12)
+        assertMatchesTruth(split, day.truth, boundaryS = 20.0)
         split.segments.forEach { s ->
             if (s.kind == SegmentKind.REST) assertNull(s.mapConfirmed)
             else assertEquals(describe(split), true, s.mapConfirmed)
@@ -138,7 +144,8 @@ class SkiDaySplitterTest {
 
     @Test fun missingAndNonFiniteFieldsDoNotBreakTheSplit() {
         val fixes = day.fixes.mapIndexed { i, f ->
-            when (i % 7) {
+            // Three in twenty fixes lose their altitude: 85 % coverage, above the 80 % GPS altitude needs.
+            when (i % 20) {
                 0 -> f.copy(altM = Double.NaN)
                 1 -> f.copy(altM = null)
                 2 -> f.copy(speedMps = Double.NaN)
@@ -182,24 +189,92 @@ class SkiDaySplitterTest {
             listOf(SyntheticSkiDay.Phase(SegmentKind.REST, 90, 0.0, 0.0)))
         for (seed in 1L..5L) {
             val d = SyntheticSkiDay.build(groups, seed = seed)
-            assertMatchesTruth(SkiDaySplitter.split(d.fixes), d.truth, boundaryS = 20.0, verticalFraction = 0.12)
+            assertMatchesTruth(SkiDaySplitter.split(d.fixes), d.truth, boundaryS = 20.0)
         }
     }
 
     @Test fun aSignalGapInsideALiftIsBridgedAndNoted() {
         val lift1 = day.truth[3]
-        // Drop two minutes of fixes in the middle of lift 1 (a tunnel or a gondola cabin).
+        // Drop 90 s of fixes in the middle of lift 1 (a tunnel or a gondola cabin): under the 120 s hard limit.
         val mid = (lift1.startMs + lift1.endMs) / 2
-        val fixes = day.fixes.filter { it.timeMs < mid - 30_000 || it.timeMs > mid + 90_000 }
+        val fixes = day.fixes.filter { it.timeMs < mid - 30_000 || it.timeMs > mid + 60_000 }
         val split = SkiDaySplitter.split(fixes)
         assertEquals(describe(split), day.truth.map { it.kind }, split.segments.map { it.kind })
         val lift = split.segments.filter { it.kind == SegmentKind.LIFT }[0]
         assertTrue(lift.notes.any { it.contains("without signal") })
     }
 
-    @Test fun everyConfigFieldIsExported() {
+    @Test fun aLongSignalGapEndsTheSegmentAndAddsNoDistance() {
+        val lift1 = day.truth[3]
+        val mid = (lift1.startMs + lift1.endMs) / 2
+        val gapStart = mid - 150_000
+        val gapEnd = mid + 150_000
+        val fixes = day.fixes.filter { it.timeMs < gapStart || it.timeMs > gapEnd }
+        val split = SkiDaySplitter.split(fixes)
+        val kinds = day.truth.map { it.kind }.toMutableList().also { it.add(4, SegmentKind.LIFT) }
+        assertEquals(describe(split), kinds, split.segments.map { it.kind })
+        split.segments.forEach { s -> assertTrue(describe(split), s.endMs < gapStart || s.startMs > gapEnd) }
+        val before = split.segments[3]
+        val after = split.segments[4]
+        assertTrue(before.lastIndex < after.firstIndex)
+        // Each part moved for about 150 s at 2.5 m/s (minus the minute stopped): nothing for the 300 s gap.
+        assertTrue("${before.distanceM}", before.distanceM < 450)
+        assertTrue("${after.distanceM}", after.distanceM < 450)
+        assertTrue(split.notes.any { it.contains("signal gap") })
+    }
+
+    @Test fun sparseGpsAltitudeCountsAsNoAltitude() {
+        val sparse = day.fixes.mapIndexed { i, f -> if (i % 2 == 0) f.copy(altM = null) else f }
+        val split = SkiDaySplitter.split(sparse)
+        assertEquals(AltitudeSource.NONE, split.altitudeSource)
+        assertTrue(split.notes.contains(SkiDaySplitter.NOTE_GPS_SPARSE))
+        assertTrue(split.notes.contains(SkiDaySplitter.NOTE_NO_ALTITUDE))
+    }
+
+    @Test fun aFlatStretchOnAMappedLiftLineNextToADescentIsLift() {
+        val groups = listOf(
+            listOf(SyntheticSkiDay.Phase(SegmentKind.REST, 90, 0.0, 0.0)),
+            listOf(SyntheticSkiDay.Phase(SegmentKind.DESCENT, 200, 10.0, -2.0, turns = true)),
+            listOf(SyntheticSkiDay.Phase(SegmentKind.LIFT, 120, 2.5, 0.0, headingDeg = 0.0),
+                SyntheticSkiDay.Phase(SegmentKind.LIFT, 300, 2.5, 1.2, headingDeg = 0.0)),
+            listOf(SyntheticSkiDay.Phase(SegmentKind.REST, 90, 0.0, 0.0)))
+        val d = SyntheticSkiDay.build(groups)
+        val withMap = SkiDaySplitter.split(d.fixes, map = mapFrom(d))
+        assertMatchesTruth(withMap, d.truth, boundaryS = 20.0)
+        // Without the map the flat stretch is taken as the end of the descent.
+        val bare = SkiDaySplitter.split(d.fixes)
+        val descent = bare.segments.single { it.kind == SegmentKind.DESCENT }
+        assertTrue(describe(bare), descent.endMs > d.truth[2].startMs + 60_000)
+    }
+
+    /** Worst inner-boundary error over 20 noise seeds, for the figure given in docs/ski-day-design.md. */
+    @Test fun boundariesStayWithinTenSecondsAcrossSeeds() {
+        val noQueue = listOf(
+            listOf(SyntheticSkiDay.Phase(SegmentKind.REST, 90, 0.0, 0.0)),
+            listOf(SyntheticSkiDay.Phase(SegmentKind.DESCENT, 200, 10.0, -2.0, turns = true)),
+            listOf(SyntheticSkiDay.Phase(SegmentKind.LIFT, 300, 2.5, 1.2, headingDeg = 0.0)),
+            listOf(SyntheticSkiDay.Phase(SegmentKind.REST, 90, 0.0, 0.0)))
+        var worst = 0.0
+        for (groups in listOf(SyntheticSkiDay.FULL_DAY, noQueue)) for (baro in listOf(false, true)) for (seed in 1L..20L) {
+            val d = SyntheticSkiDay.build(groups, seed = seed, gpsAltNoiseM = if (baro) 15.0 else 5.0)
+            val split = SkiDaySplitter.split(d.fixes, if (baro) d.baro else emptyList())
+            assertEquals(describe(split), d.truth.map { it.kind }, split.segments.map { it.kind })
+            for (k in 1 until d.truth.size) worst = maxOf(worst, abs(split.segments[k].startMs - d.truth[k].startMs) / 1000.0)
+        }
+        assertTrue("worst inner boundary $worst s", worst <= 10.0)
+    }
+
+    @Test fun everyConfigFieldIsExportedByName() {
         val fields = SkiDayConfig::class.java.declaredFields.filter { !java.lang.reflect.Modifier.isStatic(it.modifiers) }
-        assertEquals(fields.size, SkiDayConfig().asMap().size)
+            .map { f -> f.name.replace(Regex("([a-z0-9])([A-Z])"), "$1_$2").lowercase() }.toSet()
+        assertEquals(fields, SkiDayConfig().asMap().keys)
+    }
+
+    @Test fun aFrameCentredOnTheBoxOfItsPoints() {
+        val f = LocalFrame.around(listOf(LatLon(46.0, 7.0), LatLon(46.2, 7.4), LatLon(Double.NaN, 0.0)))
+        assertEquals(0.0, f.x(7.2), 1e-6)
+        assertEquals(0.0, f.y(46.1), 1e-6)
+        assertEquals(0.0, LocalFrame.around(emptyList()).x(0.0), 0.0)
     }
 
     companion object {

@@ -21,6 +21,19 @@ data class SkiDayConfig(
     val positionSmoothS: Double = 5.0,
     /** Half-width (s) of the chord used for the ground speed that decides moving or resting. */
     val speedHalfWindowS: Double = 5.0,
+    /**
+     * Width (s) of the moving average on positions used for distance, mean and top speed; 0 uses the raw fixes.
+     * Any smoothing cuts the corners of linked turns (a 5 s average read 89 % of the path on synthetic turns, 3 s
+     * read 94 %); raw fixes add GPS jitter instead (+1 to +3 % with 3 m of drifting noise at 1 Hz). Steps are
+     * only counted while moving, so jitter at rest adds nothing.
+     */
+    val distanceSmoothS: Double = 0.0,
+    /** Width (s) of the running median applied to altitude before anything else, to remove single-fix spikes. */
+    val altitudeMedianS: Double = 5.0,
+    /** A segment's vertical is the mean altitude over this many seconds at its end minus the same at its start. */
+    val endpointAverageS: Double = 6.0,
+    /** A signal gap longer than this (s) ends the segment before it; the gap adds no distance or moving time. */
+    val maxSignalGapS: Double = 120.0,
     /** Width (s) of the least-squares fit giving vertical speed from GPS altitude (noisy, so wide). */
     val gpsVerticalWindowS: Double = 30.0,
     /** Width (s) of the same fit with barometric altitude (quieter, so narrower and sharper boundaries). */
@@ -49,6 +62,8 @@ data class SkiDayConfig(
     val maxVerticalAccuracyM: Double = 30.0,
     /** Fewer usable altitude readings than this means no altitude at all. */
     val minAltitudeFixes: Int = 10,
+    /** Fraction of fixes that must carry usable GPS altitude before it is used; otherwise no altitude. */
+    val minGpsAltitudeCoverage: Double = 0.8,
     /** Fraction of fixes the barometer series must cover before it is used instead of GPS altitude. */
     val minBaroCoverage: Double = 0.9,
     /** A fix counts as covered by the barometer when readings lie within this many seconds on both sides. */
@@ -85,12 +100,15 @@ data class SkiDayConfig(
     /** Every threshold by name, for the export. */
     fun asMap(): Map<String, Any> = linkedMapOf(
         "position_smooth_s" to positionSmoothS, "speed_half_window_s" to speedHalfWindowS,
+        "distance_smooth_s" to distanceSmoothS, "altitude_median_s" to altitudeMedianS,
+        "endpoint_average_s" to endpointAverageS, "max_signal_gap_s" to maxSignalGapS,
         "gps_vertical_window_s" to gpsVerticalWindowS, "baro_vertical_window_s" to baroVerticalWindowS,
         "rest_enter_mps" to restEnterMps, "rest_exit_mps" to restExitMps,
         "descent_enter_mps" to descentEnterMps, "descent_stay_mps" to descentStayMps,
         "lift_enter_mps" to liftEnterMps, "lift_stay_mps" to liftStayMps,
         "min_descent_s" to minDescentS, "min_lift_s" to minLiftS, "min_rest_s" to minRestS, "bridge_rest_s" to bridgeRestS,
         "max_vertical_accuracy_m" to maxVerticalAccuracyM, "min_altitude_fixes" to minAltitudeFixes,
+        "min_gps_altitude_coverage" to minGpsAltitudeCoverage,
         "min_baro_coverage" to minBaroCoverage, "baro_max_gap_s" to baroMaxGapS, "top_speed_hold_s" to topSpeedHoldS,
         "note_stopped_s" to noteStoppedS,
         "piste_base_tolerance_m" to pisteBaseToleranceM, "lift_base_tolerance_m" to liftBaseToleranceM,
@@ -103,13 +121,20 @@ data class SkiDayConfig(
 
 /**
  * One stretch of a day. [firstIndex] and [lastIndex] index [SkiDaySplit.fixes] (the usable fixes); neighbouring
- * segments share their boundary fix, so the segments cover the day without gaps.
+ * segments share their boundary fix, so the segments cover the day without gaps, except across a signal gap longer
+ * than [SkiDayConfig.maxSignalGapS], which ends one segment and starts the next on the far side.
  */
 data class SkiDaySegment(
     val kind: SegmentKind, val startMs: Long, val endMs: Long, val firstIndex: Int, val lastIndex: Int,
-    /** Metres travelled while moving, on smoothed positions; time without signal counts as a straight line. */
+    /**
+     * Metres travelled while moving, on lightly smoothed positions ([SkiDayConfig.distanceSmoothS]); a shorter
+     * signal gap inside the segment counts as a straight line.
+     */
     val distanceM: Double,
-    /** Smoothed altitude at the end minus at the start: negative for a descent. Null without altitude. */
+    /**
+     * Mean altitude over the last [SkiDayConfig.endpointAverageS] seconds inside the segment minus the same over its
+     * first seconds: negative for a descent. Null without altitude.
+     */
     val verticalM: Double?,
     /** Distance over moving time; null when the segment never moved. */
     val meanSpeedMps: Double?,
@@ -140,6 +165,7 @@ object SkiDaySplitter {
     const val NOTE_BARO_SHORT = "barometer did not cover the day; altitude from GPS only"
     const val NOTE_NO_ALTITUDE = "no usable altitude: lifts told from descents only by the resort map, otherwise moving time is labelled descent"
     const val NOTE_NO_MAP = "no resort map"
+    const val NOTE_GPS_SPARSE = "too few fixes carry usable GPS altitude"
 
     private const val REST = 0
     private const val DESCENT = 1
@@ -153,22 +179,50 @@ object SkiDaySplitter {
         val fixes = RunTrack.usable(raw)
         val n = fixes.size
         if (n < 2) return SkiDaySplit(fixes, emptyList(), AltitudeSource.NONE, listOf("too few usable fixes"), raw.size, config)
-        val frame = LocalFrame(fixes[0].lat, fixes[0].lon)
+        val frame = LocalFrame.around(fixes.map { LatLon(it.lat, it.lon) })
         val t = DoubleArray(n) { (fixes[it].timeMs - fixes[0].timeMs) / 1000.0 }
-        val sx = windowMean(t, DoubleArray(n) { frame.x(fixes[it].lon) }, config.positionSmoothS / 2)
-        val sy = windowMean(t, DoubleArray(n) { frame.y(fixes[it].lat) }, config.positionSmoothS / 2)
+        val x = DoubleArray(n) { frame.x(fixes[it].lon) }
+        val y = DoubleArray(n) { frame.y(fixes[it].lat) }
 
         val dayNotes = ArrayList<String>()
-        val (alt, source) = altitudes(fixes, t, baro, config, dayNotes)
-        val verticalWindow = if (source == AltitudeSource.BAROMETER) config.baroVerticalWindowS else config.gpsVerticalWindowS
-        val vz = if (alt != null) windowSlope(t, alt, verticalWindow / 2) else DoubleArray(n) { Double.NaN }
-        val smoothAlt = alt?.let { windowMean(t, it, verticalWindow / 2) }
-        val speed = chordSpeed(t, sx, sy, config.speedHalfWindowS)
+        val (rawAlt, source) = altitudes(fixes, t, baro, config, dayNotes)
+        val alt = rawAlt?.let { windowMedian(t, it, config.altitudeMedianS / 2) }
         if (map == null) dayNotes.add(NOTE_NO_MAP)
 
-        val labels = label(speed, vz, config)
+        // A long signal gap is a hard boundary: each side is split on its own and the gap is not counted.
+        val segments = ArrayList<SkiDaySegment>()
+        var from = 0
+        var gaps = 0
+        for (i in 1..n) {
+            if (i < n && t[i] - t[i - 1] <= config.maxSignalGapS) continue
+            if (i < n) gaps++
+            if (i - 1 > from) segments.addAll(splitChunk(fixes, t, x, y, alt, from, i - 1, map, source, config))
+            from = i
+        }
+        if (gaps > 0) dayNotes.add("$gaps signal gap(s) over ${config.maxSignalGapS.toInt()} s split the day and are not counted")
+        return SkiDaySplit(fixes, segments, source, dayNotes, raw.size, config)
+    }
+
+    /** Splits fixes [a]..[b] (no long gap inside) into segments; indices in the result refer to the whole day. */
+    private fun splitChunk(all: List<GpsFix>, tAll: DoubleArray, xAll: DoubleArray, yAll: DoubleArray, altAll: DoubleArray?,
+                           a: Int, b: Int, map: ResortMap?, source: AltitudeSource, config: SkiDayConfig): List<SkiDaySegment> {
+        val n = b - a + 1
+        val fixes = all.subList(a, b + 1)
+        val t = DoubleArray(n) { tAll[a + it] }
+        val x = DoubleArray(n) { xAll[a + it] }
+        val y = DoubleArray(n) { yAll[a + it] }
+        val sx = windowMean(t, x, config.positionSmoothS / 2)
+        val sy = windowMean(t, y, config.positionSmoothS / 2)
+        val dx = windowMean(t, x, config.distanceSmoothS / 2)
+        val dy = windowMean(t, y, config.distanceSmoothS / 2)
+        val alt = altAll?.let { v -> DoubleArray(n) { v[a + it] } }
+        val verticalWindow = if (source == AltitudeSource.BAROMETER) config.baroVerticalWindowS else config.gpsVerticalWindowS
+        val vz = if (alt != null) windowSlope(t, alt, verticalWindow / 2) else DoubleArray(n) { Double.NaN }
+        val speed = chordSpeed(t, sx, sy, config.speedHalfWindowS)
+
+        val labels = label(speed, vz, config, mapHeld = map != null)
         var runs = runsOf(labels)
-        // Flat travel takes the kind its context gives it.
+        // Flat travel takes the kind its context gives it; a mapped lift line comes first.
         for (i in runs.indices) {
             val r = runs[i]
             if (r.kind != UNKNOWN) continue
@@ -178,9 +232,10 @@ object SkiDaySplitter {
             val onLift = map != null && PisteMatcher.fractionOnWays(fixes.subList(r.start, end + 1), WayKind.LIFT, map, config) >=
                 config.mapConfirmFraction
             r.kind = when {
-                source == AltitudeSource.NONE -> if (onLift) LIFT else DESCENT
+                onLift -> LIFT
+                source == AltitudeSource.NONE -> DESCENT
                 prev == DESCENT || next == DESCENT -> DESCENT
-                onLift || prev == LIFT || next == LIFT -> LIFT
+                prev == LIFT || next == LIFT -> LIFT
                 else -> REST
             }
         }
@@ -189,11 +244,10 @@ object SkiDaySplitter {
         runs = bridgeRests(runs, t, config)
         runs = absorbShort(runs, t, config)
 
-        val segments = runs.mapIndexed { i, r ->
+        return runs.mapIndexed { i, r ->
             val last = runs.getOrNull(i + 1)?.start ?: (n - 1)
-            segment(fixes, t, sx, sy, speed, smoothAlt, r.kind, r.start, last, map, source, config)
+            segment(fixes, t, dx, dy, speed, alt, r.kind, r.start, last, a, map, source, config)
         }
-        return SkiDaySplit(fixes, segments, source, dayNotes, raw.size, config)
     }
 
     private fun kindOf(label: Int) = when (label) {
@@ -202,8 +256,12 @@ object SkiDaySplitter {
         else -> SegmentKind.REST
     }
 
-    /** Per-fix labels with hysteresis on both ground speed and vertical speed. */
-    private fun label(speed: DoubleArray, vz: DoubleArray, c: SkiDayConfig): IntArray {
+    /**
+     * Per-fix labels with hysteresis on both ground speed and vertical speed. With [mapHeld], a fix kept as DESCENT
+     * or LIFT only by the hysteresis band (its vertical speed alone would not start that kind) is left UNKNOWN, so
+     * the map can claim it (a flat lift section right after a descent); without a map it resolves to its neighbours.
+     */
+    private fun label(speed: DoubleArray, vz: DoubleArray, c: SkiDayConfig, mapHeld: Boolean): IntArray {
         fun fresh(w: Double) = when {
             w.isNaN() -> UNKNOWN
             w <= -c.descentEnterMps -> DESCENT
@@ -232,7 +290,8 @@ object SkiDaySplitter {
                 }
                 else -> fresh(w)
             }
-            out[i] = state
+            val held = (state == DESCENT && w > -c.descentEnterMps) || (state == LIFT && w < c.liftEnterMps)
+            out[i] = if (mapHeld && held) UNKNOWN else state
         }
         return out
     }
@@ -292,8 +351,8 @@ object SkiDaySplitter {
         return merged(runs)
     }
 
-    private fun segment(fixes: List<GpsFix>, t: DoubleArray, sx: DoubleArray, sy: DoubleArray, speed: DoubleArray,
-                        smoothAlt: DoubleArray?, label: Int, first: Int, last: Int, map: ResortMap?,
+    private fun segment(fixes: List<GpsFix>, t: DoubleArray, dx: DoubleArray, dy: DoubleArray, speed: DoubleArray,
+                        alt: DoubleArray?, label: Int, first: Int, last: Int, offset: Int, map: ResortMap?,
                         source: AltitudeSource, c: SkiDayConfig): SkiDaySegment {
         var distance = 0.0
         var movingS = 0.0
@@ -301,7 +360,7 @@ object SkiDaySplitter {
         var gapS = 0.0
         for (i in first + 1..last) {
             val dt = t[i] - t[i - 1]
-            val step = LocalFrame.dist(sx[i - 1], sy[i - 1], sx[i], sy[i])
+            val step = LocalFrame.dist(dx[i - 1], dy[i - 1], dx[i], dy[i])
             when {
                 dt * 1000 > RunTrack.MAX_GAP_MS -> { gapS += dt; distance += step; movingS += dt }
                 speed[i] >= c.restEnterMps -> { distance += step; movingS += dt }
@@ -328,10 +387,33 @@ object SkiDaySplitter {
         if (gapS > 0) notes.add("includes ${gapS.toInt()} s without signal, counted as a straight line")
         if (kind != SegmentKind.REST && stoppedS >= c.noteStoppedS) notes.add("includes ${stoppedS.toInt()} s stopped")
         return SkiDaySegment(
-            kind, fixes[first].timeMs, fixes[last].timeMs, first, last, distance,
-            smoothAlt?.let { it[last] - it[first] },
+            kind, fixes[first].timeMs, fixes[last].timeMs, first + offset, last + offset, distance,
+            alt?.let { endsVertical(t, it, first, last, c.endpointAverageS) },
             if (movingS > 0) distance / movingS else null,
-            topSpeed(fixes, t, sx, sy, first, last, c), confirmed, notes)
+            topSpeed(fixes, t, dx, dy, first, last, c), confirmed, notes)
+    }
+
+    /**
+     * Altitude at the last fix minus at the first, each read off a straight-line fit of the [h0] seconds inside the
+     * segment next to that end (at most a quarter of it), so a steady climb or fall is not biased toward zero. With
+     * [h0] zero, the (median-filtered) altitude at the end fixes.
+     */
+    private fun endsVertical(t: DoubleArray, alt: DoubleArray, first: Int, last: Int, h0: Double): Double {
+        val h = min(h0, (t[last] - t[first]) / 4)
+        if (h <= 0) return alt[last] - alt[first]
+        fun edge(from: Int, step: Int): Double {
+            var mt = 0.0; var mv = 0.0; var count = 0
+            var i = from
+            while (i in first..last && kotlin.math.abs(t[i] - t[from]) <= h) { mt += t[i]; mv += alt[i]; count++; i += step }
+            mt /= count; mv /= count
+            var stt = 0.0; var stv = 0.0
+            i = from
+            while (i in first..last && kotlin.math.abs(t[i] - t[from]) <= h) {
+                stt += (t[i] - mt) * (t[i] - mt); stv += (t[i] - mt) * (alt[i] - mv); i += step
+            }
+            return if (count < 3 || stt <= 1e-9) mv else mv + stv / stt * (t[from] - mt)
+        }
+        return edge(last, -1) - edge(first, 1)
     }
 
     /** The highest speed held for [SkiDayConfig.topSpeedHoldS]; reported speeds are preferred over positions. */
@@ -392,7 +474,9 @@ object SkiDaySplitter {
             val va = f.verticalAccuracyM
             if (a != null && a.isFinite() && (va == null || (va.isFinite() && va <= c.maxVerticalAccuracyM))) a else Double.NaN
         }
-        if (alt.count { !it.isNaN() } < c.minAltitudeFixes) {
+        val valid = alt.count { !it.isNaN() }
+        if (valid < c.minAltitudeFixes || valid < c.minGpsAltitudeCoverage * n) {
+            if (valid > 0) notes.add(NOTE_GPS_SPARSE)
             notes.add(NOTE_NO_ALTITUDE)
             return null to AltitudeSource.NONE
         }
@@ -424,6 +508,21 @@ object SkiDaySplitter {
             while (hi < t.size && t[hi] <= t[i] + half) { sum += v[hi]; hi++ }
             while (t[lo] < t[i] - half) { sum -= v[lo]; lo++ }
             out[i] = sum / (hi - lo)
+        }
+        return out
+    }
+
+    /** Median of [v] over fixes within [half] seconds either side (removes single-fix spikes, keeps steps). */
+    internal fun windowMedian(t: DoubleArray, v: DoubleArray, half: Double): DoubleArray {
+        val out = DoubleArray(t.size)
+        var lo = 0
+        var hi = 0
+        for (i in t.indices) {
+            while (hi < t.size && t[hi] <= t[i] + half) hi++
+            while (t[lo] < t[i] - half) lo++
+            val w = v.copyOfRange(lo, hi)
+            w.sort()
+            out[i] = if (w.size % 2 == 1) w[w.size / 2] else (w[w.size / 2 - 1] + w[w.size / 2]) / 2
         }
         return out
     }

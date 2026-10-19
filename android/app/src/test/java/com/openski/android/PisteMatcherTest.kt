@@ -122,6 +122,47 @@ class PisteMatcherTest {
         assertEquals(MatchStatus.UNMATCHED, PisteMatcher.match(fixes, WayKind.PISTE, ResortMap(listOf(degenerate))).status)
     }
 
+    @Test fun aZeroToleranceOrUnusableAccuracyGivesNoNaN() {
+        val zero = SkiDayConfig(pisteBaseToleranceM = 0.0)
+        val exact = listOf(GpsFix(SyntheticSkiDay.T0_MS, lat(-100.0), lon(0.0), null, null, 0f, null),
+            GpsFix(SyntheticSkiDay.T0_MS + 1000, lat(-110.0), lon(0.0), null, null, 0f, null))
+        val m = PisteMatcher.match(exact, WayKind.PISTE, ResortMap(listOf(a)), zero)
+        assertTrue(m.score.isFinite())
+        val bad = exact.map { it.copy(accuracyM = Float.NaN) } + exact.map { it.copy(timeMs = it.timeMs + 5000, accuracyM = -1f) }
+        val b = PisteMatcher.match(bad, WayKind.PISTE, map)
+        assertEquals(MatchStatus.UNMATCHED, b.status)
+        assertTrue(b.score.isFinite())
+    }
+
+    /** 30 000 fixes against 600 ways: the grid index keeps this to seconds on a desktop JVM. */
+    @Test fun aWholeDayAgainstALargeMapIsFast() {
+        val ways = ArrayList<ResortWay>()
+        for (i in 0 until 600) {
+            // Pistes 1 km long running south, on a 30 x 20 grid 300 m apart, 50 points each.
+            val x0 = (i % 30) * 300.0
+            val y0 = (i / 30) * -300.0
+            ways.add(ResortWay(i.toLong(), if (i % 5 == 0) WayKind.LIFT else WayKind.PISTE, "w$i", null, null, null,
+                (0..49).map { k -> LatLon(lat(y0 - k * 20.0), lon(x0 + 10 * Math.sin(k / 3.0))) }))
+        }
+        val big = ResortMap(ways)
+        val r = Random(5)
+        var x = 0.0; var y = 0.0; var heading = Math.PI
+        val fixes = (0 until 30_000).map { i ->
+            heading += 0.05 * r.nextGaussian()
+            x = (x + 5 * Math.sin(heading)).coerceIn(0.0, 9000.0)
+            y = (y + 5 * Math.cos(heading)).coerceIn(-6000.0, 0.0)
+            GpsFix(SyntheticSkiDay.T0_MS + i * 1000L, lat(y + 3 * r.nextGaussian()), lon(x + 3 * r.nextGaussian()),
+                2000.0 + y * 0.2, null, 5f, 8f)
+        }
+        val start = System.nanoTime()
+        val m = PisteMatcher.match(fixes, WayKind.PISTE, big)
+        val split = SkiDaySplitter.split(fixes, map = big)
+        PisteMatcher.matchAll(split, big)
+        val seconds = (System.nanoTime() - start) / 1e9
+        assertTrue(m.score.isFinite())
+        assertTrue("took $seconds s", seconds < 10.0)
+    }
+
     @Test fun matchAllNamesTheSyntheticDay() {
         val day = SyntheticSkiDay.build(SyntheticSkiDay.FULL_DAY)
         val map = SkiDaySplitterTest.mapFrom(day)
