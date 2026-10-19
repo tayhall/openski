@@ -95,6 +95,18 @@ class PracticeResultActivity : Activity() {
         }
         line(attempt.target?.let { "Saved target: ${it.movements} rolls · ${it.beatSeconds} s beat · ${it.depthDegrees}° cuff roll" }
             ?: "The target was not recorded for this historical attempt.")
+        attempt.review?.let { review ->
+            review.focus?.let { focus ->
+                line("Practice focus: ${focus.label}", Snow.Type.STRONG)
+                line(focus.cue)
+                line(PracticeFocus.SCORING_NOTICE, Snow.Type.CAPTION)
+            }
+            line("Target source: ${PracticeTargetSource.label(review.targetSource)}", Snow.Type.CAPTION)
+            review.activeIntervals?.let { intervals ->
+                val seconds = intervals.sumOf { it.endedAtMs - it.startedAtMs } / 1000.0
+                line("${intervals.size} active interval${if (intervals.size == 1) "" else "s"} · ${String.format(java.util.Locale.US, "%.1f", seconds)} s. Paused time is excluded; beats never cross a pause.", Snow.Type.CAPTION)
+            }
+        }
         previous?.let { prior ->
             val comparison = PracticeComparisonPolicy.evaluate(attempt, attempt.review?.evidence ?: PracticeEvidence(),
                 prior, prior.review?.evidence ?: PracticeEvidence())

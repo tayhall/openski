@@ -242,3 +242,12 @@ Whole-day tracking (`DayTrackingService`), the day report, the ski day and resor
 - [ ] Compare matching and mismatched targets/versions/mounting/timing; inspect explicit exclusions and hidden incompatible ghost.
 - [ ] Add/edit optional intention/reflection, rotate/reopen, export raw ZIP and delete raw session; retained saved practice/notes remain.
 - [ ] Inspect TalkBack/large text and physical BLE recovery; raw screening must not upgrade an old live score.
+
+## Pocket practice pilot (increment 8)
+
+- [ ] Confirm each descriptive focus with an existing preset or exact saved target; rotate behind confirmation/permission prompts. The selected focus/audio opt-in persist, target numbers stay unchanged, and version 1 scoring is clearly described.
+- [ ] `PracticePilotMetadataRegression`: v2 focus/target-source/phone-aligned interval round-trip, v1 unknown fields preserved, unknown focus handled and unsupported interval clocks rejected.
+- [ ] Demo/manual pause: Pause and Resume/Finish remain reachable; movement count stays fixed while paused and completion stores one result. Repeat starts fresh preparation.
+- [ ] Physical boots: initial neutral/count-in, pause halfway through a movement, reconnect and resume from neutral/count-in. The unfinished movement is discarded and no timing pair crosses inactive intervals. Raw capture/markers remain available.
+- [ ] Phone audio: test permitted earbuds/speaker volume and cue meanings; unplug earbuds, take a call, lose focus and reconnect. Guided scoring pauses and all queued sounds stop; recovery requires explicit Resume. No overlapping preview/metronome remains after Finish/background/process restart.
+- [ ] Phone screen off/pocket and notification return: capture continues, Pause remains explicit, completion is audible and source/result/interval metadata agree. Gloves/outdoor usability and audio routing require real-device validation.
