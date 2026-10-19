@@ -28,6 +28,7 @@ class ProgressStore(context: Context) {
     }
 
     fun attempts(): List<Attempt> = withPractice { it.list() }
+    fun attempt(id: String): Attempt? = withPractice { it.get(id) }
 
     fun progress(demo: Boolean = false) = Progress(attempts(), experience.startsOn, demo = demo)
 

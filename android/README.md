@@ -53,6 +53,12 @@ Recording/recovery uses a foreground notification. Stop recording or pause recov
 
 Drills now run in `SensorSessionService` through a pure `DrillController`; the screen only observes. Rotation, navigation and screen locking do not issue a stop command. A live drill has a foreground notification to return or finish. Attempts are checkpointed before capture and completed once; interrupted process/service execution is labelled interrupted rather than reconstructed as a complete set. Raw recordings retain the existing protected recovery path. Brief sensor-free demos share the controller/persistence without requiring Bluetooth permission.
 
+## Accessible practice and saved results
+
+Snow actions use native buttons; navigation and comparison windows expose selection. Coaching verdicts update existing views to preserve focus and scroll. Chart labels follow system text size, comparison lines are dashed, and accessibility summaries report source, duration, absolute peak and recorded target without inventing a missing target.
+
+Run results open their exact saved session. Drill results open a persisted attempt summary by ID, including standalone legacy/demo attempts. Missing raw sessions leave the practice summary intact and show an explanation. “Continue saving in background” retains the existing recovery behaviour and explains that boots remain in On snow mode until switched back.
+
 ## Windows USB debugging
 
 Google's signed USB driver must be installed for Pixel debugging, not just Microsoft's generic WinUSB driver. The Pixel should appear as **Android Composite ADB Interface** in Device Manager. If it appears as a generic Pixel/WinUSB device and ADB cannot see it, install **Google USB Driver** from Android Studio's SDK Manager, then bind the driver through Device Manager or an administrator `pnputil /add-driver <android_winusb.inf> /install` command. Reconnect once after installation and accept the phone's debugging prompt. See [Google USB driver](https://developer.android.com/studio/run/win-usb).

@@ -199,3 +199,12 @@ Whole-day tracking (`DayTrackingService`), the day report, the ski day and resor
 - [x] Pixel 9a emulator, 19 October 2026 — mounting chooser opens on demand, repeated updates/clicks do not stack it, and cancel/dismiss retains practice state.
 - [x] Pixel 9a emulator, 19 October 2026 — demo rotation/background/return produces one committed result. Force-stop during a demo and reopen Home: interrupted, zero stars/points, no duplicate attempt.
 - [x] StorageInstrumentation — ACTIVE→terminal updates preserve identity; failed orphan raw-session closure rolls back interruption, retry closes only the linked raw session, and repeated recovery is idempotent.
+
+## Accessible practice and exact result links (increment 3)
+
+- [x] Pixel 9a emulator, 19 October 2026 — `StorageInstrumentation` includes `PracticeUiRegression`: native button role and selected navigation nodes, chart summaries with no target, coaching focus/scroll stability across verdicts, exact run/session route, exact practice identity after reopen, and missing-record fallbacks. The UI subset also runs with `-e practice_ui_only true`.
+- [ ] TalkBack on a physical phone: headings, enabled/disabled actions, selected tab/window and onboarding checked choices are understandable; verdict updates keep accessibility focus and avoid repeated tick announcements.
+- [ ] Font/display size: 130% and largest supported setting, portrait/landscape. Buttons wrap without clipping and charts retain readable labels. Outdoor/glove checks remain device-only.
+- [x] Emulator portrait at 130% font: completed demo chart and saved attempt summary reviewed visually; Open saved result remained reachable by scrolling. Largest font/display size and landscape remain open.
+- [ ] Open a measured result, demo result and imported historical result; confirm source, saved score and target/unknown-target labels. Delete a linked raw session and confirm the practice result remains readable.
+- [ ] Run saving: Continue saving in background does not stop recovery or imply restored Training mode. Open saved run goes directly to that session, even when newer sessions exist.

@@ -13,6 +13,7 @@ import android.view.Gravity
 import android.view.View
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.widget.Button
 
 /**
  * Light "snow" look for the training experience: piste-sign type, piste-marker shapes and one orange action.
@@ -51,6 +52,8 @@ object Snow {
         typeface = context.resources.getFont(type.font)
         includeFontPadding = false
         setLineSpacing(0f, when (type) { Type.BODY -> 1.18f; Type.HERO, Type.DISPLAY -> .92f; else -> 1.05f })
+        if (android.os.Build.VERSION.SDK_INT >= 28)
+            isAccessibilityHeading = type in listOf(Type.HERO, Type.DISPLAY, Type.TITLE)
     }
 
     fun rounded(context: Context, fill: Int, radius: Int = 20, stroke: Int? = null, strokeDp: Int = 1) = GradientDrawable().apply {
@@ -70,8 +73,11 @@ object Snow {
 
     /** One orange primary per screen. Ink text on orange keeps 5:1 contrast. */
     fun button(context: Context, label: String, kind: ButtonKind = ButtonKind.PRIMARY, onClick: () -> Unit) =
-        TextView(context).apply {
+        Button(context).apply {
             text = label
+            isAllCaps = false
+            backgroundTintList = null
+            stateListAnimator = null
             textSize = 18f
             typeface = context.resources.getFont(R.font.barlow_condensed_bold)
             includeFontPadding = false
