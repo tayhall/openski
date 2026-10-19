@@ -38,7 +38,7 @@ Implementation branches now include durable source-separated practice records (d
 
 `feat/accessible-practice-ui` adds native action roles, selected navigation, coaching updates that preserve controls/focus/scroll, accessible chart facts and links to the exact saved run or practice attempt. At this revision 663 JVM tests have zero failures (one opt-in release check skipped); builds, lint and emulator storage/UI regressions pass. Portrait demo results and saved summaries were reviewed at 130% font. Full TalkBack and field ergonomics still need device validation.
 
-`feat/guided-boot-readiness` adds guided discovery/assignment, mounting/zero, typed readiness actions and shared recovery status on Today, Run and saved results. Mode changes are guarded during capture/recovery and restoration waits for reported confirmation. Paused recovery persists; previously validated phone copies remain visible after retry failure. The full JVM suite passes at 673 tests (one opt-in release check skipped); the final saved-assignment and mode-acknowledgement refinement also passes 74 focused regressions. Final builds, lint and full emulator storage/setup/UI checks pass. Real BLE discovery/recovery, acknowledgement loss, low storage/audio-route recovery and field ergonomics remain unverified.
+`feat/guided-boot-readiness` adds guided discovery/assignment, mounting/zero, typed readiness actions and shared recovery status on Today, Run and saved results. Mode changes are guarded during capture/recovery and restoration waits for reported confirmation. Paused recovery persists; previously validated phone copies remain visible after retry failure. The final full JVM suite passes at 683 tests with zero failures (one opt-in release check skipped). Final builds, lint and full emulator storage/setup/UI checks pass. Real BLE discovery/recovery, acknowledgement loss, low storage/audio-route recovery and field ergonomics remain unverified.
 
 Historical MPU-6050 evidence includes roughly 9.5 hours of USB-powered Wi-Fi acquisition at 100 samples/s with zero I²C failures, cold-start bias measurements and handheld/tilt trials. See dated [bench results](bench-results.md) and [bench data](../data/bench/README.md). These do not validate XIAO behaviour, battery life or snow recognition.
 
@@ -68,3 +68,7 @@ Recorder protocol has no recording ID or independent checksum. Recover and erase
 | App improvement delivery | [Implementation plan](superpowers/plans/2026-10-19-app-improvements.md) — eight proposed PRs, dependencies and release gates |
 
 `docs/superpowers/specs/` and `plans/` preserve designs/plans. `docs/skivids/` and `docs/technique-research/` preserve imported research. Read dated snapshots alongside this status and the implementation.
+
+## Compact practice layout validation
+
+The compact-layout branch keeps phase commands outside scrolling explanations. Debug/instrumentation builds and lint pass. Emulator UI regressions pass, including READY, ZEROING Retry/Cancel and SAVING at 130%/200% font, portrait/landscape, and 120/160dp keyboard insets. These synthetic geometry checks do not replace real-device TalkBack or glove testing.
