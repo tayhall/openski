@@ -56,6 +56,7 @@ class StorageInstrumentation : Instrumentation() {
             }
             HistoryStorageRegression.run(this)
             PracticeReviewStorageRegression.run(this)
+            PracticePilotMetadataRegression.run()
             val context=targetContext
             for(version in listOf(2,3,4,5,6)) {
                 val migrationName="openski-migration-$version-${UUID.randomUUID()}.db"

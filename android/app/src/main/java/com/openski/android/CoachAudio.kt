@@ -244,6 +244,18 @@ class CoachAudio(
             2200L to ToneSynth.chirpNegative()).forEach { (delay, clip) -> scheduleSound(delay) { if (token == generation && routeOk()) playClip(clip) } }
     }
 
+    /** Practice preview uses the same focus/route gate and cancellation as an active set. */
+    fun playPracticeExamples() {
+        if (practiceGate?.state?.usable != true) return
+        cancelClips()
+        val token = generation
+        listOf(0L to ToneSynth.tick(false), 1000L to ToneSynth.tick(false), 2000L to ToneSynth.tick(false),
+            3000L to ToneSynth.startChime(), 4000L to ToneSynth.tick(false), 4500L to ToneSynth.tick(true),
+            5000L to ToneSynth.tone(1000.0, 90), 6000L to ToneSynth.endChime()).forEach { (delay, clip) ->
+            scheduleSound(delay) { if (token == generation && practiceGate?.state?.usable == true) playClip(clip) }
+        }
+    }
+
     private fun playClip(clip: ShortArray) {
         if (!routeOk() || practiceGate?.state?.usable == false) return
         val scaled = ShortArray(clip.size) { (clip[it] * gain).toInt().toShort() }
