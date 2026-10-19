@@ -217,7 +217,7 @@ class ResortRepository(
         /** About one season: a cached map older than this is offered for refresh. */
         const val STALE_AFTER_MS = 150L * 24 * 60 * 60 * 1000
         /** Must be shown wherever names or geometry from the map appear (screen and exports). */
-        const val ATTRIBUTION = "(c) OpenStreetMap contributors (ODbL)"
+        const val ATTRIBUTION = ResortMap.ATTRIBUTION + " (ODbL)"
         /** Positions sent to the map server are rounded to this grid: 0.01 degrees is about 1.1 km north-south. */
         const val LOCATION_GRID_DEG = 0.01
         /** Radius of a name search around the phone's position, in metres. */

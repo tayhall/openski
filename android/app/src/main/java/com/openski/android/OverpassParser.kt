@@ -29,13 +29,15 @@ object PisteDifficulty {
 }
 
 /**
- * A parsed way with the details [ResortWay] does not carry. [area] marks a closed ring (an area piste outline) used as
- * a line; [relationId] is set when the way came in as a member of a piste relation whose tags it took. A way whose
- * geometry has a gap (a null or unusable point) is split there into [part] 0, 1, ... rather than bridged.
+ * A parsed way with the details [ResortWay] does not carry. [ResortWay.difficulty] keeps the raw `piste:difficulty`
+ * (as ResortMap.kt defines it); [difficultyClass] is that value normalised by [PisteDifficulty]. [area] marks a closed
+ * ring (an area piste outline) used as a line; [relationId] is set when the way came in as a member of a piste
+ * relation whose tags it took. A way whose geometry has a gap (a null or unusable point) is split there into
+ * [part] 0, 1, ... rather than bridged.
  */
 data class ResortWayInfo(
     val way: ResortWay,
-    val difficultyRaw: String?,
+    val difficultyClass: String?,
     val operator: String?,
     val version: Int?,
     val area: Boolean,
@@ -194,8 +196,8 @@ object OverpassParser {
             val closed = points.size >= 4 && points.first() == points.last()
             val area = closed && (multipolygon || tags["area"] == "yes" || (piste && tags["area"] != "no"))
             val way = ResortWay(id, kind, if (piste) pisteName(tags) else text(tags["name"]), if (piste) pisteRef(tags) else text(tags["ref"]),
-                if (piste) PisteDifficulty.normalise(raw) else null, if (piste) null else aerialway, points)
-            ResortWayInfo(way, if (piste) raw else null, text(tags["operator"]), version, area, relationId, part)
+                if (piste) raw else null, if (piste) null else aerialway, points)
+            ResortWayInfo(way, if (piste) PisteDifficulty.normalise(raw) else null, text(tags["operator"]), version, area, relationId, part)
         }
     }
 
@@ -203,11 +205,11 @@ object OverpassParser {
     private fun fill(existing: ResortWayInfo, relTags: Map<String, String>, relationId: Long): ResortWayInfo {
         val w = existing.way
         if (w.kind != WayKind.PISTE) return existing
-        val raw = existing.difficultyRaw ?: text(relTags["piste:difficulty"])
+        val raw = w.difficulty ?: text(relTags["piste:difficulty"])
         return existing.copy(
-            way = w.copy(name = w.name ?: pisteName(relTags), ref = w.ref ?: pisteRef(relTags),
-                difficulty = w.difficulty ?: PisteDifficulty.normalise(raw)),
-            difficultyRaw = raw, operator = existing.operator ?: text(relTags["operator"]),
+            way = w.copy(name = w.name ?: pisteName(relTags), ref = w.ref ?: pisteRef(relTags), difficulty = raw),
+            difficultyClass = existing.difficultyClass ?: PisteDifficulty.normalise(raw),
+            operator = existing.operator ?: text(relTags["operator"]),
             relationId = existing.relationId ?: relationId)
     }
 

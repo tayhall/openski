@@ -25,8 +25,8 @@ class StorageInstrumentation : Instrumentation() {
     /** A small resort map: a lift, a piste split into two parts at a gap, a station node and a station outline. */
     private fun resortSample(line: List<LatLon>) = ResortData(listOf(
         ResortWayInfo(ResortWay(11L,WayKind.LIFT,"Sunny Ridge","C4",null,"chair_lift",line),null,"Example Lifts",7,false),
-        ResortWayInfo(ResortWay(12L,WayKind.PISTE,null,null,PisteDifficulty.EASY,null,line.reversed()),"novice",null,null,true,300L,part=0),
-        ResortWayInfo(ResortWay(12L,WayKind.PISTE,null,null,PisteDifficulty.EASY,null,line.take(2)),"novice",null,null,false,300L,part=1)),
+        ResortWayInfo(ResortWay(12L,WayKind.PISTE,null,null,"novice",null,line.reversed()),PisteDifficulty.EASY,null,null,true,300L,part=0),
+        ResortWayInfo(ResortWay(12L,WayKind.PISTE,null,null,"novice",null,line.take(2)),PisteDifficulty.EASY,null,null,false,300L,part=1)),
         listOf(ResortStation(21L,"Top",line.last(),null,1), ResortStation(21L,"Top hall",line.first(),"Example Lifts",3,osmType="way")))
     override fun onStart() {
         val name="openski-test-${UUID.randomUUID()}.db"

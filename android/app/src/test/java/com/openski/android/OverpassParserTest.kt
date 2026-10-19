@@ -41,8 +41,8 @@ class OverpassParserTest {
         val blue = data.ways[1]
         assertEquals(WayKind.PISTE, blue.way.kind)
         assertEquals("Blue Fox", blue.way.name)
-        assertEquals(PisteDifficulty.EASY, blue.way.difficulty)
-        assertEquals("Novice", blue.difficultyRaw)
+        assertEquals(PisteDifficulty.EASY, blue.difficultyClass)
+        assertEquals("Novice", blue.way.difficulty)
         assertNull(blue.way.aerialway)
         assertFalse(blue.area)
         assertEquals(3, blue.way.points.size)
@@ -54,8 +54,8 @@ class OverpassParserTest {
         assertEquals(listOf(LatLon(46.013, 7.0125), LatLon(46.012, 7.012)), after.way.points)
         for (unnamed in listOf(before, after)) {
             assertNull(unnamed.way.name)
-            assertEquals(PisteDifficulty.OTHER, unnamed.way.difficulty)
-            assertEquals("very hard", unnamed.difficultyRaw)
+            assertEquals(PisteDifficulty.OTHER, unnamed.difficultyClass)
+            assertEquals("very hard", unnamed.way.difficulty)
         }
 
         val tBar = data.ways[4]
@@ -65,7 +65,7 @@ class OverpassParserTest {
         val oldRoad = data.ways[5]
         assertEquals("Old Road", oldRoad.way.name)
         assertEquals("12", oldRoad.way.ref)
-        assertEquals(PisteDifficulty.INTERMEDIATE, oldRoad.way.difficulty)
+        assertEquals(PisteDifficulty.INTERMEDIATE, oldRoad.difficultyClass)
 
         assertEquals(listOf(900001L, 900002L, 100008L), data.stations.map { it.osmId })
         assertEquals(listOf("node", "node", "way"), data.stations.map { it.osmType })
@@ -105,13 +105,13 @@ class OverpassParserTest {
         assertTrue("closed area=yes outline is marked", meadow.area)
         assertEquals(4, meadow.way.points.size)
         assertEquals(meadow.way.points.first(), meadow.way.points.last())
-        assertEquals(PisteDifficulty.EASY, meadow.way.difficulty)
+        assertEquals(PisteDifficulty.EASY, meadow.difficultyClass)
 
         val valley = byId.getValue(200002)
         assertEquals("route relation fills the unnamed way", "Long Valley Run", valley.way.name)
         assertEquals("7", valley.way.ref)
-        assertEquals(PisteDifficulty.ADVANCED, valley.way.difficulty)
-        assertEquals("advanced", valley.difficultyRaw)
+        assertEquals(PisteDifficulty.ADVANCED, valley.difficultyClass)
+        assertEquals("advanced", valley.way.difficulty)
         assertEquals(300002L, valley.relationId)
         assertEquals("the way keeps its own version", 6, valley.version)
         assertFalse(valley.area)
@@ -119,7 +119,7 @@ class OverpassParserTest {
         for (id in listOf(200010L, 200012L)) {
             val member = byId.getValue(id)
             assertEquals("Big Bowl", member.way.name)
-            assertEquals(PisteDifficulty.FREERIDE, member.way.difficulty)
+            assertEquals(PisteDifficulty.FREERIDE, member.difficultyClass)
             assertEquals(300001L, member.relationId)
             assertNull(member.version)
         }

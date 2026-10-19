@@ -25,7 +25,7 @@ class ResortStore(private val store: LocalSessionStore) : ResortCache {
             val w = info.way
             ContentValues().apply {
                 put("resort_id", resort.id); put("osm_id", w.osmId); put("part", info.part); put("kind", w.kind.name); put("name", w.name)
-                put("ref", w.ref); put("difficulty", w.difficulty); put("difficulty_raw", info.difficultyRaw); put("aerialway", w.aerialway)
+                put("ref", w.ref); put("difficulty", info.difficultyClass); put("difficulty_raw", w.difficulty); put("aerialway", w.aerialway)
                 put("operator", info.operator); put("osm_version", info.version); put("area", if (info.area) 1 else 0)
                 put("relation_id", info.relationId); put("geometry", Polyline.encode(w.points))
             }
@@ -67,8 +67,9 @@ class ResortStore(private val store: LocalSessionStore) : ResortCache {
                 while (c.moveToNext()) {
                     val kind = WayKind.entries.firstOrNull { it.name == c.getString(1) } ?: continue
                     val points = Polyline.decode(c.getString(11))?.takeIf { it.size >= 2 } ?: continue
-                    add(ResortWayInfo(ResortWay(c.getLong(0), kind, c.text(2), c.text(3), c.text(4), c.text(6), points),
-                        c.text(5), c.text(7), c.intOrNull(8), c.getInt(9) != 0, c.longOrNull(10), c.getInt(12)))
+                    // Column difficulty holds the normalised class, difficulty_raw the OSM value that ResortWay carries.
+                    add(ResortWayInfo(ResortWay(c.getLong(0), kind, c.text(2), c.text(3), c.text(5), c.text(6), points),
+                        c.text(4), c.text(7), c.intOrNull(8), c.getInt(9) != 0, c.longOrNull(10), c.getInt(12)))
                 }
             }
         }

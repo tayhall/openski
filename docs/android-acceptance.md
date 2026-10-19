@@ -145,3 +145,11 @@ What leaves the phone (see `docs/ski-day-design.md`, "What leaves the device"): 
 - [ ] Airplane mode after a download: the cached resort lists and loads its ways and stations, and a refresh attempt fails with a network error that keeps the cached copy (age unchanged).
 - [ ] The User-Agent contact constant (`HttpResortFetcher.CONTACT`) is set to a real contact before any public build: `OPENSKI_RELEASE_CHECK=1` then `.\gradlew.bat :app:testDebugUnitTest --tests "com.openski.android.ReleaseCheckTest" --rerun` must pass (it is skipped without the variable).
 - [ ] If HTTP 429 occurs naturally: exactly one retry after at least 30 s, no further requests. An HTTP 504 is reported at once and not retried.
+
+## GPX import checks (phone needed, once the import screen exists)
+
+The parser hardening in `GpxCodec` is unit-tested on the JDK only. Android's DOM parser rejects most hardening switches, so on a phone the protection is the refusal of any document type or entity declaration before parsing.
+
+1. Import a GPX whose prolog contains `<!DOCTYPE gpx [<!ENTITY e SYSTEM "file:///proc/self/status">]>` and uses `&e;` in the track name: the import is refused with "declares a document type" and no name or file content appears anywhere.
+2. Import a GPX exported by the app (`ski-day.gpx`): the fixes come back unchanged (count, first and last time).
+3. Import a file over 20 MB: refused as too large, no crash or long freeze.
