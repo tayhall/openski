@@ -4,6 +4,7 @@ package com.openski.android
 class SegmentedDrillRecorder(private val drill: Drill, private val side: String) {
     private val completed = mutableListOf<PracticeSegment>()
     private val traces = mutableListOf<Pair<Double, RollTrace>>()
+    private val evidenceIssues = linkedSetOf<String>()
     private var current: LiveDrillRecorder? = null
     private var start: Double? = null
     private var origin: Double? = null
@@ -12,7 +13,10 @@ class SegmentedDrillRecorder(private val drill: Drill, private val side: String)
 
     fun accept(roll: BootRoll) {
         if (roll.side != side) return
-        if (!roll.timeMs.isFinite() || !roll.degrees.isFinite() || roll.timeMs <= acceptedThrough) return
+        if (!roll.timeMs.isFinite() || !roll.degrees.isFinite() || roll.timeMs <= acceptedThrough) {
+            if (current != null) evidenceIssues.add("Invalid or non-increasing roll evidence occurred during scoring")
+            return
+        }
         acceptedThrough = roll.timeMs
         latest = roll
         current?.accept(roll)
@@ -32,12 +36,16 @@ class SegmentedDrillRecorder(private val drill: Drill, private val side: String)
     }
 
     fun pause(nowMs: Double): Boolean {
-        val recorder = current ?: return false
+        require(nowMs.isFinite())
+        val recorder = current ?: run {
+            latest = null; acceptedThrough = maxOf(acceptedThrough, nowMs); return false
+        }
         val began = start!!
-        require(nowMs >= began)
-        acceptedThrough = maxOf(acceptedThrough, nowMs)
+        val ended = maxOf(nowMs, began, acceptedThrough)
+        acceptedThrough = ended
         val run = recorder.run()
-        completed += PracticeSegment(began, nowMs, run.detection.movements.filter { it.endMs <= nowMs })
+        evidenceIssues += run.evidenceIssues
+        completed += PracticeSegment(began, ended, run.detection.movements.filter { it.endMs <= ended })
         traces += began to run.trace
         current = null; start = null
         // A new sample is required before resume; a stale pre-pause neutral cannot restart capture.
@@ -46,7 +54,15 @@ class SegmentedDrillRecorder(private val drill: Drill, private val side: String)
     }
 
     fun segments(nowMs: Double): List<PracticeSegment> = completed.toList() +
-        (current?.let { listOf(PracticeSegment(start!!, nowMs, it.run().detection.movements.filter { move -> move.endMs <= nowMs })) } ?: emptyList())
+        (current?.let { listOf(PracticeSegment(start!!, maxOf(nowMs, start!!, acceptedThrough), it.run().detection.movements)) } ?: emptyList())
+
+    fun run(nowMs: Double, segmented: Boolean): DrillRun {
+        val intervals = segments(nowMs)
+        val movements = intervals.flatMap { it.movements }.take(drill.movements)
+        return DrillRun(DryDetection(movements, movements.map { it.endMs }), trace(), false,
+            evidenceIssues + current?.run()?.evidenceIssues.orEmpty(), intervals,
+            if (segmented) PracticeTiming.POLICY else "continuous_v1")
+    }
 
     fun count(): Int = completed.sumOf { it.movements.size } + (current?.count() ?: 0)
     fun complete() = count() >= drill.movements

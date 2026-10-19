@@ -5,7 +5,9 @@ import kotlin.math.abs
 
 /** Immutable facts from the movements actually supplied to scoring, never reconstructed from a score. */
 data class PracticeReview(val evidence: PracticeEvidence, val movements: Int, val meanBeatSeconds: Double?,
-    val meanPeakDegrees: Double?, val positivePeakDegrees: Double?, val negativePeakDegrees: Double?, val knownBeatCount: Int = 0, val evidenceIssues: Set<String> = emptySet()) {
+    val meanPeakDegrees: Double?, val positivePeakDegrees: Double?, val negativePeakDegrees: Double?, val knownBeatCount: Int = 0, val evidenceIssues: Set<String> = emptySet(),
+    val focus: PracticeFocus? = null, val targetSource: String? = null, val activeIntervals: List<PracticeInterval>? = null) {
+    init { require(activeIntervals == null || activeIntervals.zipWithNext().all { (a, b) -> a.endedAtMs <= b.startedAtMs }) }
     val scoreEligible get() = evidence.scoringQuality == ScoringEvidenceQuality.SUFFICIENT
 
     fun observation(target: PracticeTarget?): String {
@@ -19,17 +21,22 @@ data class PracticeReview(val evidence: PracticeEvidence, val movements: Int, va
     fun nextAction(): String = if (!scoreEligible) "Check the sensor connection and mounting, then try a fresh set."
         else "Repeat the same target and count the beat; compare cuff-roll observations, not skiing technique."
 
-    fun json(): JSONObject = JSONObject().put("format_version", 1).put("scoring_quality", evidence.scoringQuality.name)
+    fun json(): JSONObject = JSONObject().put("format_version", 2).put("scoring_quality", evidence.scoringQuality.name)
         .put("scoring_source", evidence.scoringSource?.name ?: JSONObject.NULL).put("scored_side", evidence.scoredSide ?: JSONObject.NULL)
         .put("mount_axis", evidence.mounting?.axis ?: JSONObject.NULL).put("mount_sign", evidence.mounting?.sign ?: JSONObject.NULL)
         .put("evidence_issues", org.json.JSONArray(evidenceIssues.toList())).put("known_beat_count", knownBeatCount).put("timing_policy", evidence.timingPolicy ?: JSONObject.NULL).put("movements", movements)
         .put("mean_beat_s", meanBeatSeconds ?: JSONObject.NULL).put("mean_peak_deg", meanPeakDegrees ?: JSONObject.NULL)
         .put("positive_peak_deg", positivePeakDegrees ?: JSONObject.NULL).put("negative_peak_deg", negativePeakDegrees ?: JSONObject.NULL)
+        .put("focus", focus?.name ?: JSONObject.NULL).put("target_source", targetSource ?: JSONObject.NULL)
+        .put("active_interval_clock", if (activeIntervals == null) JSONObject.NULL else "phone_aligned_roll_ms")
+        .put("active_intervals", activeIntervals?.let { intervals -> org.json.JSONArray().apply {
+            intervals.forEach { interval -> put(JSONObject().put("start_ms", interval.startedAtMs).put("end_ms", interval.endedAtMs)) }
+        } } ?: JSONObject.NULL)
 
     companion object {
         private fun one(value: Double) = String.format(java.util.Locale.US, "%.1f", value)
         fun capture(attempt: Attempt, run: DrillRun?, side: String?, mounting: Mounting?,
-            movementGroups: List<List<DryMovement>>? = null, timingPolicy: String = "continuous_v1"): PracticeReview {
+            movementGroups: List<List<DryMovement>>? = run?.takeIf { it.timingPolicy != "continuous_v1" }?.segments?.map { it.movements }, timingPolicy: String = run?.timingPolicy ?: "continuous_v1"): PracticeReview {
             require(movementGroups == null || timingPolicy != "continuous_v1") { "Segmented movements need an explicit segmented timing policy" }
             var remaining = attempt.target?.movements ?: Int.MAX_VALUE
             val groups = (movementGroups ?: listOf(run?.detection?.movements.orEmpty())).map { group ->
@@ -46,17 +53,23 @@ data class PracticeReview(val evidence: PracticeEvidence, val movements: Int, va
             return PracticeReview(PracticeEvidence(if (attempt.demo) null else side, if (attempt.demo) null else mounting,
                 if (sufficient) ScoringEvidenceQuality.SUFFICIENT else ScoringEvidenceQuality.INSUFFICIENT,
                 if (attempt.demo) ScoringEvidenceSource.SIMULATED else ScoringEvidenceSource.LIVE_ROLL,
-                timingPolicy = timingPolicy), moves.size, beats.mean(), moves.map { it.peakRoll }.mean(), positive.mean(), negative.mean(), beats.size, run?.evidenceIssues.orEmpty())
+                timingPolicy = timingPolicy), moves.size, beats.mean(), moves.map { it.peakRoll }.mean(), positive.mean(), negative.mean(), beats.size, run?.evidenceIssues.orEmpty(),
+                activeIntervals = run?.segments?.map { PracticeInterval(it.startedAtMs, it.endedAtMs) })
         }
 
         fun decode(value: String): PracticeReview {
             val j = JSONObject(value)
-            require(j.getInt("format_version") == 1)
+            require(j.getInt("format_version") in 1..2)
             fun number(key: String) = if (j.isNull(key)) null else j.getDouble(key)
             fun string(key: String) = if (j.isNull(key)) null else j.getString(key)
             return PracticeReview(PracticeEvidence(string("scored_side"), if (j.isNull("mount_axis")) null else Mounting(j.getInt("mount_axis"), j.getInt("mount_sign")),
                 ScoringEvidenceQuality.valueOf(j.getString("scoring_quality")), string("scoring_source")?.let(ScoringEvidenceSource::valueOf),
-                timingPolicy = string("timing_policy")), j.getInt("movements"), number("mean_beat_s"), number("mean_peak_deg"), number("positive_peak_deg"), number("negative_peak_deg"), j.optInt("known_beat_count", 0), j.optJSONArray("evidence_issues")?.let { values -> (0 until values.length()).map { values.getString(it) }.toSet() }.orEmpty())
+                timingPolicy = string("timing_policy")), j.getInt("movements"), number("mean_beat_s"), number("mean_peak_deg"), number("positive_peak_deg"), number("negative_peak_deg"), j.optInt("known_beat_count", 0), j.optJSONArray("evidence_issues")?.let { values -> (0 until values.length()).map { values.getString(it) }.toSet() }.orEmpty(),
+                focus = PracticeFocus.decode(string("focus")), targetSource = string("target_source"),
+                activeIntervals = j.optJSONArray("active_intervals")?.let { intervals ->
+                    require(j.optString("active_interval_clock") == "phone_aligned_roll_ms")
+                    (0 until intervals.length()).map { index -> intervals.getJSONObject(index).let { PracticeInterval(it.getDouble("start_ms"), it.getDouble("end_ms")) } }
+                })
         }
     }
 }

@@ -73,4 +73,12 @@ class PracticeEligibilityTest {
         assertFalse(comparison.comparable)
         assertTrue(ComparisonExclusion.UNKNOWN_TIMING_POLICY in comparison.exclusions)
     }
+    @Test fun pausedTimingComparesOnlyAgainstSameSupportedPolicy() {
+        val paused=evidence.copy(timingPolicy=PracticeTiming.POLICY)
+        assertTrue(PracticeComparisonPolicy.evaluate(attempt,paused,attempt,paused).comparable)
+        assertTrue(ComparisonExclusion.DIFFERENT_TIMING_POLICY in PracticeComparisonPolicy.evaluate(attempt,paused,attempt,evidence).exclusions)
+        val future=evidence.copy(timingPolicy="future_intervals_v9")
+        assertTrue(ComparisonExclusion.UNKNOWN_TIMING_POLICY in PracticeComparisonPolicy.evaluate(attempt,future,attempt,future).exclusions)
+    }
+
 }

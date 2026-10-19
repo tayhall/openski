@@ -48,4 +48,26 @@ class SegmentedDrillRecorderTest {
         assertFalse(recorder.pause(20_000.0))
         assertEquals(1, recorder.segments(20_000.0).size)
     }
+    @Test fun closedSegmentEvidenceIssuesSurviveFreshResumeDetector() {
+        val recorder=SegmentedDrillRecorder(drill,"L")
+        feed(recorder,0,200,0.0); recorder.begin(200.0)
+        recorder.accept(BootRoll("L",220.0,0.0,0.0,gated=true))
+        recorder.pause(240.0)
+        recorder.accept(BootRoll("L",2000.0,0.0,0.0)); recorder.begin(2000.0)
+        feed(recorder,2020,2200,0.0)
+        val run=recorder.run(2200.0,true)
+        assertTrue(run.evidenceIssues.any { it.contains("gate") })
+        assertEquals(2,run.segments!!.size)
+        assertEquals(PracticeTiming.POLICY,run.timingPolicy)
+    }
+
+    @Test fun pauseBeforeRecorderBeginsRejectsQueuedNeutralAndNeedsNewSample() {
+        val recorder=SegmentedDrillRecorder(drill,"L")
+        recorder.accept(BootRoll("L",100.0,0.0,0.0))
+        assertFalse(recorder.pause(200.0))
+        recorder.accept(BootRoll("L",150.0,0.0,0.0))
+        assertFalse(recorder.neutral(220.0)); assertFalse(recorder.begin(220.0))
+        recorder.accept(BootRoll("L",240.0,0.0,0.0)); assertTrue(recorder.begin(240.0))
+    }
+
 }

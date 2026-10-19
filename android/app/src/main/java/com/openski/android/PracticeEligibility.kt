@@ -75,7 +75,7 @@ object PracticeComparisonPolicy {
         if (first.scoringVersion !in supportedVersions || second.scoringVersion !in supportedVersions)
             excluded += ComparisonExclusion.UNSUPPORTED_SCORING_VERSION
         if (first.scoringVersion != second.scoringVersion) excluded += ComparisonExclusion.DIFFERENT_SCORING_VERSION
-        val supportedTimingPolicies = setOf("continuous_v1")
+        val supportedTimingPolicies = setOf("continuous_v1", PracticeTiming.POLICY)
         if (firstEvidence.timingPolicy !in supportedTimingPolicies || secondEvidence.timingPolicy !in supportedTimingPolicies)
             excluded += ComparisonExclusion.UNKNOWN_TIMING_POLICY
         if (!firstEvidence.timingPolicy.isNullOrBlank() && !secondEvidence.timingPolicy.isNullOrBlank() &&
