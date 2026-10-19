@@ -549,7 +549,7 @@ class StorageInstrumentation : Instrumentation() {
             DrillMountingRegression.run(this)
             PracticeUiRegression(this).run()
             PreparationUiRegression.run(this)
-                PhaseLayoutRegression.run(this)
+            PhaseLayoutRegression.run(this)
             finish(Activity.RESULT_OK,Bundle().apply { putString("stream","PASS: v1–v6 migration, demo creation, saved review settings, calibration, test labels, health, session edits, staged recovery validation, retained copy, ZIP export and protected deletion, v9->v10 run GPS track, v11->v12 resort maps, fresh-install resort round trip, v12->v13 ski days, v13->v14 practice attempts, atomic legacy import and idempotent completion\n") })
         } catch(error: Throwable) {
             targetContext.deleteDatabase(name)
