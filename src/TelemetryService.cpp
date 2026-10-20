@@ -17,6 +17,10 @@
 #include "Mpu6050Profile.h"
 #endif
 #include "SensorCalibration.h"
+#include "MagService.h"
+#ifdef OPENSKI_MAG_LIS3MDL
+#include "Lis3mdlMagnetometer.h"
+#endif
 #include "MotionService.h"
 #include "RecorderService.h"
 #include "WifiService.h"
@@ -337,6 +341,36 @@ void handleAcquisition() {
   server.send(200, "application/json", body);
 }
 
+// Latest raw LIS3MDL reading (left boot build only), so the magnetometer can be checked without BLE or serial.
+// Uncalibrated: no hard-iron or soft-iron correction.
+void handleMag() {
+#ifdef OPENSKI_MAG_LIS3MDL
+  const magnetometer::Status mag = magnetometer::status();
+  char body[384];
+  if (!mag.hasSample) {
+    snprintf(body, sizeof(body),
+             "{\"device\":\"%s\",\"built\":true,\"sensor\":\"LIS3MDL\",\"present\":%s,\"has_sample\":false,"
+             "\"samples\":%lu,\"read_errors\":%lu}",
+             config::kHostname, mag.present ? "true" : "false", static_cast<unsigned long>(mag.samples),
+             static_cast<unsigned long>(mag.readErrors));
+  } else {
+    constexpr float kPerGauss = mag::Lis3mdlMagnetometer::kCountsPerGauss;
+    snprintf(body, sizeof(body),
+             "{\"device\":\"%s\",\"built\":true,\"sensor\":\"LIS3MDL\",\"present\":%s,\"has_sample\":true,"
+             "\"raw\":{\"x\":%d,\"y\":%d,\"z\":%d},\"gauss\":{\"x\":%.4f,\"y\":%.4f,\"z\":%.4f},"
+             "\"calibration\":\"uncalibrated\",\"samples\":%lu,\"read_errors\":%lu}",
+             config::kHostname, mag.present ? "true" : "false", mag.rawX, mag.rawY, mag.rawZ,
+             mag.rawX / kPerGauss, mag.rawY / kPerGauss, mag.rawZ / kPerGauss,
+             static_cast<unsigned long>(mag.samples), static_cast<unsigned long>(mag.readErrors));
+  }
+  server.send(200, "application/json", body);
+#else
+  char body[96];
+  snprintf(body, sizeof(body), "{\"device\":\"%s\",\"built\":false}", config::kHostname);
+  server.send(200, "application/json", body);
+#endif
+}
+
 void handleNotFound() {
   server.send(404, "application/json", "{\"error\":\"not_found\"}");
 }
@@ -390,6 +424,7 @@ void begin() {
   server.on("/api/v1/motion", HTTP_GET, handleMotion);
   server.on("/api/v1/motion/zero", HTTP_POST, handleZero);
   server.on("/api/v1/battery", HTTP_GET, handleBattery);
+  server.on("/api/v1/mag", HTTP_GET, handleMag);
   server.on("/api/v1/status", HTTP_GET, handleStatus);
   server.on("/api/v1/ble", HTTP_GET, handleStatus);
   server.onNotFound(handleNotFound);

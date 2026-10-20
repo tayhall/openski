@@ -22,6 +22,7 @@ class SensorSessionService : Service() {
         fun onSkiEvent(side: String, event: SkiEvent) {}
         fun onSkiState(side: String, state: SkiState) {}
         fun onHeadingTurn(side: String, turn: HeadingTurnFrame) {}
+        fun onMagnetometer(side: String, frame: MagnetometerFrame) {}
     }
     inner class LocalBinder : Binder() { val service: SensorSessionService get() = this@SensorSessionService }
     private val binder = LocalBinder()
@@ -695,8 +696,10 @@ class SensorSessionService : Service() {
                 listener?.onSkiState(side, SkierFrame.of(side, state))
             },
             onHeadingTurn = { turn -> listener?.onHeadingTurn(side, turn) },
-            onMagnetometer = { frame -> activeSessionId?.let { id ->
-                pendingMag.add(PendingMag(id, StoredMag(side, frame.timeMs, System.currentTimeMillis(), frame.x, frame.y, frame.z, frame.flags))) } },
+            onMagnetometer = { frame ->
+                activeSessionId?.let { id ->
+                    pendingMag.add(PendingMag(id, StoredMag(side, frame.timeMs, System.currentTimeMillis(), frame.x, frame.y, frame.z, frame.flags))) }
+                listener?.onMagnetometer(side, frame) },
             onPong = { pong, recvNs -> clockSync.onPong(side, pong, recvNs) },
             onDisconnected = {
                 clockSync.disconnected(side)
