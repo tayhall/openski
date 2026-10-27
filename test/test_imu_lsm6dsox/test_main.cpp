@@ -222,6 +222,49 @@ void test_gyro_flagged_above_encodable_limit() {
   TEST_ASSERT_EQUAL_UINT8(kGyroNearRail, out.qualityFlags);
 }
 
+void test_sleep_mode_is_accelerometer_only_and_low_power() {
+  FakeBus bus;
+  Lsm6dsoxSensor s(bus, fakeNowUs, noDelay);
+  TEST_ASSERT_FALSE(s.setSleepMode(true));  // not initialised yet
+  TEST_ASSERT_TRUE(s.begin());
+  bus.regs[0x1E] = 0x03;
+  Sample out{};
+  for (int i = 0; i < 12; ++i) s.read(out);  // clear the start-up discards
+  bus.writes.clear();
+  TEST_ASSERT_TRUE(s.setSleepMode(true));
+  TEST_ASSERT_EQUAL_INT(0x00, bus.lastWriteTo(0x11));  // gyro power-down
+  TEST_ASSERT_EQUAL_INT(0x13, bus.lastWriteTo(0x15));  // low-power accelerometer
+  TEST_ASSERT_EQUAL_INT(0x26, bus.lastWriteTo(0x10));  // 26 Hz, +-16 g, LPF2
+  TEST_ASSERT_EQUAL_UINT8(0x11, bus.writes.front().first);  // gyro stopped first
+  // Only the accelerometer needs to be ready; the gyro never is. The first outputs are discarded.
+  bus.setData(1000, 2000, 3000, 2048, 0, -2048);
+  bus.regs[0x1E] = 0x01;
+  for (int i = 0; i < 4; ++i) TEST_ASSERT_EQUAL(static_cast<int>(ReadResult::kNoData), static_cast<int>(s.read(out)));
+  TEST_ASSERT_EQUAL(static_cast<int>(ReadResult::kSample), static_cast<int>(s.read(out)));
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, 2048 * 0.488f / 1000.0f * 9.80665f, out.accelMps2.x);
+  TEST_ASSERT_FLOAT_WITHIN(0.01f, -2048 * 0.488f / 1000.0f * 9.80665f, out.accelMps2.z);
+  TEST_ASSERT_EQUAL_FLOAT(0.0f, out.gyroRadps.x);  // gyro is off: reads as zero, not the stale register
+  // Back to full rate: the gyro starts last and the filters settle again.
+  bus.writes.clear();
+  TEST_ASSERT_TRUE(s.setSleepMode(false));
+  TEST_ASSERT_EQUAL_INT(0x46, bus.lastWriteTo(0x10));
+  TEST_ASSERT_EQUAL_INT(0x4C, bus.lastWriteTo(0x11));
+  TEST_ASSERT_EQUAL_INT(0x03, bus.lastWriteTo(0x15));
+  TEST_ASSERT_EQUAL_UINT8(0x11, bus.writes.back().first);
+}
+
+void test_begin_leaves_sleep_mode() {
+  FakeBus bus;
+  Lsm6dsoxSensor s(bus, fakeNowUs, noDelay);
+  TEST_ASSERT_TRUE(s.begin());
+  TEST_ASSERT_TRUE(s.setSleepMode(true));
+  TEST_ASSERT_TRUE(s.begin());
+  bus.setData(1000, 2000, 3000, 100, 200, 300);
+  Sample out{};
+  for (int i = 0; i < 11; ++i) s.read(out);
+  TEST_ASSERT_TRUE(out.gyroRadps.x != 0.0f);  // normal acquisition again, gyro read
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
   RUN_TEST(test_init_writes_expected_configuration);
@@ -236,5 +279,7 @@ int main(int, char**) {
   RUN_TEST(test_first_samples_after_start_are_discarded);
   RUN_TEST(test_gyro_flagged_above_encodable_limit);
   RUN_TEST(test_read_error_leaves_output_unchanged);
+  RUN_TEST(test_sleep_mode_is_accelerometer_only_and_low_power);
+  RUN_TEST(test_begin_leaves_sleep_mode);
   return UNITY_END();
 }

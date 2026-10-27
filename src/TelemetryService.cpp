@@ -3,6 +3,7 @@
 #include <Arduino.h>
 #include <WebServer.h>
 #include <WiFi.h>
+#include <Wire.h>
 #include <esp_timer.h>
 #include <esp_system.h>
 #include <string.h>
@@ -23,6 +24,8 @@
 #endif
 #include "MotionService.h"
 #include "RecorderService.h"
+#include "SleepService.h"
+#include "WakeDetector.h"
 #include "WifiService.h"
 
 namespace openski::telemetry {
@@ -177,6 +180,29 @@ void handleMotion() {
 void handleZero() {
   motion::zeroMotion();
   server.send(200, "application/json", "{\"zeroing\":true}");
+}
+
+void handleSleep() {
+  const sleep::Result result = sleep::request();
+  if (result == sleep::Result::kRecording || result == sleep::Result::kNoSensor) {
+    server.send(409, "application/json",
+                result == sleep::Result::kRecording ? "{\"error\":\"recording\"}" : "{\"error\":\"imu_unavailable\"}");
+    return;
+  }
+  char body[64];
+  snprintf(body, sizeof(body), "{\"sleeping\":true,\"wake_accel_mps2\":%.2f}", motion::WakeDetector::kAccelThresholdMps2);
+  server.send(200, "application/json", body);
+}
+
+void handleSleepStatus() {
+  const sleep::LastWake wake = sleep::lastWake();
+  char body[200];
+  snprintf(body, sizeof(body),
+           "{\"sleep_pending\":%s,\"woke_from_sleep\":%s,\"slept_ms\":%lu,\"wake_trigger\":\"%s\",\"wake_delta\":%.4f}",
+           sleep::pending() ? "true" : "false", wake.wokeFromSleep ? "true" : "false",
+           static_cast<unsigned long>(wake.sleptMs), wake.gyroTrigger ? "gyro_radps" : "accel_mps2",
+           wake.triggerDelta);
+  server.send(200, "application/json", body);
 }
 
 void handleRoot() {
@@ -375,6 +401,42 @@ void handleNotFound() {
   server.send(404, "application/json", "{\"error\":\"not_found\"}");
 }
 
+// Only probe an idle, unavailable IMU so diagnostics cannot interrupt acquisition.
+void handleI2cDiagnostic() {
+  if (imu::monitor().stats().ready || recorder::status().recording) {
+    server.send(409, "application/json", "{\"error\":\"sensor_or_recorder_active\"}");
+    return;
+  }
+  String body = "{\"sda_gpio\":" + String(config::kImuSdaPin) +
+                ",\"scl_gpio\":" + String(config::kImuSclPin) +
+                ",\"sda_high\":" + String(digitalRead(config::kImuSdaPin)) +
+                ",\"scl_high\":" + String(digitalRead(config::kImuSclPin)) +
+                ",\"scan_hz\":100000,\"devices\":[";
+  Wire.setClock(100000);
+  bool first = true;
+  unsigned busErrors = 0;
+  for (uint8_t address = 8; address < 120; ++address) {
+    Wire.beginTransmission(address);
+    const uint8_t result = Wire.endTransmission();
+    if (result != 0) {
+      if (result != 2) ++busErrors;  // Address NACK is expected for absent devices.
+      continue;
+    }
+    if (!first) body += ",";
+    first = false;
+    body += "{\"address\":" + String(address);
+    Wire.beginTransmission(address);
+    Wire.write(0x0f);  // WHO_AM_I on the ST IMU and magnetometer.
+    if (Wire.endTransmission(false) == 0 && Wire.requestFrom(address, uint8_t(1)) == 1) {
+      body += ",\"who_am_i\":" + String(Wire.read());
+    }
+    body += "}";
+  }
+  Wire.setClock(config::kImuI2cFrequencyHz);
+  body += "],\"bus_errors\":" + String(busErrors) + "}";
+  server.send(200, "application/json", body);
+}
+
 #if defined(OPENSKI_ADC_DIAGNOSTIC) && defined(CONFIG_IDF_TARGET_ESP32S3)
 void handleAdcDiagnostic() {
   if (recorder::status().recording || bluetooth::connected()) {
@@ -420,9 +482,12 @@ void begin() {
 #endif
   server.on("/", HTTP_GET, handleRoot);
   server.on("/api/v1/imu", HTTP_GET, handleImu);
+  server.on("/api/v1/diagnostics/i2c", HTTP_GET, handleI2cDiagnostic);
   server.on("/api/v1/acquisition", HTTP_GET, handleAcquisition);
   server.on("/api/v1/motion", HTTP_GET, handleMotion);
   server.on("/api/v1/motion/zero", HTTP_POST, handleZero);
+  server.on("/api/v1/sleep", HTTP_POST, handleSleep);
+  server.on("/api/v1/sleep", HTTP_GET, handleSleepStatus);
   server.on("/api/v1/battery", HTTP_GET, handleBattery);
   server.on("/api/v1/mag", HTTP_GET, handleMag);
   server.on("/api/v1/status", HTTP_GET, handleStatus);

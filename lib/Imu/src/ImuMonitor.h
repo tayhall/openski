@@ -36,6 +36,8 @@ class ImuMonitor {
   // Returns true on the call that detects the stall.
   bool checkStall(uint32_t nowMs, uint32_t stallMs);
 
+  bool setSleepMode(bool on) { return stats_.ready && sensor_ != nullptr && sensor_->setSleepMode(on); }
+
   const Stats& stats() const { return stats_; }
   bool hasSample() const { return stats_.samples > 0; }
   const Sample& latest() const { return latest_; }

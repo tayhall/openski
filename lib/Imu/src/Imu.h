@@ -39,5 +39,8 @@ class ImuSensor {
   virtual bool begin() = 0;
   virtual ReadResult read(Sample& out) = 0;
   virtual const char* name() const = 0;
+  // Accelerometer-only, low-rate, low-power acquisition for sleeping boots that only watch for movement
+  // (gyro samples read as zero). begin() restores normal acquisition. False if the chip cannot do it.
+  virtual bool setSleepMode(bool) { return false; }
 };
 }  // namespace openski::imu
