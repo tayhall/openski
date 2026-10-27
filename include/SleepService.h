@@ -5,8 +5,9 @@ namespace openski::sleep {
 // Sleep until the boot is picked up. A request stops BLE and Wi-Fi, takes a still baseline, then light-sleeps in
 // steps (every 2 s once the IMU is in its accelerometer-only low-power mode), reading the IMU each time. A
 // movement past the wake threshold (WakeDetector) restarts the board, so BLE and Wi-Fi come back through the
-// normal boot. Refused while recording to flash.
-enum class Result : uint8_t { kOk, kRecording, kAlready };
+// normal boot. Refused while recording or downloading flash, or while the IMU is not ready, and a sleeping boot restarts if
+// the IMU goes silent, so a dead sensor can never leave it asleep with the radios off.
+enum class Result : uint8_t { kOk, kRecording, kAlready, kNoSensor };
 Result request();
 bool pending();
 

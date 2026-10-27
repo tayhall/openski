@@ -25,6 +25,7 @@
 #include "MotionService.h"
 #include "RecorderService.h"
 #include "SleepService.h"
+#include "WakeDetector.h"
 #include "WifiService.h"
 
 namespace openski::telemetry {
@@ -183,11 +184,14 @@ void handleZero() {
 
 void handleSleep() {
   const sleep::Result result = sleep::request();
-  if (result == sleep::Result::kRecording) {
-    server.send(409, "application/json", "{\"error\":\"recording\"}");
+  if (result == sleep::Result::kRecording || result == sleep::Result::kNoSensor) {
+    server.send(409, "application/json",
+                result == sleep::Result::kRecording ? "{\"error\":\"recording\"}" : "{\"error\":\"imu_unavailable\"}");
     return;
   }
-  server.send(200, "application/json", "{\"sleeping\":true,\"wake_accel_mps2\":0.1,\"wake_gyro_radps\":0.1}");
+  char body[64];
+  snprintf(body, sizeof(body), "{\"sleeping\":true,\"wake_accel_mps2\":%.2f}", motion::WakeDetector::kAccelThresholdMps2);
+  server.send(200, "application/json", body);
 }
 
 void handleSleepStatus() {

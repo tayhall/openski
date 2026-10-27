@@ -426,7 +426,8 @@ void processRecorderCommand(const ControlRequest& request) {
       // The response goes out now; the boot sleeps about a second later, once it has been delivered.
       const sleep::Result result = sleep::request();
       notifyRecorderResponse(opcode, result == sleep::Result::kRecording ? RecorderResult::kBusy
-                                                                         : RecorderResult::kOk);
+                                     : result == sleep::Result::kNoSensor ? RecorderResult::kUnavailable
+                                                                          : RecorderResult::kOk);
       return;
     }
     case motion::MotionCommandKind::kInvalid:
@@ -625,6 +626,7 @@ void stop() {
 }
 
 bool connected() { return clientConnected; }
+bool downloading() { return downloadActive; }
 bool advertisingNow() { return server != nullptr && NimBLEDevice::getAdvertising()->isAdvertising(); }
 Diagnostics diagnostics() {
   portENTER_CRITICAL(&diagnosticsMux);

@@ -19,6 +19,7 @@ constexpr uint64_t kPollIntervalUs = 100000;          // wake-up check period; t
 // every 2 s: a pick-up changes the tilt for as long as the boot is held, so it is still caught, at most 2 s late.
 constexpr uint64_t kBaselinePollIntervalUs = 200000;
 constexpr uint64_t kWatchPollIntervalUs = 2000000;
+constexpr unsigned long kSensorSilentMs = 10000;  // no new IMU sample for this long while asleep: restart
 constexpr uint32_t kRecordMagic = 0x4f534c50;         // "OSLP"
 
 struct Record {
@@ -37,6 +38,8 @@ LastWake last;
 Result request() {
   if (requested) return Result::kAlready;
   if (recorder::status().recording) return Result::kRecording;
+  if (bluetooth::downloading()) return Result::kRecording;  // a flash download is under way: not now
+  if (!imu::monitor().stats().ready) return Result::kNoSensor;  // nothing could wake it
   requested = true;
   requestedAtMs = millis();
   Serial.println("Sleep requested");
@@ -61,7 +64,7 @@ void begin() {
 
 void tick() {
   if (!requested || millis() - requestedAtMs < kSettleBeforeSleepMs) return;
-  if (recorder::status().recording) {  // recording started in the settling second
+  if (recorder::status().recording || !imu::monitor().stats().ready) {  // changed in the settling second
     requested = false;
     return;
   }
@@ -79,12 +82,21 @@ void tick() {
   Serial.println(lowPower ? "IMU in low-power accelerometer-only mode" : "IMU sleep mode unavailable: full rate");
   esp_sleep_enable_timer_wakeup(lowPower ? kBaselinePollIntervalUs : kPollIntervalUs);
   bool slowPolling = false;
+  unsigned long lastNewSampleMs = millis();
   for (;;) {
     esp_light_sleep_start();
     imu::pollQuiet();
     const imu::Stats& stats = imu::monitor().stats();
-    if (!imu::monitor().hasSample() || stats.samples == lastSamples) continue;
+    if (!imu::monitor().hasSample() || stats.samples == lastSamples) {
+      if (millis() - lastNewSampleMs > kSensorSilentMs) {
+        Serial.println("IMU silent while asleep: restarting");
+        Serial.flush();
+        esp_restart();  // not recorded as a wake; the normal boot brings the radios and the sensor back
+      }
+      continue;
+    }
     lastSamples = stats.samples;
+    lastNewSampleMs = millis();
     if (lowPower && !slowPolling && detector.armed()) {
       slowPolling = true;
       esp_sleep_enable_timer_wakeup(kWatchPollIntervalUs);
