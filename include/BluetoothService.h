@@ -15,4 +15,6 @@ struct Diagnostics {
 };
 Diagnostics diagnostics();
 bool advertisingNow();
+// Shut BLE down for good (until the next boot): disconnects any client and stops advertising. Used by sleep.
+void stop();
 }  // namespace openski::bluetooth

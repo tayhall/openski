@@ -17,6 +17,7 @@ int16_t toSignedWord(uint8_t low, uint8_t high) {  // little-endian output regis
 
 bool Lsm6dsoxSensor::begin() {
   initialized_ = false;
+  sleepMode_ = false;
   if (!bus_.restart()) return false;
 
   uint8_t value = 0;
@@ -56,8 +57,42 @@ bool Lsm6dsoxSensor::begin() {
   return true;
 }
 
+bool Lsm6dsoxSensor::setSleepMode(bool on) {
+  if (!initialized_) return false;
+  if (on == sleepMode_) return true;
+  // Gyro first when stopping, last when starting, so the outputs never run at a mix of old and new settings.
+  const bool ok = on ? (bus_.writeRegister(kRegCtrl2G, kCtrl2SleepValue) &&
+                        bus_.writeRegister(kRegCtrl6C, kCtrl6SleepValue) &&
+                        bus_.writeRegister(kRegCtrl1Xl, kCtrl1SleepValue))
+                     : (bus_.writeRegister(kRegCtrl6C, kCtrl6Value) &&
+                        bus_.writeRegister(kRegCtrl1Xl, kCtrl1Value) &&
+                        bus_.writeRegister(kRegCtrl2G, kCtrl2Value));
+  if (!ok) return false;
+  sleepMode_ = on;
+  settleRemaining_ = on ? kSleepSettleSamples : kSettleSamples;
+  return true;
+}
+
 ReadResult Lsm6dsoxSensor::read(Sample& out) {
   if (!initialized_) return ReadResult::kError;
+  if (sleepMode_) {  // accelerometer only: gyro and temperature are off or unread and report zero
+    uint8_t status = 0;
+    if (!bus_.readRegisters(kRegStatus, &status, 1)) return ReadResult::kError;
+    if ((status & kStatusAccelReady) == 0) return ReadResult::kNoData;
+    uint8_t data[6]{};
+    if (!bus_.readRegisters(kRegOutXlA, data, sizeof(data))) return ReadResult::kError;
+    if (settleRemaining_ > 0) {
+      --settleRemaining_;
+      return ReadResult::kNoData;
+    }
+    const float scale = kAccelMgPerLsb / 1000.0f * kStandardGravity;
+    Sample sample{};
+    sample.timestampUs = nowUs_();
+    sample.accelMps2 = {toSignedWord(data[0], data[1]) * scale, toSignedWord(data[2], data[3]) * scale,
+                        toSignedWord(data[4], data[5]) * scale};
+    out = sample;
+    return ReadResult::kSample;
+  }
 
   uint8_t status = 0;
   if (!bus_.readRegisters(kRegStatus, &status, 1)) return ReadResult::kError;

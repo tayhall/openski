@@ -92,6 +92,9 @@ int main() {
     check(parseMotionCommand(download, 5) == MotionCommandKind::kNone, "recorder download is not ours");
     check(parseMotionCommand(unknown, 1) == MotionCommandKind::kNone, "unknown opcode is left to the recorder");
     check(parseMotionCommand(zero, 0) == MotionCommandKind::kNone, "empty write");
+    const uint8_t sleep[] = {0x0a}, sleepLong[] = {0x0a, 0x00};
+    check(parseMotionCommand(sleep, 1) == MotionCommandKind::kSleep, "sleep");
+    check(parseMotionCommand(sleepLong, 2) == MotionCommandKind::kInvalid, "sleep with a payload");
   }
   std::puts("ski frame tests passed");
 }

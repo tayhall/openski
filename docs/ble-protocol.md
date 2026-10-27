@@ -145,6 +145,7 @@ Three commands are written to the recorder control characteristic. They work eve
 | Zero | `07` | Capture the neutral pose from the next still second (under 0.12 rad/s, within 5% of 1 g, roughly upright on the leg). Stand upright in the ski stance first. |
 | Set mode | `08 mode` | `00` diagnostics, `01` production. Any other value or length returns result `6`. |
 | Time sync | `09 token[2]` | Return the sensor clock; see below. Length must be 3, else result `6`. |
+| Sleep | `0A` | Respond (result `0`, or `2` busy while recording to flash), then about a second later switch BLE and Wi-Fi off and light-sleep with the IMU in a 26 Hz accelerometer-only low-power mode (gyro off), checking it every 2 s after a 1 s baseline. Wakes on any accelerometer axis moving more than 0.1 m/s² from the baseline (a chip without the low-power mode falls back to the full-rate IMU, checked every 100 ms, which also watches the gyro at 0.1 rad/s), by restarting into the normal diagnostics boot (the phone sees a disconnect, then the boot advertising again; the zeroed pose is lost). Length must be 1, else result `6`. Experimental. |
 
 ### Time sync (opcode `09`)
 

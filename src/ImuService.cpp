@@ -68,4 +68,6 @@ void tick() {
 }
 
 const ImuMonitor& monitor() { return imuMonitor; }
+bool setSleepMode(bool on) { return imuMonitor.setSleepMode(on); }
+void pollQuiet() { imuMonitor.poll(); }
 }  // namespace openski::imu

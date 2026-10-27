@@ -17,6 +17,7 @@
 #include "ModeService.h"
 #include "MotionService.h"
 #include "RecorderService.h"
+#include "SleepService.h"
 
 namespace openski::bluetooth {
 namespace {
@@ -421,6 +422,13 @@ void processRecorderCommand(const ControlRequest& request) {
       mode::set(mode::Mode::kProduction);
       notifyRecorderResponse(opcode, RecorderResult::kOk);
       return;
+    case motion::MotionCommandKind::kSleep: {
+      // The response goes out now; the boot sleeps about a second later, once it has been delivered.
+      const sleep::Result result = sleep::request();
+      notifyRecorderResponse(opcode, result == sleep::Result::kRecording ? RecorderResult::kBusy
+                                                                         : RecorderResult::kOk);
+      return;
+    }
     case motion::MotionCommandKind::kInvalid:
       notifyRecorderResponse(opcode, RecorderResult::kInvalidCommand);
       return;
@@ -599,6 +607,21 @@ void begin() {
   notifyRecorderResponse(static_cast<uint8_t>(RecorderCommand::kInfo), RecorderResult::kOk);
   Serial.printf("BLE ready: %s, service %s, recorder control %s\n",
                 config::kBleName, kServiceUuid, kRecorderControlUuid);
+}
+
+void stop() {
+  if (server == nullptr) return;
+  clientConnected = false;
+  downloadActive = false;
+  advertising = true;  // keeps tick() from restarting advertising on the way out
+  NimBLEDevice::deinit(true);
+  server = nullptr;
+  liveCharacteristic = nullptr;
+  movementCharacteristic = nullptr;
+  statusCharacteristic = nullptr;
+  recorderControlCharacteristic = nullptr;
+  recorderDataCharacteristic = nullptr;
+  Serial.println("BLE off");
 }
 
 bool connected() { return clientConnected; }

@@ -83,10 +83,11 @@ inline void encodeSkiState(const SkiStateFrame& s, uint8_t* out) {
 }
 
 // Recorder-control opcodes handled outside the recorder (they work without flash storage).
-enum class MotionCommandKind : uint8_t { kNone, kZero, kDiagnostics, kProduction, kInvalid };
+enum class MotionCommandKind : uint8_t { kNone, kZero, kDiagnostics, kProduction, kSleep, kInvalid };
 inline MotionCommandKind parseMotionCommand(const uint8_t* bytes, size_t length) {
   if (length == 0) return MotionCommandKind::kNone;
   if (bytes[0] == 0x07) return length == 1 ? MotionCommandKind::kZero : MotionCommandKind::kInvalid;
+  if (bytes[0] == 0x0a) return length == 1 ? MotionCommandKind::kSleep : MotionCommandKind::kInvalid;
   if (bytes[0] == 0x08) {
     if (length != 2) return MotionCommandKind::kInvalid;
     if (bytes[1] == 0) return MotionCommandKind::kDiagnostics;

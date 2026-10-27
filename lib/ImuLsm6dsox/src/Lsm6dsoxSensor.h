@@ -18,6 +18,7 @@ class Lsm6dsoxSensor final : public ImuSensor {
   bool begin() override;
   ReadResult read(Sample& out) override;
   const char* name() const override { return "LSM6DSOX"; }
+  bool setSleepMode(bool on) override;
 
   // Register map (ST lsm6dsox_reg.h).
   static constexpr uint8_t kRegWhoAmI = 0x0F;
@@ -28,6 +29,7 @@ class Lsm6dsoxSensor final : public ImuSensor {
   static constexpr uint8_t kRegCtrl6C = 0x15;
   static constexpr uint8_t kRegCtrl8Xl = 0x17;
   static constexpr uint8_t kRegStatus = 0x1E;
+  static constexpr uint8_t kRegOutXlA = 0x28;
   static constexpr uint8_t kRegOutTempL = 0x20;  // then gyro X/Y/Z, then accel X/Y/Z (14 bytes)
   static constexpr uint8_t kWhoAmIValue = 0x6C;
   // Values written at init.
@@ -37,6 +39,12 @@ class Lsm6dsoxSensor final : public ImuSensor {
   static constexpr uint8_t kCtrl4Value = 0x02;  // LPF1_SEL_G
   static constexpr uint8_t kCtrl6Value = 0x03;  // FTYPE = 011
   static constexpr uint8_t kCtrl8Value = 0x00;  // HPCF_XL = ODR/4, slope/HP path off
+  // Sleep mode: accelerometer 26 Hz in low-power mode (XL_HM_MODE) with the same +-16 g range and LPF2, gyro
+  // powered down. A few tens of microamps in place of about half a milliamp at 104 Hz with the gyro on.
+  static constexpr uint8_t kCtrl1SleepValue = 0x26;  // ODR 26 Hz | +-16 g | LPF2 on
+  static constexpr uint8_t kCtrl2SleepValue = 0x00;  // gyro power-down
+  static constexpr uint8_t kCtrl6SleepValue = 0x13;  // XL_HM_MODE | FTYPE = 011
+  static constexpr uint8_t kSleepSettleSamples = 4;  // LPF2 at ODR/4 settles in about 0.15 s at 26 Hz
   // The first outputs after the ODR is enabled include the digital filters settling; they are read (which
   // clears data-ready) and discarded. About 100 ms at 104 Hz, a conservative starting value to tune.
   static constexpr uint8_t kSettleSamples = 10;
@@ -52,6 +60,7 @@ class Lsm6dsoxSensor final : public ImuSensor {
   DelayMsFn delayMs_;
   bool initialized_ = false;
   uint8_t settleRemaining_ = 0;
+  bool sleepMode_ = false;
 };
 
 }  // namespace openski::imu
