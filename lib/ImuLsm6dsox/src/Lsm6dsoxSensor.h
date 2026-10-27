@@ -19,6 +19,7 @@ class Lsm6dsoxSensor final : public ImuSensor {
   ReadResult read(Sample& out) override;
   const char* name() const override { return "LSM6DSOX"; }
   bool setSleepMode(bool on) override;
+  bool powerDown() override;
 
   // Register map (ST lsm6dsox_reg.h).
   static constexpr uint8_t kRegWhoAmI = 0x0F;

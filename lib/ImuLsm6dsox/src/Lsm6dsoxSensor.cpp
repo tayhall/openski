@@ -73,6 +73,13 @@ bool Lsm6dsoxSensor::setSleepMode(bool on) {
   return true;
 }
 
+bool Lsm6dsoxSensor::powerDown() {
+  if (!initialized_) return false;
+  if (!bus_.writeRegister(kRegCtrl2G, 0x00) || !bus_.writeRegister(kRegCtrl1Xl, 0x00)) return false;  // ODR = power-down
+  initialized_ = false;  // begin() runs the full init again
+  return true;
+}
+
 ReadResult Lsm6dsoxSensor::read(Sample& out) {
   if (!initialized_) return ReadResult::kError;
   if (sleepMode_) {  // accelerometer only: gyro and temperature are off or unread and report zero

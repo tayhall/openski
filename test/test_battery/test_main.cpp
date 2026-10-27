@@ -53,8 +53,45 @@ void test_implausible_readings_never_hold_wifi() {
   TEST_ASSERT_TRUE(lowBatteryHold(3.0f, false));     // a genuinely flat cell does hold
 }
 
+void test_shutdown_needs_three_consecutive_low_readings() {
+  using namespace openski::battery;
+  int count = lowCellCount(3.25f, 0);
+  TEST_ASSERT_FALSE(shutdownDue(count));
+  count = lowCellCount(3.2f, count);
+  TEST_ASSERT_FALSE(shutdownDue(count));
+  count = lowCellCount(3.2f, count);
+  TEST_ASSERT_TRUE(shutdownDue(count));
+}
+
+void test_a_recovered_reading_restarts_the_count() {
+  using namespace openski::battery;
+  int count = lowCellCount(3.2f, lowCellCount(3.2f, 0));
+  count = lowCellCount(3.4f, count);  // a sag that recovered
+  TEST_ASSERT_EQUAL_INT(0, count);
+  TEST_ASSERT_FALSE(shutdownDue(lowCellCount(3.2f, count)));
+}
+
+void test_implausible_readings_never_count_towards_shutdown() {
+  using namespace openski::battery;
+  TEST_ASSERT_EQUAL_INT(0, lowCellCount(0.133f, 2));  // no cell fitted
+  TEST_ASSERT_EQUAL_INT(1, lowCellCount(3.29f, 0));
+  TEST_ASSERT_EQUAL_INT(0, lowCellCount(3.3f, 1));    // threshold itself is not low
+}
+
+void test_resume_needs_a_charged_cell_or_no_cell() {
+  using namespace openski::battery;
+  TEST_ASSERT_FALSE(resumeFromShutdown(3.3f));
+  TEST_ASSERT_FALSE(resumeFromShutdown(3.79f));
+  TEST_ASSERT_TRUE(resumeFromShutdown(3.8f));
+  TEST_ASSERT_TRUE(resumeFromShutdown(0.1f));  // not a cell: never stay asleep
+}
+
 int main() {
   UNITY_BEGIN();
+  RUN_TEST(test_shutdown_needs_three_consecutive_low_readings);
+  RUN_TEST(test_a_recovered_reading_restarts_the_count);
+  RUN_TEST(test_implausible_readings_never_count_towards_shutdown);
+  RUN_TEST(test_resume_needs_a_charged_cell_or_no_cell);
   RUN_TEST(test_hold_starts_below_threshold_and_releases_with_hysteresis);
   RUN_TEST(test_implausible_readings_never_hold_wifi);
   RUN_TEST(test_equal_divider_doubles_the_pin_voltage);

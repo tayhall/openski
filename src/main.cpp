@@ -19,6 +19,7 @@ void setup() {
   openski::diagnostics::begin();
   openski::sleep::begin();
   openski::battery::begin();  // before the radio starts, so the first reading is not under Wi-Fi load
+  openski::sleep::lowBatteryCheck();  // after a low-cell deep sleep, goes back to sleep unless charged
   openski::recorder::begin();
   openski::imu::begin();
   openski::magnetometer::begin();  // after the IMU, which starts the shared I2C bus

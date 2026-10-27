@@ -602,6 +602,10 @@ void begin() {
   NimBLEAdvertising* bleAdvertising = NimBLEDevice::getAdvertising();
   bleAdvertising->addServiceUUID(kServiceUuid);
   bleAdvertising->setScanResponse(true);
+  // Idle advertising is the radio's main cost while no phone is connected: 500 to 800 ms (units of 0.625 ms)
+  // instead of the stack default of tens of milliseconds. The app still finds the boot within a scan or two.
+  bleAdvertising->setMinInterval(800);
+  bleAdvertising->setMaxInterval(1280);
   NimBLEDevice::startAdvertising();
   advertising = true;
   updateStatus();

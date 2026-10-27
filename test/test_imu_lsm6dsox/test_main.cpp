@@ -265,8 +265,24 @@ void test_begin_leaves_sleep_mode() {
   TEST_ASSERT_TRUE(out.gyroRadps.x != 0.0f);  // normal acquisition again, gyro read
 }
 
+void test_power_down_stops_both_sensors_until_begin() {
+  FakeBus bus;
+  Lsm6dsoxSensor s(bus, fakeNowUs, noDelay);
+  TEST_ASSERT_FALSE(s.powerDown());  // not initialised yet
+  TEST_ASSERT_TRUE(s.begin());
+  bus.writes.clear();
+  TEST_ASSERT_TRUE(s.powerDown());
+  TEST_ASSERT_EQUAL_INT(0x00, bus.lastWriteTo(0x10));  // accelerometer power-down
+  TEST_ASSERT_EQUAL_INT(0x00, bus.lastWriteTo(0x11));  // gyro power-down
+  Sample out{};
+  TEST_ASSERT_EQUAL(static_cast<int>(ReadResult::kError), static_cast<int>(s.read(out)));
+  TEST_ASSERT_TRUE(s.begin());  // full start-up again
+  TEST_ASSERT_EQUAL_INT(0x46, bus.lastWriteTo(0x10));
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
+  RUN_TEST(test_power_down_stops_both_sensors_until_begin);
   RUN_TEST(test_init_writes_expected_configuration);
   RUN_TEST(test_who_am_i_mismatch_fails_cleanly_without_writes);
   RUN_TEST(test_bus_restart_failure_fails_begin);

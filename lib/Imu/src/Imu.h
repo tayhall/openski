@@ -42,5 +42,8 @@ class ImuSensor {
   // Accelerometer-only, low-rate, low-power acquisition for sleeping boots that only watch for movement
   // (gyro samples read as zero). begin() restores normal acquisition. False if the chip cannot do it.
   virtual bool setSleepMode(bool) { return false; }
+  // Both sensors off, for a deep sleep that does not need the IMU to wake the board. read() fails until
+  // begin() runs again. False if the chip cannot do it.
+  virtual bool powerDown() { return false; }
 };
 }  // namespace openski::imu

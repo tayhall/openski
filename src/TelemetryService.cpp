@@ -196,12 +196,13 @@ void handleSleep() {
 
 void handleSleepStatus() {
   const sleep::LastWake wake = sleep::lastWake();
-  char body[200];
+  char body[280];
   snprintf(body, sizeof(body),
-           "{\"sleep_pending\":%s,\"woke_from_sleep\":%s,\"slept_ms\":%lu,\"wake_trigger\":\"%s\",\"wake_delta\":%.4f}",
+           "{\"sleep_pending\":%s,\"woke_from_sleep\":%s,\"slept_ms\":%lu,\"wake_trigger\":\"%s\",\"wake_delta\":%.4f,"
+           "\"woke_from_low_battery\":%s,\"low_battery_shutdown_v\":%.3f}",
            sleep::pending() ? "true" : "false", wake.wokeFromSleep ? "true" : "false",
            static_cast<unsigned long>(wake.sleptMs), wake.gyroTrigger ? "gyro_radps" : "accel_mps2",
-           wake.triggerDelta);
+           wake.triggerDelta, wake.wokeFromLowBattery ? "true" : "false", wake.lowBatteryVolts);
   server.send(200, "application/json", body);
 }
 

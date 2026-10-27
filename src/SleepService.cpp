@@ -5,6 +5,8 @@
 #include <esp_sleep.h>
 #include <esp_system.h>
 
+#include "BatteryMath.h"
+#include "BatteryService.h"
 #include "BluetoothService.h"
 #include "ImuService.h"
 #include "RecorderService.h"
@@ -29,6 +31,24 @@ struct Record {
   uint8_t gyroTrigger;
 };
 RTC_NOINIT_ATTR Record record;  // survives esp_restart(); undefined after a power cycle, hence the magic
+
+// Low-cell deep sleep: the board wakes on a timer, reads the cell and goes straight back to sleep unless it
+// is charged enough to run. RTC memory survives deep sleep, so the cell voltage that caused the shutdown
+// is still there for the report after the wake.
+constexpr uint64_t kLowBatteryWakeIntervalUs = 10ULL * 60ULL * 1000000ULL;
+constexpr uint32_t kLowBatteryMagic = 0x4f4c4f57;  // "OLOW"
+struct LowBatteryRecord {
+  uint32_t magic;
+  float shutdownVolts;
+};
+RTC_NOINIT_ATTR LowBatteryRecord lowBatteryRecord;
+
+[[noreturn]] void deepSleepLowBattery() {
+  Serial.flush();
+  battery::dividerOff();  // switched on again by battery::begin() on the next wake
+  esp_sleep_enable_timer_wakeup(kLowBatteryWakeIntervalUs);
+  esp_deep_sleep_start();
+}
 
 bool requested = false;
 unsigned long requestedAtMs = 0;
@@ -62,7 +82,33 @@ void begin() {
   record.magic = 0;  // a later reset that is not a wake must not look like one
 }
 
+void lowBatteryCheck() {
+  if (esp_reset_reason() != ESP_RST_DEEPSLEEP || lowBatteryRecord.magic != kLowBatteryMagic) return;
+  const battery::Reading cell = battery::reading();
+  if (cell.valid && !battery::resumeFromShutdown(cell.volts)) {
+    Serial.printf("Cell still low (%.3f V, resume at %.2f V): back to deep sleep\n", cell.volts,
+                  battery::kResumeAtVolts);
+    deepSleepLowBattery();
+  }
+  last.wokeFromLowBattery = true;
+  last.lowBatteryVolts = lowBatteryRecord.shutdownVolts;
+  lowBatteryRecord.magic = 0;
+  Serial.printf("Woke from low-battery shutdown (shut down at %.3f V, now %.3f V)\n", last.lowBatteryVolts,
+                cell.volts);
+}
+
 void tick() {
+  if (battery::lowCellShutdownDue()) {
+    const float volts = battery::reading().volts;
+    Serial.printf("Cell at %.3f V: low-battery deep sleep, plug in to charge\n", volts);
+    if (recorder::status().recording) recorder::stop();  // keeps what was recorded in flash
+    bluetooth::stop();
+    wifi::setEnabled(false);
+    imu::powerDown();  // nothing can wake the board but the timer, so the IMU is not needed
+    lowBatteryRecord.magic = kLowBatteryMagic;
+    lowBatteryRecord.shutdownVolts = volts;
+    deepSleepLowBattery();
+  }
   if (!requested || millis() - requestedAtMs < kSettleBeforeSleepMs) return;
   if (recorder::status().recording || !imu::monitor().stats().ready) {  // changed in the settling second
     requested = false;

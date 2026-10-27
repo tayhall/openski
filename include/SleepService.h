@@ -17,8 +17,17 @@ struct LastWake {
   bool gyroTrigger = false;
   float triggerDelta = 0.0f;  // m/s^2 or rad/s, whichever tripped
   uint32_t sleptMs = 0;
+  bool wokeFromLowBattery = false;  // woke from the low-cell deep sleep below
+  float lowBatteryVolts = 0.0f;     // the cell voltage that caused that shutdown
 };
 LastWake lastWake();
+
+// Low-cell deep sleep. tick() enters it once BatteryService reports kShutdownReadings low readings in a row:
+// it stops the recording (kept in flash), the radios and the IMU's gyro, then sleeps with a 10-minute timer
+// wake. lowBatteryCheck() runs early in setup() after the first battery reading: on a timer wake it goes back
+// to sleep unless the cell reads at least kResumeAtVolts (charging) or not like a cell at all; a reset
+// button press boots normally.
+void lowBatteryCheck();
 
 void begin();  // read the wake record left by the previous boot
 void tick();   // blocks while asleep; returns normally when no sleep is pending
