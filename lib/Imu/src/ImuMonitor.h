@@ -38,6 +38,10 @@ class ImuMonitor {
 
   bool setSleepMode(bool on) { return stats_.ready && sensor_ != nullptr && sensor_->setSleepMode(on); }
   bool powerDown() { return stats_.ready && sensor_ != nullptr && sensor_->powerDown(); }
+  bool armWakeOnMotion(float thresholdMps2, bool useInt2) {
+    return stats_.ready && sensor_ != nullptr && sensor_->armWakeOnMotion(thresholdMps2, useInt2);
+  }
+  bool clearWakeEvent() { return stats_.ready && sensor_ != nullptr && sensor_->clearWakeEvent(); }
 
   const Stats& stats() const { return stats_; }
   bool hasSample() const { return stats_.samples > 0; }

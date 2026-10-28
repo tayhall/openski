@@ -29,6 +29,13 @@ LastWake lastWake();
 // button press boots normally.
 void lowBatteryCheck();
 
+// Movement sleep by deep sleep, for builds with the IMU interrupt wired (OPENSKI_IMU_INT_PIN). request() then
+// arms the IMU's own wake-up detector and deep-sleeps; its interrupt wakes the board with a restart. A 30
+// minute timer wake checks the IMU is still answering, re-arms it and sleeps again without starting the radios,
+// or boots normally if the IMU has gone. motionWakeCheck() runs in setup() right after the IMU starts and
+// before the radios. Builds without the pin keep the light-sleep polling loop below.
+void motionWakeCheck();
+
 void begin();  // read the wake record left by the previous boot
 void tick();   // blocks while asleep; returns normally when no sleep is pending
 }  // namespace openski::sleep
