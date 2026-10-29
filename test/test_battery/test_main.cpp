@@ -4,6 +4,7 @@
 
 using openski::battery::cellVolts;
 using openski::battery::sampleDue;
+using openski::battery::lowCellAtRest;
 
 void setUp() {}
 void tearDown() {}
@@ -53,6 +54,13 @@ void test_implausible_readings_never_hold_wifi() {
   TEST_ASSERT_TRUE(lowBatteryHold(3.0f, false));     // a genuinely flat cell does hold
 }
 
+void test_one_reading_at_rest_decides_the_shutdown() {
+  TEST_ASSERT_TRUE(lowCellAtRest(3.25f));
+  TEST_ASSERT_FALSE(lowCellAtRest(3.3f));
+  TEST_ASSERT_FALSE(lowCellAtRest(3.6f));
+  TEST_ASSERT_FALSE(lowCellAtRest(0.4f));  // not a cell: never counts
+}
+
 void test_shutdown_needs_three_consecutive_low_readings() {
   using namespace openski::battery;
   int count = lowCellCount(3.25f, 0);
@@ -96,6 +104,7 @@ int main() {
   RUN_TEST(test_implausible_readings_never_hold_wifi);
   RUN_TEST(test_equal_divider_doubles_the_pin_voltage);
   RUN_TEST(test_other_ratios_scale_linearly);
+  RUN_TEST(test_one_reading_at_rest_decides_the_shutdown);
   RUN_TEST(test_first_sample_is_due_immediately);
   RUN_TEST(test_next_sample_waits_for_the_interval);
   RUN_TEST(test_interval_is_correct_across_millis_rollover);

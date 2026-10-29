@@ -40,6 +40,9 @@ inline int lowCellCount(float volts, int previousCount) {
   return (volts >= kImplausibleVolts && volts < kShutdownBelowVolts) ? previousCount + 1 : 0;
 }
 inline bool shutdownDue(int count) { return count >= kShutdownReadings; }
+// One reading taken with the radios off (a timer wake in the movement sleep) is not under load, so it needs no
+// debounce: a single plausible reading below the shutdown voltage is enough.
+inline bool lowCellAtRest(float volts) { return volts >= kImplausibleVolts && volts < kShutdownBelowVolts; }
 inline bool resumeFromShutdown(float volts) { return volts >= kResumeAtVolts || volts < kImplausibleVolts; }
 
 }  // namespace openski::battery

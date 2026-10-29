@@ -12,6 +12,7 @@
 #include "BluetoothService.h"
 #include "ImuService.h"
 #include "RecorderService.h"
+#include "StillnessTimer.h"
 #include "WakeDetector.h"
 #include "WifiService.h"
 
@@ -82,6 +83,16 @@ bool deepSleepOnMotion() {
   return true;  // not reached
 }
 
+[[noreturn]] void deepSleepLowBattery();
+
+// The low-cell shutdown, for a timer wake of the movement sleep that finds the cell flat.
+[[noreturn]] void lowBatteryShutdown(float volts) {
+  imu::powerDown();
+  lowBatteryRecord.magic = kLowBatteryMagic;
+  lowBatteryRecord.shutdownVolts = volts;
+  deepSleepLowBattery();
+}
+
 [[noreturn]] void deepSleepLowBattery() {
   Serial.flush();
   battery::dividerOff();  // switched on again by battery::begin() on the next wake
@@ -89,9 +100,36 @@ bool deepSleepOnMotion() {
   esp_deep_sleep_start();
 }
 
+// A boot with the IMU interrupt wired puts itself to sleep once it has lain still this long, so a boot left on
+// a bench or in a bag does not run its radios flat. Builds without the pin never sleep on their own.
+#ifndef OPENSKI_IDLE_SLEEP_MS
+#define OPENSKI_IDLE_SLEEP_MS (10UL * 60UL * 1000UL)
+#endif
+constexpr uint32_t kIdleSleepMs = OPENSKI_IDLE_SLEEP_MS;
+
 bool requested = false;
 unsigned long requestedAtMs = 0;
 LastWake last;
+motion::StillnessTimer stillness(kIdleSleepMs);
+uint32_t stillnessSamples = 0;
+
+// Feeds new IMU samples to the stillness timer and asks for sleep when the period is up. Recording or a flash
+// download restarts the period, so sleep never starts straight after one ends.
+void autoSleepTick() {
+  const uint32_t now = millis();
+  if (requested || recorder::status().recording || bluetooth::downloading()) {
+    stillness.restart(now);
+    return;
+  }
+  const imu::Stats& stats = imu::monitor().stats();
+  if (stats.ready && imu::monitor().hasSample() && stats.samples != stillnessSamples) {
+    stillnessSamples = stats.samples;
+    const imu::Sample& s = imu::monitor().latest();
+    stillness.update(now, s.accelMps2.x, s.accelMps2.y, s.accelMps2.z, s.gyroRadps.x, s.gyroRadps.y,
+                     s.gyroRadps.z);
+  }
+  if (stillness.idle(now) && request() == Result::kOk) Serial.println("Still for the idle period: sleeping");
+}
 }  // namespace
 
 Result request() {
@@ -109,6 +147,7 @@ bool pending() { return requested; }
 LastWake lastWake() { return last; }
 
 void begin() {
+  stillness.restart(millis());
   if (esp_reset_reason() == ESP_RST_SW && record.magic == kRecordMagic) {
     last.wokeFromSleep = true;
     last.gyroTrigger = record.gyroTrigger != 0;
@@ -126,6 +165,11 @@ void motionWakeCheck() {
   const bool deadManCheck = esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER;
   motionMagic = 0;
   if (deadManCheck) {
+    const battery::Reading cell = battery::reading();
+    if (cell.valid && battery::lowCellAtRest(cell.volts)) {
+      Serial.printf("Sleep check: cell at %.3f V: low-battery deep sleep, plug in to charge\n", cell.volts);
+      lowBatteryShutdown(cell.volts);
+    }
     if (imu::monitor().stats().ready) {
       Serial.println("Sleep check: IMU answers, back to sleep");
       deepSleepOnMotion();  // returns only if it could not re-arm: boot normally below
@@ -162,11 +206,9 @@ void tick() {
     if (recorder::status().recording) recorder::stop();  // keeps what was recorded in flash
     bluetooth::stop();
     wifi::setEnabled(false);
-    imu::powerDown();  // nothing can wake the board but the timer, so the IMU is not needed
-    lowBatteryRecord.magic = kLowBatteryMagic;
-    lowBatteryRecord.shutdownVolts = volts;
-    deepSleepLowBattery();
+    lowBatteryShutdown(volts);  // nothing can wake the board but the timer, so the IMU is powered down
   }
+  if (config::kImuInterruptPin >= 0) autoSleepTick();
   if (!requested || millis() - requestedAtMs < kSettleBeforeSleepMs) return;
   if (recorder::status().recording || !imu::monitor().stats().ready) {  // changed in the settling second
     requested = false;
