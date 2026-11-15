@@ -51,7 +51,7 @@ Pick: **A**. It keeps the S3, the flash size (8 MB for the existing `xiao-esp32s
         |                     |
         |                  VBAT (protected 1S LiPo, 3.0-4.2 V)
         |                     |
-        |        +---- divider (100k/100k) via enable FET --> ADC (GPIO2)
+        |        +---- divider (100k/100k, bottom leg on GPIO1) --> ADC (GPIO2)
         |        |
         |        +--> [low-Iq buck, 3.3 V] ---+--> ESP32-S3-MINI-1 (8 MB, onboard antenna)
         |                                     |      |  I2C GPIO5/6
@@ -71,7 +71,7 @@ Pick: **A**. It keeps the S3, the flash size (8 MB for the existing `xiao-esp32s
 | Charger | TI BQ25185 class (1S, power path, NTC pin, low quiescent) or equivalent | NTC pin gives the 0 degC charge inhibit the POC plan requires. |
 | 3.3 V rail | Nano-quiescent buck (TPS62840 class) | Needs headroom for Wi-Fi/BLE peaks that an LDO of small rating cannot give; very low quiescent matters for the motion-wake sleep. Dropout behaviour near 3.0 V cell is handled by the existing low-battery deep sleep. |
 | Cell | 1S LiPo pouch, about 500 mAh target (for example 502540, 5 x 25 x 40 mm), **with protection circuit and a 10k NTC** | Runtime is unmeasured; cold derating is real. Cell must come with UN38.3 test report. |
-| Battery sense | 100k/100k divider plus 100 nF, bottom leg switched by an N-FET on GPIO1 | The firmware already supports a divider-enable pin (`OPENSKI_BATTERY_DIVIDER_ENABLE_PIN`); removes the ~20 uA continuous divider drain. A fuel gauge IC is a later option, not needed now. |
+| Battery sense | 100k/100k divider plus 100 nF, bottom resistor returned to GPIO1 instead of GND | The firmware drives that pin low to read and leaves it floating in sleep (`OPENSKI_BATTERY_DIVIDER_ENABLE_PIN`), so no FET is needed and the divider draws nothing in deep sleep. A fuel gauge IC is a later option, not needed now. |
 | Connector | Sealed USB-C **or** 3-4 pad non-magnetic spring-pin cradle | See "Charging and the magnetometer" below. |
 | UI | One status LED, one button (GPIO0) | Button doubles as download-mode. OTA already exists, USB is for factory and recovery. |
 | Protection | ESD diode array on USB, TVS on VBUS, reverse-polarity protection on any exposed charge pads | Boots get dropped, wet and charged from random chargers. |
@@ -84,11 +84,15 @@ Pick: **A**. It keeps the S3, the flash size (8 MB for the existing `xiao-esp32s
 | I2C SCL | 6 | yes (XIAO D5) |
 | IMU INT2 (wake) | 4 | yes (`OPENSKI_IMU_INT_PIN=4`, `INT_USES_INT2`) |
 | Battery ADC | 2 | yes (left build) |
-| Divider enable | 1 | new, flag already supported |
+| Divider bottom leg (enable) | 1 | new, flag `OPENSKI_BATTERY_DIVIDER_ENABLE_PIN` exists |
 | Mag INT/DRDY | 7 | new, optional |
 | Status LED | 48 | new |
 | Button | 0 | boot strap |
 | USB D-/D+ | 19 / 20 | native USB |
+
+GPIO7 (mag INT), GPIO48 (LED) and the button are reserved on the board but not used by firmware yet.
+
+Build and identity: the build uses PlatformIO board `esp32-s3-devkitc-1` (as `env:esp32-s3` does) with 8 MB quad flash, not `seeed_xiao_esp32s3`. Both boots run the same image, so the Wi-Fi/OTA hostname carries the last two MAC bytes (`ski-boot-xxxx`); the BLE name stays `OpenSki-ski` and the app tells boots apart by address, as now.
 
 Strapping pins (0, 3, 45, 46) are kept off the sensor and sense nets except GPIO0 for the button. I2C pull-ups 4.7k on the board. IMU and magnetometer share the one bus, as they do now.
 
