@@ -53,6 +53,10 @@ RTC_NOINIT_ATTR LowBatteryRecord lowBatteryRecord;
 // without starting the radios; if the IMU is gone it boots normally so the fault is visible.
 constexpr uint64_t kMotionDeadManIntervalUs = 30ULL * 60ULL * 1000000ULL;
 constexpr uint32_t kMotionMagic = 0x4f4d4f54;  // "OMOT"
+// The IMU's wake-up detector responds to a change between successive 12.5 Hz samples. At 0.1 m/s^2 (the light-sleep
+// polling threshold) a desk shaken by footsteps woke the boot at once, and every false wake costs a full boot
+// plus the idle period with the radios on, so the deep sleep uses a coarser threshold (rounded up to whole steps).
+constexpr float kDeepSleepWakeThresholdMps2 = 0.5f;
 constexpr int kPinSettleTries = 10;            // a boot still moving, or a stuck pin, holds the line high
 constexpr unsigned long kPinSettleStepMs = 500;
 RTC_NOINIT_ATTR uint32_t motionMagic;
@@ -61,7 +65,7 @@ RTC_NOINIT_ATTR uint32_t motionMagic;
 // state: the caller must restore it with imu::begin().
 bool deepSleepOnMotion() {
   if (config::kImuInterruptPin < 0) return false;
-  if (!imu::armWakeOnMotion(motion::WakeDetector::kAccelThresholdMps2, config::kImuInterruptUsesInt2)) return false;
+  if (!imu::armWakeOnMotion(kDeepSleepWakeThresholdMps2, config::kImuInterruptUsesInt2)) return false;
   const gpio_num_t pin = static_cast<gpio_num_t>(config::kImuInterruptPin);
   pinMode(pin, INPUT_PULLDOWN);
   bool low = false;
@@ -106,11 +110,14 @@ bool deepSleepOnMotion() {
 #define OPENSKI_IDLE_SLEEP_MS (10UL * 60UL * 1000UL)
 #endif
 constexpr uint32_t kIdleSleepMs = OPENSKI_IDLE_SLEEP_MS;
+// Looser than the wake threshold (0.1 m/s^2): footsteps or a passing lorry shaking the table must not keep the
+// boot awake, while real handling (a pick-up is several m/s^2) still restarts the period.
+constexpr float kIdleAccelThresholdMps2 = 0.5f;
 
 bool requested = false;
 unsigned long requestedAtMs = 0;
 LastWake last;
-motion::StillnessTimer stillness(kIdleSleepMs);
+motion::StillnessTimer stillness(kIdleSleepMs, kIdleAccelThresholdMps2);
 uint32_t stillnessSamples = 0;
 
 // Feeds new IMU samples to the stillness timer and asks for sleep when the period is up. Recording or a flash
@@ -131,6 +138,12 @@ void autoSleepTick() {
   if (stillness.idle(now) && request() == Result::kOk) Serial.println("Still for the idle period: sleeping");
 }
 }  // namespace
+
+float wakeThresholdMps2() {
+  return config::kImuInterruptPin >= 0 ? kDeepSleepWakeThresholdMps2 : motion::WakeDetector::kAccelThresholdMps2;
+}
+uint32_t stillForMs() { return stillness.stillMs(millis()); }
+uint32_t autoSleepMs() { return config::kImuInterruptPin >= 0 ? kIdleSleepMs : 0; }
 
 Result request() {
   if (requested) return Result::kAlready;
@@ -162,7 +175,10 @@ void begin() {
 
 void motionWakeCheck() {
   if (esp_reset_reason() != ESP_RST_DEEPSLEEP || motionMagic != kMotionMagic) return;
-  const bool deadManCheck = esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_TIMER;
+  const esp_sleep_wakeup_cause_t cause = esp_sleep_get_wakeup_cause();
+  const bool deadManCheck = cause == ESP_SLEEP_WAKEUP_TIMER;
+  last.wakeCause = static_cast<int>(cause);
+  last.imuPinHigh = digitalRead(config::kImuInterruptPin) == HIGH;
   motionMagic = 0;
   if (deadManCheck) {
     const battery::Reading cell = battery::reading();

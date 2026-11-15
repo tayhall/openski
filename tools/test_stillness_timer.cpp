@@ -36,6 +36,18 @@ int main() {
     rest(t, 900000, 900100);
     check(t.idle(900100), "idle 600 s after the movement");
   }
+  {  // Vibration under the idle threshold does not restart the period; handling over it does.
+    StillnessTimer t(kIdleMs, 0.5f);
+    t.restart(0);
+    rest(t, 0, 1000);
+    for (uint32_t ms = 1000; ms < kIdleMs + 10; ms += 10) {
+      const float n = (ms / 10 % 2) ? 0.3f : -0.3f;
+      t.update(ms, kAx + n, kAy, kAz, kGx, kGy, kGz);
+    }
+    check(t.idle(kIdleMs + 10), "0.3 m/s^2 of vibration does not keep it awake with a 0.5 threshold");
+    t.update(kIdleMs + 20, kAx + 0.6f, kAy, kAz, kGx, kGy, kGz);
+    check(!t.idle(kIdleMs + 30), "0.6 m/s^2 restarts the period");
+  }
   {  // A rotation alone (gyro) is movement too.
     StillnessTimer t(kIdleMs);
     t.restart(0);

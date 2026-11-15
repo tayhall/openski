@@ -19,6 +19,8 @@ struct LastWake {
   uint32_t sleptMs = 0;
   bool wokeFromLowBattery = false;  // woke from the low-cell deep sleep below
   float lowBatteryVolts = 0.0f;     // the cell voltage that caused that shutdown
+  int wakeCause = -1;               // esp_sleep_wakeup_cause_t of the last deep-sleep wake, -1 if none (3 = ext1, 4 = timer)
+  bool imuPinHigh = false;          // the IMU interrupt pin level when the board woke
 };
 LastWake lastWake();
 
@@ -36,6 +38,13 @@ void lowBatteryCheck();
 // normally if the IMU has gone. motionWakeCheck() runs in setup() right after the IMU starts and
 // before the radios. Builds without the pin keep the light-sleep polling loop below.
 void motionWakeCheck();
+
+// Automatic idle sleep (builds with the IMU interrupt pin): how long the boot has been still, and the period
+// that triggers the sleep. autoSleepMs() is 0 when the build never sleeps on its own.
+// The acceleration change that wakes a sleeping boot (m/s^2).
+float wakeThresholdMps2();
+uint32_t stillForMs();
+uint32_t autoSleepMs();
 
 void begin();  // read the wake record left by the previous boot
 void tick();   // blocks while asleep; returns normally when no sleep is pending
