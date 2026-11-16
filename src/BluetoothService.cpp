@@ -18,6 +18,7 @@
 #include "MotionService.h"
 #include "RecorderService.h"
 #include "SleepService.h"
+#include "UnitIdentity.h"
 
 namespace openski::bluetooth {
 namespace {
@@ -579,7 +580,7 @@ void notifyNextRecordChunk() {
 
 void begin() {
   controlQueue = xQueueCreate(4, sizeof(ControlRequest));
-  NimBLEDevice::init(config::kBleName);
+  NimBLEDevice::init(identity::bleName());
   NimBLEDevice::setCustomGapHandler(trackGapEvent);
   server = NimBLEDevice::createServer();
   server->setCallbacks(new ServerCallbacks());
@@ -611,7 +612,7 @@ void begin() {
   updateStatus();
   notifyRecorderResponse(static_cast<uint8_t>(RecorderCommand::kInfo), RecorderResult::kOk);
   Serial.printf("BLE ready: %s, service %s, recorder control %s\n",
-                config::kBleName, kServiceUuid, kRecorderControlUuid);
+                identity::bleName(), kServiceUuid, kRecorderControlUuid);
 }
 
 void stop() {

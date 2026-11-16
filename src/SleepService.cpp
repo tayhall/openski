@@ -83,6 +83,7 @@ bool deepSleepOnMotion() {
   rtc_gpio_pullup_dis(pin);
   rtc_gpio_pulldown_en(pin);  // a missing wire must not read as movement
   Serial.flush();
+  battery::dividerOff();  // switched on again by battery::begin() on the next wake
   esp_deep_sleep_start();
   return true;  // not reached
 }
@@ -226,7 +227,7 @@ void tick() {
   }
   if (config::kImuInterruptPin >= 0) autoSleepTick();
   if (!requested || millis() - requestedAtMs < kSettleBeforeSleepMs) return;
-  if (recorder::status().recording || !imu::monitor().stats().ready) {  // changed in the settling second
+  if (recorder::status().recording || bluetooth::downloading() || !imu::monitor().stats().ready) {  // changed in the settling second
     requested = false;
     return;
   }

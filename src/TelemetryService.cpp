@@ -407,7 +407,7 @@ void handleNotFound() {
 
 // Only probe an idle, unavailable IMU so diagnostics cannot interrupt acquisition.
 void handleI2cDiagnostic() {
-  if (imu::monitor().stats().ready || recorder::status().recording) {
+  if (imu::monitor().stats().ready || recorder::status().recording || bluetooth::downloading() || sleep::pending()) {
     server.send(409, "application/json", "{\"error\":\"sensor_or_recorder_active\"}");
     return;
   }
