@@ -59,6 +59,26 @@ inline constexpr int kBatteryAdcPin = -1;
 #define OPENSKI_BATTERY_DIVIDER_RATIO 2.0f
 #endif
 inline constexpr float kBatteryDividerRatio = OPENSKI_BATTERY_DIVIDER_RATIO;
+// Optional: the IMU's interrupt pin wired to an RTC-capable GPIO (e.g. D3 = GPIO4). With it the movement sleep
+// is an ESP32 deep sleep woken by the IMU's own wake-up detector; without it the board light-sleeps and polls.
+// OPENSKI_IMU_INT_USES_INT2 selects the IMU's INT2 pad instead of INT1.
+#ifdef OPENSKI_IMU_INT_PIN
+inline constexpr int kImuInterruptPin = OPENSKI_IMU_INT_PIN;
+#else
+inline constexpr int kImuInterruptPin = -1;
+#endif
+#ifdef OPENSKI_IMU_INT_USES_INT2
+inline constexpr bool kImuInterruptUsesInt2 = true;
+#else
+inline constexpr bool kImuInterruptUsesInt2 = false;
+#endif
+// Optional: the divider's bottom resistor goes to this GPIO instead of GND. Driven low it completes the
+// divider; left as an input it breaks it, so the divider draws nothing while the board is in deep sleep.
+#ifdef OPENSKI_BATTERY_DIVIDER_ENABLE_PIN
+inline constexpr int kBatteryDividerEnablePin = OPENSKI_BATTERY_DIVIDER_ENABLE_PIN;
+#else
+inline constexpr int kBatteryDividerEnablePin = -1;
+#endif
 // Which sensor axis points up the leg, forward and sideways when the board sits in its cuff clip,
 // and the sign that makes it point that way. Assumed for the first mounting: board length (y) up
 // the leg, holes edge (x) forward, header side (z) as the lateral axis. Confirm against the real

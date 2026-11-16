@@ -11,14 +11,46 @@ enum class Result : uint8_t { kOk, kRecording, kAlready, kNoSensor };
 Result request();
 bool pending();
 
+// Why the last attempt to arm the wake-on-motion deep sleep did not sleep (this boot only). A boot that comes
+// up with anything but kNone after a 30-minute check has a sleep it cannot enter, which is otherwise silent.
+enum class ArmFailure : uint8_t { kNone, kNoInterruptPin, kImuNotReady, kArmRejected, kPinStuckHigh };
+const char* armFailureName(ArmFailure failure);
+
 // What the previous boot did, kept across the restart in RTC memory.
 struct LastWake {
   bool wokeFromSleep = false;
   bool gyroTrigger = false;
   float triggerDelta = 0.0f;  // m/s^2 or rad/s, whichever tripped
   uint32_t sleptMs = 0;
+  bool wokeFromLowBattery = false;  // woke from the low-cell deep sleep below
+  float lowBatteryVolts = 0.0f;     // the cell voltage that caused that shutdown
+  int wakeCause = -1;               // esp_sleep_wakeup_cause_t of the last deep-sleep wake, -1 if none (3 = ext1, 4 = timer)
+  bool imuPinHigh = false;          // the IMU interrupt pin level when the board woke
+  ArmFailure armFailure = ArmFailure::kNone;  // set when arming the deep sleep failed and the board stayed up
 };
 LastWake lastWake();
+
+// Low-cell deep sleep. tick() enters it once BatteryService reports kShutdownReadings low readings in a row:
+// it stops the recording (kept in flash), the radios and the IMU's gyro, then sleeps with a 10-minute timer
+// wake. lowBatteryCheck() runs early in setup() after the first battery reading: on a timer wake it goes back
+// to sleep unless the cell reads at least kResumeAtVolts (charging) or not like a cell at all; a reset
+// button press boots normally.
+void lowBatteryCheck();
+
+// Movement sleep by deep sleep, for builds with the IMU interrupt wired (OPENSKI_IMU_INT_PIN). request() then
+// arms the IMU's own wake-up detector and deep-sleeps; its interrupt wakes the board with a restart. A 30
+// minute timer wake reads the cell (below the low-cell shutdown voltage it goes into the low-battery deep sleep
+// below), checks the IMU is still answering, re-arms it and sleeps again without starting the radios, or boots
+// normally if the IMU has gone. motionWakeCheck() runs in setup() right after the IMU starts and
+// before the radios. Builds without the pin keep the light-sleep polling loop below.
+void motionWakeCheck();
+
+// Automatic idle sleep (builds with the IMU interrupt pin): how long the boot has been still, and the period
+// that triggers the sleep. autoSleepMs() is 0 when the build never sleeps on its own.
+// The acceleration change that wakes a sleeping boot (m/s^2).
+float wakeThresholdMps2();
+uint32_t stillForMs();
+uint32_t autoSleepMs();
 
 void begin();  // read the wake record left by the previous boot
 void tick();   // blocks while asleep; returns normally when no sleep is pending

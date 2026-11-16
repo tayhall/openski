@@ -2,7 +2,7 @@
 
 Current versions are live frame **2**, status **1**, recorder control **3**, and movement frames **1–5**. These version fields are independent; see compatibility notes before updating firmware.
 
-The ESP32 acts as a BLE GATT peripheral. An Android app scans for `OpenSki-ski`, connects, discovers the OpenSki service, reads status, and subscribes to live sample notifications.
+The ESP32 acts as a BLE GATT peripheral. An Android app scans for the OpenSki service UUID (advertised name `OpenSki-ski`, plus the last two MAC bytes on `boot-v1`, e.g. `OpenSki-ski-b2c3`), connects, discovers the OpenSki service, reads status, and subscribes to live sample notifications.
 
 ## GATT identifiers
 
@@ -145,7 +145,7 @@ Three commands are written to the recorder control characteristic. They work eve
 | Zero | `07` | Capture the neutral pose from the next still second (under 0.12 rad/s, within 5% of 1 g, roughly upright on the leg). Stand upright in the ski stance first. |
 | Set mode | `08 mode` | `00` diagnostics, `01` production. Any other value or length returns result `6`. |
 | Time sync | `09 token[2]` | Return the sensor clock; see below. Length must be 3, else result `6`. |
-| Sleep | `0A` | Respond (result `0`; `2` busy while recording to flash or downloading it; `1` unavailable if the IMU is not ready), then about a second later switch BLE and Wi-Fi off and light-sleep with the IMU in a 26 Hz accelerometer-only low-power mode (gyro off), checking it every 2 s after a 1 s baseline. Wakes on any accelerometer axis moving more than 0.1 m/s² from the baseline (a chip without the low-power mode falls back to the full-rate IMU, checked every 100 ms, which also watches the gyro at 0.1 rad/s), by restarting into the normal diagnostics boot (the phone sees a disconnect, then the boot advertising again; the zeroed pose is lost). Length must be 1, else result `6`. Experimental. |
+| Sleep | `0A` | Respond (result `0`; `2` busy while recording to flash or downloading it; `1` unavailable if the IMU is not ready), then about a second later switch BLE and Wi-Fi off. **Builds with the IMU interrupt wired (`OPENSKI_IMU_INT_PIN`, the production board and `xiao-left-mag`)** deep-sleep instead, with the IMU's own wake-on-motion detector armed at 0.5 m/s² on INT2 (ext1 wake) and a 30-minute timer wake as a dead-man check; any wake restarts into the normal diagnostics boot. The same builds also sleep by themselves after 10 minutes without movement (a phone that is still connected does not prevent it; recording, a flash download or a pending sleep restart the period), and deep-sleep on a flat cell (see [battery diagnostics](battery-diagnostics.md)). `GET /api/v1/sleep` reports `still_ms`, `auto_sleep_ms`, `wake_cause`, `imu_pin_high_at_wake` and `arm_failure` (`none`, `no_interrupt_pin`, `imu_not_ready`, `arm_rejected` or `pin_stuck_high`: why a 30-minute check could not go back to sleep and booted normally) besides the wake trigger. **Builds without the pin** light-sleep with the IMU in a 26 Hz accelerometer-only low-power mode (gyro off), checking it every 2 s after a 1 s baseline. Wakes on any accelerometer axis moving more than 0.1 m/s² from the baseline (a chip without the low-power mode falls back to the full-rate IMU, checked every 100 ms, which also watches the gyro at 0.1 rad/s), by restarting into the normal diagnostics boot (the phone sees a disconnect, then the boot advertising again; the zeroed pose is lost). Length must be 1, else result `6`. Experimental. |
 
 ### Time sync (opcode `09`)
 

@@ -18,6 +18,7 @@ The project was originally built with Codex; there is no AGENTS.md or Cursor/Cop
 ```
 pio run                                   # build default env (esp32-devkit-v1)
 pio run -e esp32-s3                       # build ESP32-S3
+pio run -e boot-v1                         # production board (ESP32-S3-MINI-1, LSM6DSOX + LIS3MDL, hostname ski-boot-xxxx)
 pio run -e esp32-devkit-v1 -t upload      # USB flash
 pio run -e esp32-devkit-v1-ota -t upload  # OTA flash (needs wifi_config.h)
 pio device monitor -b 115200

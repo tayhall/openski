@@ -4,6 +4,7 @@
 #include <WiFi.h>
 
 #include "AppConfig.h"
+#include "UnitIdentity.h"
 #include "BatteryMath.h"
 #include "BatteryService.h"
 
@@ -28,7 +29,7 @@ bool powerRaised = false;
 
 void startNow() {
   WiFi.mode(WIFI_STA);
-  WiFi.setHostname(config::kHostname);
+  WiFi.setHostname(identity::hostname());
   Serial.printf("Connecting to Wi-Fi SSID: %s\n", config::kWifiSsid);
   WiFi.begin(config::kWifiSsid, config::kWifiPassword);
 #ifdef OPENSKI_LOW_POWER_RADIO

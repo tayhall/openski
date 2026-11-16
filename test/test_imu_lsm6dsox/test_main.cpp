@@ -265,8 +265,91 @@ void test_begin_leaves_sleep_mode() {
   TEST_ASSERT_TRUE(out.gyroRadps.x != 0.0f);  // normal acquisition again, gyro read
 }
 
+void test_power_down_stops_both_sensors_until_begin() {
+  FakeBus bus;
+  Lsm6dsoxSensor s(bus, fakeNowUs, noDelay);
+  TEST_ASSERT_FALSE(s.powerDown());  // not initialised yet
+  TEST_ASSERT_TRUE(s.begin());
+  bus.writes.clear();
+  TEST_ASSERT_TRUE(s.powerDown());
+  TEST_ASSERT_EQUAL_INT(0x00, bus.lastWriteTo(0x10));  // accelerometer power-down
+  TEST_ASSERT_EQUAL_INT(0x00, bus.lastWriteTo(0x11));  // gyro power-down
+  Sample out{};
+  TEST_ASSERT_EQUAL(static_cast<int>(ReadResult::kError), static_cast<int>(s.read(out)));
+  TEST_ASSERT_TRUE(s.begin());  // full start-up again
+  TEST_ASSERT_EQUAL_INT(0x46, bus.lastWriteTo(0x10));
+}
+
+void test_wake_threshold_steps_round_up_and_clamp() {
+  TEST_ASSERT_EQUAL_UINT8(1, Lsm6dsoxSensor::wakeThresholdSteps(0.0f));
+  TEST_ASSERT_EQUAL_UINT8(1, Lsm6dsoxSensor::wakeThresholdSteps(0.05f));   // below one step
+  TEST_ASSERT_EQUAL_UINT8(2, Lsm6dsoxSensor::wakeThresholdSteps(0.1f));    // 10.2 mg is 1.3 steps of 7.8125 mg
+  TEST_ASSERT_EQUAL_UINT8(4, Lsm6dsoxSensor::wakeThresholdSteps(0.3f));    // 30.6 mg is 3.9 steps
+  TEST_ASSERT_EQUAL_UINT8(63, Lsm6dsoxSensor::wakeThresholdSteps(50.0f));  // beyond the 6-bit field
+}
+
+void test_arm_wake_on_motion_configures_the_wake_up_detector() {
+  FakeBus bus;
+  Lsm6dsoxSensor s(bus, fakeNowUs, noDelay);
+  TEST_ASSERT_FALSE(s.armWakeOnMotion(0.1f, false));  // not initialised yet
+  TEST_ASSERT_TRUE(s.begin());
+  bus.writes.clear();
+  TEST_ASSERT_TRUE(s.armWakeOnMotion(0.1f, false));
+  TEST_ASSERT_EQUAL_INT(0x00, bus.lastWriteTo(0x11));  // gyro off
+  TEST_ASSERT_EQUAL_INT(0x13, bus.lastWriteTo(0x15));  // low-power accelerometer
+  TEST_ASSERT_EQUAL_INT(0x12, bus.lastWriteTo(0x10));  // 12.5 Hz, +-2 g, LPF2
+  TEST_ASSERT_EQUAL_INT(0x10, bus.lastWriteTo(0x5C));  // WAKE_THS_W = full scale / 256
+  TEST_ASSERT_EQUAL_INT(2, bus.lastWriteTo(0x5B));     // two steps
+  TEST_ASSERT_EQUAL_INT(0x01, bus.lastWriteTo(0x56));  // latched, slope filter
+  TEST_ASSERT_EQUAL_INT(0x20, bus.lastWriteTo(0x5E));  // wake-up on INT1
+  TEST_ASSERT_EQUAL_INT(0x00, bus.lastWriteTo(0x5F));  // not on INT2
+  TEST_ASSERT_EQUAL_INT(0x80, bus.lastWriteTo(0x58));  // interrupts enabled
+  // The interrupts are switched off first and enabled last, after the filters had time to settle.
+  TEST_ASSERT_EQUAL_UINT8(0x58, bus.writes.front().first);
+  TEST_ASSERT_EQUAL_UINT8(0x00, bus.writes.front().second);
+  TEST_ASSERT_EQUAL_UINT8(0x58, bus.writes.back().first);
+}
+
+void test_arm_wake_on_motion_can_route_to_int2() {
+  FakeBus bus;
+  Lsm6dsoxSensor s(bus, fakeNowUs, noDelay);
+  TEST_ASSERT_TRUE(s.begin());
+  TEST_ASSERT_TRUE(s.armWakeOnMotion(0.1f, true));
+  TEST_ASSERT_EQUAL_INT(0x20, bus.lastWriteTo(0x5F));
+  TEST_ASSERT_EQUAL_INT(0x00, bus.lastWriteTo(0x5E));
+}
+
+void test_arm_fails_cleanly_on_write_error_and_begin_restores_normal_acquisition() {
+  FakeBus bus;
+  Lsm6dsoxSensor s(bus, fakeNowUs, noDelay);
+  TEST_ASSERT_TRUE(s.begin());
+  bus.failWrites = true;
+  TEST_ASSERT_FALSE(s.armWakeOnMotion(0.1f, false));
+  bus.failWrites = false;
+  TEST_ASSERT_TRUE(s.armWakeOnMotion(0.1f, false));
+  TEST_ASSERT_TRUE(s.begin());  // full reset and the normal configuration again
+  TEST_ASSERT_EQUAL_INT(0x46, bus.lastWriteTo(0x10));
+  TEST_ASSERT_EQUAL_INT(0x4C, bus.lastWriteTo(0x11));
+}
+
+void test_clear_wake_event_reads_the_source_register() {
+  FakeBus bus;
+  Lsm6dsoxSensor s(bus, fakeNowUs, noDelay);
+  TEST_ASSERT_FALSE(s.clearWakeEvent());  // not initialised
+  TEST_ASSERT_TRUE(s.begin());
+  TEST_ASSERT_TRUE(s.clearWakeEvent());
+  bus.failReads = true;
+  TEST_ASSERT_FALSE(s.clearWakeEvent());
+}
+
 int main(int, char**) {
   UNITY_BEGIN();
+  RUN_TEST(test_wake_threshold_steps_round_up_and_clamp);
+  RUN_TEST(test_arm_wake_on_motion_configures_the_wake_up_detector);
+  RUN_TEST(test_arm_wake_on_motion_can_route_to_int2);
+  RUN_TEST(test_arm_fails_cleanly_on_write_error_and_begin_restores_normal_acquisition);
+  RUN_TEST(test_clear_wake_event_reads_the_source_register);
+  RUN_TEST(test_power_down_stops_both_sensors_until_begin);
   RUN_TEST(test_init_writes_expected_configuration);
   RUN_TEST(test_who_am_i_mismatch_fails_cleanly_without_writes);
   RUN_TEST(test_bus_restart_failure_fails_begin);

@@ -73,6 +73,47 @@ bool Lsm6dsoxSensor::setSleepMode(bool on) {
   return true;
 }
 
+bool Lsm6dsoxSensor::powerDown() {
+  if (!initialized_) return false;
+  if (!bus_.writeRegister(kRegCtrl2G, 0x00) || !bus_.writeRegister(kRegCtrl1Xl, 0x00)) return false;  // ODR = power-down
+  initialized_ = false;  // begin() runs the full init again
+  return true;
+}
+
+uint8_t Lsm6dsoxSensor::wakeThresholdSteps(float thresholdMps2) {
+  const float mg = thresholdMps2 / kStandardGravity * 1000.0f;
+  const float steps = mg / (2000.0f / 256.0f);  // +-2 g full scale is 2000 mg, over 256
+  if (!(steps > 1.0f)) return 1;
+  if (steps >= 63.0f) return 63;
+  const uint8_t whole = static_cast<uint8_t>(steps);
+  return static_cast<float>(whole) < steps ? whole + 1 : whole;
+}
+
+bool Lsm6dsoxSensor::armWakeOnMotion(float thresholdMps2, bool useInt2) {
+  if (!initialized_) return false;
+  // Interrupts off while the range and filters change, so no half-configured event can fire.
+  if (!bus_.writeRegister(kRegTapCfg2, 0x00) || !bus_.writeRegister(kRegMd1Cfg, 0x00) ||
+      !bus_.writeRegister(kRegMd2Cfg, 0x00) || !bus_.writeRegister(kRegCtrl2G, kCtrl2SleepValue) ||
+      !bus_.writeRegister(kRegCtrl6C, kCtrl6SleepValue) || !bus_.writeRegister(kRegCtrl1Xl, kCtrl1WakeValue) ||
+      !bus_.writeRegister(kRegWakeUpDur, kWakeUpDurValue) ||
+      !bus_.writeRegister(kRegWakeUpThs, wakeThresholdSteps(thresholdMps2)) ||
+      !bus_.writeRegister(kRegTapCfg0, kTapCfg0Value)) {
+    return false;
+  }
+  delayMs_(kWakeFilterSettleMs);
+  if (!bus_.writeRegister(useInt2 ? kRegMd2Cfg : kRegMd1Cfg, kRouteWakeUp) ||
+      !bus_.writeRegister(kRegTapCfg2, kInterruptsEnable)) {
+    return false;
+  }
+  sleepMode_ = true;
+  return clearWakeEvent();
+}
+
+bool Lsm6dsoxSensor::clearWakeEvent() {
+  uint8_t source = 0;
+  return initialized_ && bus_.readRegisters(kRegWakeUpSrc, &source, 1);  // reading WAKE_UP_SRC releases the latch
+}
+
 ReadResult Lsm6dsoxSensor::read(Sample& out) {
   if (!initialized_) return ReadResult::kError;
   if (sleepMode_) {  // accelerometer only: gyro and temperature are off or unread and report zero

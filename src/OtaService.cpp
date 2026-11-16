@@ -4,6 +4,7 @@
 #include <ArduinoOTA.h>
 
 #include "AppConfig.h"
+#include "UnitIdentity.h"
 #include "WifiService.h"
 
 namespace openski::ota {
@@ -23,7 +24,7 @@ void tick() {
   }
 
   if (!started) {
-    ArduinoOTA.setHostname(config::kHostname);
+    ArduinoOTA.setHostname(identity::hostname());
     ArduinoOTA.setPassword(config::kOtaPassword);
     ArduinoOTA.onStart([]() { Serial.println("OTA update started"); });
     ArduinoOTA.onEnd([]() { Serial.println("OTA update finished"); });
@@ -32,7 +33,7 @@ void tick() {
     });
     ArduinoOTA.begin();
     started = true;
-    Serial.printf("OTA ready: %s:3232\n", config::kHostname);
+    Serial.printf("OTA ready: %s:3232\n", identity::hostname());
   }
 
   ArduinoOTA.handle();

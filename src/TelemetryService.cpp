@@ -9,6 +9,7 @@
 #include <string.h>
 
 #include "AppConfig.h"
+#include "UnitIdentity.h"
 #include "BatteryService.h"
 #include "BluetoothService.h"
 #include "ImuService.h"
@@ -125,7 +126,7 @@ void handleMotion() {
            "{\"device\":\"%s\",\"algorithm\":\"bench_rules_v3\",\"frame\":\"sensor\","
            "\"label\":\"%s\",\"label_changes\":%lu,\"sample_timestamp_us\":%lu,"
            "\"angular_speed_radps\":%.4f,\"acceleration_magnitude_mps2\":%.4f}",
-           config::kHostname, state.label, static_cast<unsigned long>(state.events),
+           identity::hostname(), state.label, static_cast<unsigned long>(state.events),
            static_cast<unsigned long>(state.sampleTimestampUs), state.angularSpeedRadps,
            state.accelerationMagnitudeMps2);
   String response(body);
@@ -190,18 +191,21 @@ void handleSleep() {
     return;
   }
   char body[64];
-  snprintf(body, sizeof(body), "{\"sleeping\":true,\"wake_accel_mps2\":%.2f}", motion::WakeDetector::kAccelThresholdMps2);
+  snprintf(body, sizeof(body), "{\"sleeping\":true,\"wake_accel_mps2\":%.2f}", sleep::wakeThresholdMps2());
   server.send(200, "application/json", body);
 }
 
 void handleSleepStatus() {
   const sleep::LastWake wake = sleep::lastWake();
-  char body[200];
+  char body[480];
   snprintf(body, sizeof(body),
-           "{\"sleep_pending\":%s,\"woke_from_sleep\":%s,\"slept_ms\":%lu,\"wake_trigger\":\"%s\",\"wake_delta\":%.4f}",
+           "{\"sleep_pending\":%s,\"woke_from_sleep\":%s,\"slept_ms\":%lu,\"wake_trigger\":\"%s\",\"wake_delta\":%.4f,"
+           "\"woke_from_low_battery\":%s,\"low_battery_shutdown_v\":%.3f,\"still_ms\":%lu,\"auto_sleep_ms\":%lu,\"wake_cause\":%d,\"imu_pin_high_at_wake\":%s,\"arm_failure\":\"%s\"}",
            sleep::pending() ? "true" : "false", wake.wokeFromSleep ? "true" : "false",
            static_cast<unsigned long>(wake.sleptMs), wake.gyroTrigger ? "gyro_radps" : "accel_mps2",
-           wake.triggerDelta);
+           wake.triggerDelta, wake.wokeFromLowBattery ? "true" : "false", wake.lowBatteryVolts,
+           static_cast<unsigned long>(sleep::stillForMs()), static_cast<unsigned long>(sleep::autoSleepMs()), wake.wakeCause,
+           wake.imuPinHigh ? "true" : "false", sleep::armFailureName(wake.armFailure));
   server.send(200, "application/json", body);
 }
 
@@ -244,7 +248,7 @@ void handleStatus() {
            "\"last_disconnected_ms\":%llu,\"last_disconnect_reason\":%d},"
            "\"imu_samples\":%lu,\"imu_read_failures\":%lu,\"battery_voltage_v\":%s,"
            "\"power_profile\":\"%s\"}",
-           config::kHostname, config::kBuildId,
+           identity::hostname(), config::kBuildId,
            static_cast<unsigned long long>(esp_timer_get_time() / 1000ULL),
            static_cast<int>(esp_reset_reason()), static_cast<unsigned long>(ESP.getFreeHeap()), WiFi.RSSI(),
            bluetooth::connected() ? "true" : "false", bluetooth::advertisingNow() ? "true" : "false",
@@ -270,7 +274,7 @@ void handleImu() {
              "\"recorder_ready\":%s,\"recording\":%s,\"recorded_samples\":%lu,"
              "\"recording_capacity_samples\":%lu,\"dropped_samples\":%lu,"
              "\"recorder_partition_found\":%s,\"recorder_partition_bytes\":%lu}",
-             config::kHostname, config::kBuildId, monitor.sensorName(), stats.ready ? "true" : "false",
+             identity::hostname(), config::kBuildId, monitor.sensorName(), stats.ready ? "true" : "false",
              static_cast<unsigned long>(stats.samples),
              static_cast<unsigned long>(stats.readFailures),
              recorderStatus.storageReady ? "true" : "false",
@@ -294,7 +298,7 @@ void handleImu() {
            "\"recorder_ready\":%s,\"recording\":%s,\"recorded_samples\":%lu,"
            "\"recording_capacity_samples\":%lu,\"dropped_samples\":%lu,"
            "\"recorder_partition_found\":%s,\"recorder_partition_bytes\":%lu}",
-           config::kHostname, config::kBuildId, monitor.sensorName(), stats.ready ? "true" : "false",
+           identity::hostname(), config::kBuildId, monitor.sensorName(), stats.ready ? "true" : "false",
            static_cast<unsigned long>(sample.timestampUs),
            sample.accelMps2.x, sample.accelMps2.y, sample.accelMps2.z,
            sample.gyroRadps.x, sample.gyroRadps.y, sample.gyroRadps.z,
@@ -354,7 +358,7 @@ void handleAcquisition() {
       "\"quality_scope\":\"since_device_boot\",\"dual_boot_synchronised\":false,"
       "\"validation_status\":\"bench_and_field_validation_required\"}",
       imuProfile::kId, monitor.sensorName(), stats.ready ? "true" : "false",
-      config::kHostname, config::kBuildId, measuredProfile, calibrationMatches ? "true" : "false",
+      identity::hostname(), config::kBuildId, measuredProfile, calibrationMatches ? "true" : "false",
       imuProfile::kSampleRateHz, imuProfile::kAccelRangeG,
       imuProfile::kGyroRangeDps, bandwidth,
       static_cast<unsigned long>(stats.samples), static_cast<unsigned long>(stats.readFailures),
@@ -377,7 +381,7 @@ void handleMag() {
     snprintf(body, sizeof(body),
              "{\"device\":\"%s\",\"built\":true,\"sensor\":\"LIS3MDL\",\"present\":%s,\"has_sample\":false,"
              "\"samples\":%lu,\"read_errors\":%lu}",
-             config::kHostname, mag.present ? "true" : "false", static_cast<unsigned long>(mag.samples),
+             identity::hostname(), mag.present ? "true" : "false", static_cast<unsigned long>(mag.samples),
              static_cast<unsigned long>(mag.readErrors));
   } else {
     constexpr float kPerGauss = mag::Lis3mdlMagnetometer::kCountsPerGauss;
@@ -385,14 +389,14 @@ void handleMag() {
              "{\"device\":\"%s\",\"built\":true,\"sensor\":\"LIS3MDL\",\"present\":%s,\"has_sample\":true,"
              "\"raw\":{\"x\":%d,\"y\":%d,\"z\":%d},\"gauss\":{\"x\":%.4f,\"y\":%.4f,\"z\":%.4f},"
              "\"calibration\":\"uncalibrated\",\"samples\":%lu,\"read_errors\":%lu}",
-             config::kHostname, mag.present ? "true" : "false", mag.rawX, mag.rawY, mag.rawZ,
+             identity::hostname(), mag.present ? "true" : "false", mag.rawX, mag.rawY, mag.rawZ,
              mag.rawX / kPerGauss, mag.rawY / kPerGauss, mag.rawZ / kPerGauss,
              static_cast<unsigned long>(mag.samples), static_cast<unsigned long>(mag.readErrors));
   }
   server.send(200, "application/json", body);
 #else
   char body[96];
-  snprintf(body, sizeof(body), "{\"device\":\"%s\",\"built\":false}", config::kHostname);
+  snprintf(body, sizeof(body), "{\"device\":\"%s\",\"built\":false}", identity::hostname());
   server.send(200, "application/json", body);
 #endif
 }
@@ -403,7 +407,7 @@ void handleNotFound() {
 
 // Only probe an idle, unavailable IMU so diagnostics cannot interrupt acquisition.
 void handleI2cDiagnostic() {
-  if (imu::monitor().stats().ready || recorder::status().recording) {
+  if (imu::monitor().stats().ready || recorder::status().recording || bluetooth::downloading() || sleep::pending()) {
     server.send(409, "application/json", "{\"error\":\"sensor_or_recorder_active\"}");
     return;
   }

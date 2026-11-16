@@ -26,4 +26,23 @@ inline bool lowBatteryHold(float volts, bool currentlyHolding) {
   return currentlyHolding ? volts < kReleaseAtVolts : volts < kHoldBelowVolts;
 }
 
+// Low-cell deep sleep. The board shuts down after kShutdownReadings consecutive readings below
+// kShutdownBelowVolts (a sag under a radio burst is one reading, not three). Implausible readings never
+// count. While shut down it wakes on a timer and resumes only once the cell reads kResumeAtVolts or more,
+// which in practice means it is charging, or the sense pin no longer reads a cell at all (so a board with
+// no cell fitted is never stuck asleep). The thresholds are placeholders until a discharge curve is logged.
+inline constexpr float kShutdownBelowVolts = 3.3f;
+inline constexpr float kResumeAtVolts = 3.8f;
+inline constexpr int kShutdownReadings = 3;
+
+// Consecutive low readings including this one.
+inline int lowCellCount(float volts, int previousCount) {
+  return (volts >= kImplausibleVolts && volts < kShutdownBelowVolts) ? previousCount + 1 : 0;
+}
+inline bool shutdownDue(int count) { return count >= kShutdownReadings; }
+// One reading taken with the radios off (a timer wake in the movement sleep) is not under load, so it needs no
+// debounce: a single plausible reading below the shutdown voltage is enough.
+inline bool lowCellAtRest(float volts) { return volts >= kImplausibleVolts && volts < kShutdownBelowVolts; }
+inline bool resumeFromShutdown(float volts) { return volts >= kResumeAtVolts || volts < kImplausibleVolts; }
+
 }  // namespace openski::battery

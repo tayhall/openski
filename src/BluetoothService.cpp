@@ -18,6 +18,7 @@
 #include "MotionService.h"
 #include "RecorderService.h"
 #include "SleepService.h"
+#include "UnitIdentity.h"
 
 namespace openski::bluetooth {
 namespace {
@@ -579,7 +580,7 @@ void notifyNextRecordChunk() {
 
 void begin() {
   controlQueue = xQueueCreate(4, sizeof(ControlRequest));
-  NimBLEDevice::init(config::kBleName);
+  NimBLEDevice::init(identity::bleName());
   NimBLEDevice::setCustomGapHandler(trackGapEvent);
   server = NimBLEDevice::createServer();
   server->setCallbacks(new ServerCallbacks());
@@ -602,12 +603,16 @@ void begin() {
   NimBLEAdvertising* bleAdvertising = NimBLEDevice::getAdvertising();
   bleAdvertising->addServiceUUID(kServiceUuid);
   bleAdvertising->setScanResponse(true);
+  // Idle advertising is the radio's main cost while no phone is connected: 500 to 800 ms (units of 0.625 ms)
+  // instead of the stack default of tens of milliseconds. The app still finds the boot within a scan or two.
+  bleAdvertising->setMinInterval(800);
+  bleAdvertising->setMaxInterval(1280);
   NimBLEDevice::startAdvertising();
   advertising = true;
   updateStatus();
   notifyRecorderResponse(static_cast<uint8_t>(RecorderCommand::kInfo), RecorderResult::kOk);
   Serial.printf("BLE ready: %s, service %s, recorder control %s\n",
-                config::kBleName, kServiceUuid, kRecorderControlUuid);
+                identity::bleName(), kServiceUuid, kRecorderControlUuid);
 }
 
 void stop() {
