@@ -197,15 +197,15 @@ void handleSleep() {
 
 void handleSleepStatus() {
   const sleep::LastWake wake = sleep::lastWake();
-  char body[420];
+  char body[480];
   snprintf(body, sizeof(body),
            "{\"sleep_pending\":%s,\"woke_from_sleep\":%s,\"slept_ms\":%lu,\"wake_trigger\":\"%s\",\"wake_delta\":%.4f,"
-           "\"woke_from_low_battery\":%s,\"low_battery_shutdown_v\":%.3f,\"still_ms\":%lu,\"auto_sleep_ms\":%lu,\"wake_cause\":%d,\"imu_pin_high_at_wake\":%s}",
+           "\"woke_from_low_battery\":%s,\"low_battery_shutdown_v\":%.3f,\"still_ms\":%lu,\"auto_sleep_ms\":%lu,\"wake_cause\":%d,\"imu_pin_high_at_wake\":%s,\"arm_failure\":\"%s\"}",
            sleep::pending() ? "true" : "false", wake.wokeFromSleep ? "true" : "false",
            static_cast<unsigned long>(wake.sleptMs), wake.gyroTrigger ? "gyro_radps" : "accel_mps2",
            wake.triggerDelta, wake.wokeFromLowBattery ? "true" : "false", wake.lowBatteryVolts,
            static_cast<unsigned long>(sleep::stillForMs()), static_cast<unsigned long>(sleep::autoSleepMs()), wake.wakeCause,
-           wake.imuPinHigh ? "true" : "false");
+           wake.imuPinHigh ? "true" : "false", sleep::armFailureName(wake.armFailure));
   server.send(200, "application/json", body);
 }
 

@@ -11,6 +11,11 @@ enum class Result : uint8_t { kOk, kRecording, kAlready, kNoSensor };
 Result request();
 bool pending();
 
+// Why the last attempt to arm the wake-on-motion deep sleep did not sleep (this boot only). A boot that comes
+// up with anything but kNone after a 30-minute check has a sleep it cannot enter, which is otherwise silent.
+enum class ArmFailure : uint8_t { kNone, kNoInterruptPin, kImuNotReady, kArmRejected, kPinStuckHigh };
+const char* armFailureName(ArmFailure failure);
+
 // What the previous boot did, kept across the restart in RTC memory.
 struct LastWake {
   bool wokeFromSleep = false;
@@ -21,6 +26,7 @@ struct LastWake {
   float lowBatteryVolts = 0.0f;     // the cell voltage that caused that shutdown
   int wakeCause = -1;               // esp_sleep_wakeup_cause_t of the last deep-sleep wake, -1 if none (3 = ext1, 4 = timer)
   bool imuPinHigh = false;          // the IMU interrupt pin level when the board woke
+  ArmFailure armFailure = ArmFailure::kNone;  // set when arming the deep sleep failed and the board stayed up
 };
 LastWake lastWake();
 

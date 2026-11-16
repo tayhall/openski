@@ -61,11 +61,20 @@ constexpr int kPinSettleTries = 10;            // a boot still moving, or a stuc
 constexpr unsigned long kPinSettleStepMs = 500;
 RTC_NOINIT_ATTR uint32_t motionMagic;
 
-// Arms the IMU and deep-sleeps. Returns only if that could not be done, with the IMU left in an undefined
-// state: the caller must restore it with imu::begin().
-bool deepSleepOnMotion() {
-  if (config::kImuInterruptPin < 0) return false;
-  if (!imu::armWakeOnMotion(kDeepSleepWakeThresholdMps2, config::kImuInterruptUsesInt2)) return false;
+LastWake last;
+
+// Arms the IMU and deep-sleeps. Never returns on success (the IMU wakes the board with a restart). Returning
+// at all means it could not be done: the reason is in last.armFailure and the IMU is left in an undefined
+// state, so the caller must restore it with imu::begin().
+void deepSleepOnMotion() {
+  if (config::kImuInterruptPin < 0) {
+    last.armFailure = ArmFailure::kNoInterruptPin;
+    return;
+  }
+  if (!imu::armWakeOnMotion(kDeepSleepWakeThresholdMps2, config::kImuInterruptUsesInt2)) {
+    last.armFailure = ArmFailure::kArmRejected;
+    return;
+  }
   const gpio_num_t pin = static_cast<gpio_num_t>(config::kImuInterruptPin);
   pinMode(pin, INPUT_PULLDOWN);
   bool low = false;
@@ -76,7 +85,10 @@ bool deepSleepOnMotion() {
       delay(kPinSettleStepMs);
     }
   }
-  if (!low) return false;
+  if (!low) {
+    last.armFailure = ArmFailure::kPinStuckHigh;
+    return;
+  }
   motionMagic = kMotionMagic;
   esp_sleep_enable_ext1_wakeup(1ULL << pin, ESP_EXT1_WAKEUP_ANY_HIGH);
   esp_sleep_enable_timer_wakeup(kMotionDeadManIntervalUs);
@@ -85,7 +97,6 @@ bool deepSleepOnMotion() {
   Serial.flush();
   battery::dividerOff();  // switched on again by battery::begin() on the next wake
   esp_deep_sleep_start();
-  return true;  // not reached
 }
 
 [[noreturn]] void deepSleepLowBattery();
@@ -117,7 +128,6 @@ constexpr float kIdleAccelThresholdMps2 = 0.5f;
 
 bool requested = false;
 unsigned long requestedAtMs = 0;
-LastWake last;
 motion::StillnessTimer stillness(kIdleSleepMs, kIdleAccelThresholdMps2);
 uint32_t stillnessSamples = 0;
 
@@ -157,6 +167,17 @@ Result request() {
   return Result::kOk;
 }
 
+const char* armFailureName(ArmFailure failure) {
+  switch (failure) {
+    case ArmFailure::kNoInterruptPin: return "no_interrupt_pin";
+    case ArmFailure::kImuNotReady: return "imu_not_ready";
+    case ArmFailure::kArmRejected: return "arm_rejected";
+    case ArmFailure::kPinStuckHigh: return "pin_stuck_high";
+    case ArmFailure::kNone: break;
+  }
+  return "none";
+}
+
 bool pending() { return requested; }
 LastWake lastWake() { return last; }
 
@@ -190,8 +211,10 @@ void motionWakeCheck() {
     if (imu::monitor().stats().ready) {
       Serial.println("Sleep check: IMU answers, back to sleep");
       deepSleepOnMotion();  // returns only if it could not re-arm: boot normally below
+    } else {
+      last.armFailure = ArmFailure::kImuNotReady;
     }
-    Serial.println("Sleep check: IMU not responding or not re-armed, booting normally");
+    Serial.printf("Sleep check: IMU not responding or not re-armed (%s), booting normally\n", armFailureName(last.armFailure));
     return;
   }
   last.wokeFromSleep = true;  // the IMU raised its interrupt; the size of the movement and the time slept are not kept
@@ -237,7 +260,7 @@ void tick() {
   bluetooth::stop();
   wifi::setEnabled(false);
 
-  if (deepSleepOnMotion()) return;  // never returns on success: the IMU wakes the board with a restart
+  deepSleepOnMotion();  // never returns on success: the IMU wakes the board with a restart
   if (config::kImuInterruptPin >= 0) {
     Serial.println("Wake-on-motion could not be armed: light sleep instead");
     imu::begin();  // restores normal acquisition after the failed arm
